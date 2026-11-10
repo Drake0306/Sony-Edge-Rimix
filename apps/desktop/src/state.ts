@@ -252,46 +252,17 @@ export function withoutHandle<T>(record: Record<number, T>, key: number): Record
   return rest;
 }
 
-/** The handle of the card file on its way under the camera's name `filename`, if any. */
-function downloading(card: CardState, filename: string): number | null {
-  const obj = card.items.find((o) => o.filename === filename && o.handle in card.downloads);
-  return obj ? obj.handle : null;
-}
-
 /**
- * What an event from the active camera changes in its card: progress is
- * kept by handle, and the save or failure of a file being downloaded ends
- * its progress with the saved path or the error. Null when nothing changes.
+ * What an event from the active camera changes in its card: progress for a
+ * file being downloaded. Only the `card_download` reply settles a row, so a
+ * progress event for a handle no longer downloading (one that overtook the
+ * reply) is ignored. Null when nothing changes.
  */
 function cardEvent(card: CardState, event: CameraEvent): CardState | null {
-  if (typeof event !== 'object') return null;
-  if ('CardDownloadProgress' in event) {
-    const { handle, received, total } = event.CardDownloadProgress;
-    return {
-      ...card,
-      downloads: { ...card.downloads, [handle]: { received, total } },
-      failed: withoutHandle(card.failed, handle),
-    };
-  }
-  if ('CaptureSaved' in event) {
-    const handle = downloading(card, event.CaptureSaved.camera_filename);
-    if (handle === null) return null;
-    return {
-      ...card,
-      downloads: withoutHandle(card.downloads, handle),
-      done: { ...card.done, [handle]: event.CaptureSaved.path },
-    };
-  }
-  if ('CaptureFailed' in event) {
-    const handle = downloading(card, event.CaptureFailed.filename);
-    if (handle === null) return null;
-    return {
-      ...card,
-      downloads: withoutHandle(card.downloads, handle),
-      failed: { ...card.failed, [handle]: event.CaptureFailed.error },
-    };
-  }
-  return null;
+  if (typeof event !== 'object' || !('CardDownloadProgress' in event)) return null;
+  const { handle, received, total } = event.CardDownloadProgress;
+  if (!(handle in card.downloads)) return null;
+  return { ...card, downloads: { ...card.downloads, [handle]: { received, total } } };
 }
 
 /**

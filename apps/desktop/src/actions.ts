@@ -406,8 +406,7 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
       downloads: { ...c.downloads, [handle]: { received: 0, total } },
       failed: withoutHandle(c.failed, handle),
     }));
-    // The reply can overtake the last progress events; the CaptureSaved or
-    // CaptureFailed event after them settles the row again.
+    // Only the reply settles the row; later progress events are ignored.
     try {
       const path = await ipc.cardDownload(handle, id);
       updateCard(id, (c) => ({ downloads: withoutHandle(c.downloads, handle), done: { ...c.done, [handle]: path } }));

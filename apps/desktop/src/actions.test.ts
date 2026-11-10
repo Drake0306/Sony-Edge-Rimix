@@ -6,7 +6,7 @@ import { mount as mountTopbar } from './components/topbar';
 import { start } from './interval';
 import * as ipc from './ipc';
 import type { AppSettings, CameraState, CardObject, DiscoveredCamera, Preset, RecentCamera, WifiJoin } from './ipc';
-import { createStore, defaultSettings, emptyCard, initialState, type AppState } from './state';
+import { applyEvent, createStore, defaultSettings, emptyCard, initialState, type AppState } from './state';
 
 vi.mock('./ipc', () => ({
   connect: vi.fn(),
@@ -697,6 +697,23 @@ describe('card', () => {
     await pending;
     expect(store.get().card.downloads).toEqual({});
     expect(store.get().card.done).toEqual({ 259: '/shots/C0001.MP4' });
+  });
+
+  test('only the reply marks the row saved; progress after it is ignored', async () => {
+    let finish: (path: string) => void = () => {};
+    vi.mocked(ipc.cardDownload).mockReturnValue(new Promise((r) => (finish = r)));
+    const store = browsing({ card: { ...emptyCard(), items: [jpeg, clip] } });
+    const route = (event: Parameters<typeof applyEvent>[1]) => store.set(applyEvent(store.get(), event, A));
+    const pending = createActions(store).cardDownload(259);
+    route({ CardDownloadProgress: { handle: 259, filename: 'C0001.MP4', received: 1 << 20, total: 64 << 20 } });
+    expect(store.get().card.downloads).toEqual({ 259: { received: 1 << 20, total: 64 << 20 } });
+    route({ CaptureSaved: { path: '/shots/C0001.MP4', bytes: 64 << 20, filename: 'C0001.MP4', camera_filename: 'C0001.MP4' } });
+    expect(store.get().card.done).toEqual({});
+    finish('/shots/C0001.MP4');
+    await pending;
+    expect(store.get().card.done).toEqual({ 259: '/shots/C0001.MP4' });
+    route({ CardDownloadProgress: { handle: 259, filename: 'C0001.MP4', received: 64 << 20, total: 64 << 20 } });
+    expect(store.get().card.downloads).toEqual({});
   });
 
   test('a file already on its way is not asked for twice', async () => {

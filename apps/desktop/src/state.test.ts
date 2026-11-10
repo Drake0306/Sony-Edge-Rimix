@@ -228,43 +228,35 @@ describe('card', () => {
     expect(applyEvent(browsing(), progress(1 << 20), B)).toEqual({});
   });
 
-  test('saving the downloading file marks its row saved, clears its progress and shows it in the filmstrip', () => {
-    const saved: CameraEvent = {
-      CaptureSaved: { path: '/shots/C0001.MP4', bytes: 64 << 20, filename: 'C0001.MP4', camera_filename: 'C0001.MP4' },
-    };
-    const s = step(step(browsing(), progress(64 << 20), A), saved, A);
-    expect(s.card.downloads).toEqual({});
-    expect(s.card.done).toEqual({ 259: '/shots/C0001.MP4' });
-    expect(s.captures[0].path).toBe('/shots/C0001.MP4');
+  test('progress for a file not being downloaded is ignored', () => {
+    const s = browsing();
+    const other: CameraEvent = { CardDownloadProgress: { handle: 257, filename: 'DSC00010.JPG', received: 1, total: 2 } };
+    expect(applyEvent(s, other, A)).toEqual({});
   });
 
-  test('a shot with the same name as a card file not being downloaded leaves the card alone', () => {
-    const s = browsing();
-    const saved: CameraEvent = {
-      CaptureSaved: { path: '/shots/DSC00010.JPG', bytes: 3, filename: 'DSC00010.JPG', camera_filename: 'DSC00010.JPG' },
-    };
-    const next = step(s, saved, A);
+  test('a progress event after the reply does not bring the row back', () => {
+    // The reply came first: the row is saved and no longer downloading.
+    const s: AppState = { ...browsing(), card: { ...browsing().card, downloads: {}, done: { 259: '/shots/C0001.MP4' } } };
+    const next = step(s, progress(64 << 20), A);
     expect(next.card).toBe(s.card);
   });
 
-  test('progress that arrives after the reply is settled by the save event behind it', () => {
-    // The reply came first: the row is saved and no longer downloading.
-    let s: AppState = { ...browsing(), card: { ...browsing().card, downloads: {}, done: { 259: '/shots/C0001.MP4' } } };
-    s = step(s, progress(64 << 20), A);
-    s = step(s, {
+  test('a save with the same name as a downloading file does not mark its row saved', () => {
+    const s = browsing();
+    const saved: CameraEvent = {
       CaptureSaved: { path: '/shots/C0001.MP4', bytes: 64 << 20, filename: 'C0001.MP4', camera_filename: 'C0001.MP4' },
-    }, A);
-    expect(s.card.downloads).toEqual({});
-    expect(s.card.done).toEqual({ 259: '/shots/C0001.MP4' });
+    };
+    const next = step(s, saved, A);
+    expect(next.card).toBe(s.card);
+    // It still lands in the filmstrip.
+    expect(next.captures[0].path).toBe('/shots/C0001.MP4');
   });
 
-  test('a failed download keeps its error on the row', () => {
-    const s = step(browsing(), { CaptureFailed: { filename: 'C0001.MP4', error: 'timed out' } }, A);
-    expect(s.card.downloads).toEqual({});
-    expect(s.card.failed).toEqual({ 259: 'timed out' });
-    // A new try clears it once progress arrives.
-    const retry = step(s, progress(2 << 20), A);
-    expect(retry.card.failed).toEqual({});
+  test('a failure with the same name as a downloading file leaves the row to the reply', () => {
+    const s = browsing();
+    const next = step(s, { CaptureFailed: { filename: 'C0001.MP4', error: 'timed out' } }, A);
+    expect(next.card).toBe(s.card);
+    expect(next.saveError).toEqual({ filename: 'C0001.MP4', error: 'timed out' });
   });
 
   test('switching the active camera clears the card and closes the panel', () => {
