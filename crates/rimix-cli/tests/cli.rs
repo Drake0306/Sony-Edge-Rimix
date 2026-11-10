@@ -296,15 +296,14 @@ async fn props_all_lists_more_rows_than_the_default() {
     env.finish().await;
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn wifi_status_prints_the_device() {
     let tmp = tempfile::tempdir().unwrap();
     let mut cmd = rimix(&tmp.path().join("guid"));
-    cmd.env_remove("RIMIX_WIFI").args(["wifi", "status"]);
+    cmd.env("RIMIX_WIFI", "fake").args(["wifi", "status"]);
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("device:"));
+        .stdout("device: fake0\nnetwork: none\naddress: none\n");
 }
 
 #[test]
