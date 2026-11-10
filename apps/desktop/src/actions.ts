@@ -37,7 +37,11 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
         });
         return true;
       } catch (e) {
-        store.set({ error: connectErrorMessage(message(e), ip.trim()) });
+        const error = connectErrorMessage(message(e), ip.trim());
+        // Connecting drops the previous camera first, so after a failed
+        // switch there may be no camera left to show.
+        const camera = await ipc.getState().catch(() => null);
+        store.set(camera ? { error, camera } : { error, camera: null, screen: 'connect', reconnecting: null });
         return false;
       }
     },

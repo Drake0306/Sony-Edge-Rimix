@@ -75,4 +75,27 @@
   --txt-stroke:rgba(0,0,0,.35);
   --rec:#FF453A;
   --lock:#30D158;
+  /* App tokens beyond the mockup's list; the values are the mockup's literals. */
+  --switch-knob:#FFFFFF;
+  --switch-knob-shadow:0 1px 2px rgba(0,0,0,.30);
+  --footage-grid:rgba(255,255,255,.13);
+  --footage-shadow:rgba(0,0,0,.50);
+  --focus-idle:rgba(255,255,255,.70);
+  --zebra-dark:rgba(0,0,0,.55);
+  --zebra-light:rgba(255,255,255,.85);
+  --lock-pill:rgba(48,209,88,.16);
+  --rec-glow:0 0 10px rgba(255,69,58,.50);
+  --rec-well:rgba(255,69,58,.22);
+  --shoot-shadow:inset 0 0 0 .5px rgba(255,255,255,.30),0 4px 14px rgba(0,0,0,.25);
+  --shoot-disc:#FFFFFF;
+  --thumb-bg:#3A3E44;
+  --thumb-pic-bg:#2A2D33;
+  --progress-track:rgba(255,255,255,.25);
+  --progress-fill:#FFFFFF;
+  --preview-bg:radial-gradient(60% 90% at 50% 70%,#2A3038,#171A1F 70%);
+  --preview-ring:rgba(255,255,255,.14);
+  --preview-ink:#FFFFFF;
+  --preview-ts:0 1px 2px rgba(0,0,0,.40);
+  --preview-tag:rgba(255,255,255,.14);
+  --error-ink:#FFB4AE;
 }

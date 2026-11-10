@@ -5,38 +5,18 @@ import type { Actions } from '../actions';
 import { el } from '../dom';
 import { liveViewFrame, liveViewMeta, type LiveViewMeta } from '../ipc';
 import { watch, type AppStore } from '../state';
+import { colours, corners, createFrameSwap, histogramPath, luminance, makeStripes } from './liveviewParts';
 
 const FRAME_MS = 33; // at most 30 fps
 const META_MS = 100;
 const HIST_MS = 250;
 const GRID = 64;
-const BINS = 32;
 const ZEBRA = 0.95 * 255;
 
 const LEVEL_SVG =
   '<svg viewBox="0 0 120 16" aria-hidden="true"><line class="l1" x1="0" y1="8" x2="120" y2="8" stroke-width="1"/><line class="l2" x1="60" y1="2" x2="60" y2="14" stroke-width="1.5"/><line class="l3" x1="30" y1="4" x2="30" y2="12" stroke-width="1"/><line class="l3" x1="90" y1="4" x2="90" y2="12" stroke-width="1"/><line class="bub" x1="40" y1="8" x2="80" y2="8" stroke-width="2.5" stroke-linecap="round"/></svg>';
 const HIST_SVG =
   '<svg viewBox="0 0 120 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 L120 40 Z"/></svg>';
-
-/** 32-bin luminance histogram of RGBA pixels, and the luminance of each pixel. */
-export function luminance(rgba: Uint8ClampedArray): { bins: number[]; lum: Float32Array } {
-  const bins = new Array<number>(BINS).fill(0);
-  const lum = new Float32Array(rgba.length / 4);
-  for (let i = 0; i < lum.length; i++) {
-    const y = 0.2126 * rgba[i * 4] + 0.7152 * rgba[i * 4 + 1] + 0.0722 * rgba[i * 4 + 2];
-    lum[i] = y;
-    bins[Math.min(BINS - 1, Math.floor((y / 256) * BINS))]++;
-  }
-  return { bins, lum };
-}
-
-/** An SVG area path for the histogram in a 120×40 box. */
-export function histogramPath(bins: number[]): string {
-  const max = Math.max(1, ...bins);
-  const step = 120 / (bins.length - 1);
-  const pts = bins.map((b, i) => `L${(i * step).toFixed(1)} ${(40 - (b / max) * 38).toFixed(1)}`);
-  return `M0 40 ${pts.join(' ')} L120 40 Z`;
-}
 
 export function mount(root: HTMLElement, store: AppStore, _actions: Actions): () => void {
   const scene = el('div', 'scene');
@@ -67,11 +47,11 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
   small.width = small.height = GRID;
   const sctx = small.getContext('2d', { willReadFrequently: true });
   const ctx = canvas.getContext('2d');
-  const stripes = makeStripes();
+  const palette = colours();
+  const stripes = makeStripes(palette);
 
   let meta: LiveViewMeta = { focus_frames: [], level_deg: null, fps: 0 };
   let lum: Float32Array | null = null;
-  let current: string | null = null;
   let raf = 0;
   let last = -Infinity;
   let busy = false;
@@ -116,11 +96,16 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
       const y = b.y + f.cy * b.h - h / 2;
       const isLocked = f.state === 2;
       if (isLocked && !locked) locked = { x, y, w };
-      corners(ctx, x, y, w, h, isLocked ? '#30D158' : 'rgba(255,255,255,.7)');
+      corners(ctx, x, y, w, h, isLocked ? palette.lock : palette.idle, palette.shadow);
     }
     label.hidden = !locked;
     if (locked) Object.assign(label.style, { left: `${locked.x + locked.w / 2}px`, top: `${locked.y - 26}px` });
   }
+
+  const swap = createFrameSwap(img, () => {
+    waiting.hidden = true;
+    draw();
+  });
 
   function loop(t: number): void {
     if (stopped) return;
@@ -131,15 +116,7 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
     liveViewFrame()
       .then((buf) => {
         if (stopped || !buf || buf.byteLength === 0) return;
-        const url = URL.createObjectURL(new Blob([buf], { type: 'image/jpeg' }));
-        const prev = current;
-        current = url;
-        img.onload = () => {
-          if (prev) URL.revokeObjectURL(prev);
-          waiting.hidden = true;
-          draw();
-        };
-        img.src = url;
+        swap.show(URL.createObjectURL(new Blob([buf], { type: 'image/jpeg' })));
       })
       .catch(() => {})
       .finally(() => (busy = false));
@@ -189,45 +166,8 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
     window.clearInterval(histTimer);
     window.removeEventListener('resize', draw);
     off();
-    if (current) URL.revokeObjectURL(current);
+    swap.dispose();
     [scene, thirds, canvas, label, level, hist].forEach((e) => e.remove());
   };
 }
 
-/** Corner brackets like the mockup's focus frame. */
-function corners(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, colour: string) {
-  const l = Math.min(20, w / 3, h / 3);
-  ctx.strokeStyle = colour;
-  ctx.lineWidth = 2;
-  ctx.shadowColor = 'rgba(0,0,0,.5)';
-  ctx.shadowBlur = 2;
-  ctx.beginPath();
-  for (const [cx, cy, dx, dy] of [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]]) {
-    ctx.moveTo(cx + dx * l, cy);
-    ctx.lineTo(cx, cy);
-    ctx.lineTo(cx, cy + dy * l);
-  }
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-}
-
-/** Diagonal black and white stripes for zebra. */
-function makeStripes(): CanvasPattern | null {
-  const tile = document.createElement('canvas');
-  tile.width = tile.height = 8;
-  const c = tile.getContext('2d');
-  if (!c) return null;
-  c.fillStyle = 'rgba(0,0,0,.55)';
-  c.fillRect(0, 0, 8, 8);
-  c.strokeStyle = 'rgba(255,255,255,.85)';
-  c.lineWidth = 2.5;
-  c.beginPath();
-  c.moveTo(-2, 10);
-  c.lineTo(10, -2);
-  c.moveTo(6, 10);
-  c.lineTo(10, 6);
-  c.moveTo(-2, 2);
-  c.lineTo(2, -2);
-  c.stroke();
-  return c.createPattern(tile, 'repeat');
-}

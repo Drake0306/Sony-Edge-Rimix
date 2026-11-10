@@ -35,6 +35,17 @@ function eventToast(event: CameraEvent): string | null {
   return null;
 }
 
+/** Space shoots, R records, F focuses: once per press, never while typing. */
+export function handleShortcut(e: KeyboardEvent, store: AppStore, actions: Actions): void {
+  if (e.repeat || store.get().screen !== 'main' || isTyping(e.target)) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === ' ') actions.shoot();
+  else if (e.key === 'r' || e.key === 'R') actions.toggleRecord();
+  else if (e.key === 'f' || e.key === 'F') actions.focus();
+  else return;
+  e.preventDefault();
+}
+
 export async function startApp(root: HTMLElement): Promise<void> {
   const store = createStore(initialState());
   const toasts = el('div', 'toasts');
@@ -56,14 +67,7 @@ export async function startApp(root: HTMLElement): Promise<void> {
     if (error && s.screen === 'main') toast(error);
   });
 
-  document.addEventListener('keydown', (e) => {
-    if (store.get().screen !== 'main' || isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === ' ') actions.shoot();
-    else if (e.key === 'r' || e.key === 'R') actions.toggleRecord();
-    else if (e.key === 'f' || e.key === 'F') actions.focus();
-    else return;
-    e.preventDefault();
-  });
+  document.addEventListener('keydown', (e) => handleShortcut(e, store, actions));
 
   await onCameraEvent((event) => {
     const msg = eventToast(event);

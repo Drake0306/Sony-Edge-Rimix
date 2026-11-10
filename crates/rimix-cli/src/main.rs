@@ -135,7 +135,13 @@ fn exit_code(err: &anyhow::Error) -> i32 {
         };
     }
     match err.downcast_ref::<Error>() {
-        Some(Error::Io(_) | Error::Timeout | Error::Disconnected | Error::Protocol(_)) => 3,
+        Some(
+            Error::Io(_)
+            | Error::Timeout
+            | Error::PairingTimeout
+            | Error::Disconnected
+            | Error::Protocol(_),
+        ) => 3,
         Some(Error::Response { .. } | Error::Unsupported(_)) => 4,
         None => 1,
     }
@@ -190,6 +196,18 @@ async fn main() -> ExitCode {
         Err(err) => {
             eprintln!("error: {err:#}");
             ExitCode::from(exit_code(&err) as u8)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn camera_link_errors_exit_3() {
+        for e in [Error::Timeout, Error::PairingTimeout, Error::Disconnected] {
+            assert_eq!(exit_code(&anyhow::Error::new(e)), 3);
         }
     }
 }

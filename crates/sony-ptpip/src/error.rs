@@ -9,6 +9,10 @@ pub enum Error {
     Response { code: u16, op: u16 },
     #[error("operation timed out")]
     Timeout,
+    /// The camera did not answer InitCommandRequest within the pairing wait,
+    /// usually because nobody pressed OK on its pairing prompt.
+    #[error("the camera did not confirm the pairing in time")]
+    PairingTimeout,
     #[error("camera disconnected")]
     Disconnected,
     #[error("unsupported: {0}")]

@@ -192,7 +192,10 @@ impl PtpIpConnection {
             },
         )
         .await?;
-        let ack = with_timeout(opts.pairing_wait, recv(&mut reader)).await?;
+        // Only this wait means "nobody pressed OK"; a connect timeout is not pairing.
+        let ack = tokio::time::timeout(opts.pairing_wait, recv(&mut reader))
+            .await
+            .map_err(|_| Error::PairingTimeout)??;
         let conn_number = match &ack {
             Packet::InitCommandAck { conn_number, .. } => *conn_number,
             Packet::InitFail { reason } => {

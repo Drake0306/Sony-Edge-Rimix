@@ -137,7 +137,7 @@ async fn pairing_delay_is_tolerated() {
 }
 
 #[tokio::test]
-async fn pairing_wait_expiry_is_timeout() {
+async fn pairing_wait_expiry_is_pairing_timeout() {
     let sim = spawn(SimConfig {
         require_pairing: true,
         pairing_delay: Duration::from_secs(5),
@@ -149,7 +149,11 @@ async fn pairing_wait_expiry_is_timeout() {
         ..opts()
     };
     let err = PtpIpConnection::connect(sim.addr, o).await.unwrap_err();
-    assert!(matches!(err, Error::Timeout), "got {err:?}");
+    assert!(matches!(err, Error::PairingTimeout), "got {err:?}");
+    assert_eq!(
+        err.to_string(),
+        "the camera did not confirm the pairing in time"
+    );
     shutdown(sim).await;
 }
 

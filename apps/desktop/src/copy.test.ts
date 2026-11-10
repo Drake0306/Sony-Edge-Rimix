@@ -22,8 +22,24 @@ describe('connectErrorMessage', () => {
 
   test('timeout during pairing asks to press OK', () => {
     expect(
-      connectErrorMessage('Cannot connect to 192.168.122.1:15740: operation timed out', '192.168.122.1'),
+      connectErrorMessage(
+        'Cannot connect to 192.168.122.1:15740: the camera did not confirm the pairing in time',
+        '192.168.122.1',
+      ),
     ).toBe('The camera asked you to allow this computer. Press OK on the camera, then try again.');
+  });
+
+  test('a connect timeout or an unreachable host is not about pairing', () => {
+    const reach =
+      "Could not reach the camera at 192.168.122.1. Check that PC Remote is on and you are on the camera's Wi-Fi.";
+    for (const err of [
+      'Cannot connect to 192.168.122.1:15740: operation timed out',
+      'Cannot connect to 192.168.122.1:15740: I/O error: No route to host (os error 65)',
+      'Cannot connect to 192.168.122.1:15740: I/O error: Host is down (os error 64)',
+      'Cannot connect to 192.168.122.1:15740: camera disconnected',
+    ]) {
+      expect(connectErrorMessage(err, '192.168.122.1'), err).toBe(reach);
+    }
   });
 
   test('anything else names the camera and keeps the detail', () => {
