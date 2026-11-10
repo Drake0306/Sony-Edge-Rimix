@@ -3,6 +3,8 @@ on:
   push:
     tags:
       - "v*"
+permissions:
+  contents: write
 jobs:
   release:
     runs-on: macos-latest
@@ -34,4 +36,5 @@ jobs:
           releaseName: Rimix ${{ github.ref_name }}
           releaseDraft: true
           releaseBody: |
-            Download the DMG below. If this build is not signed (it is not until Apple signing secrets are added to the repository), macOS will warn about it the first time: right-click Rimix and choose Open, or run `xattr -d com.apple.quarantine /Applications/Rimix.app`. See the "Install on a Mac" section of the README.
+            See the "Install on a Mac" section of the README for how to install Rimix.
+            This build is signed only if Apple signing secrets were set for the repository; otherwise it is unsigned and macOS will warn on first open.
