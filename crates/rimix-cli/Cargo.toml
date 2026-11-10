@@ -1,0 +1,24 @@
+[package]
+name = "rimix-cli"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rimix"
+path = "src/main.rs"
+
+[dependencies]
+sony-ptpip = { path = "../sony-ptpip" }
+clap = { version = "4", features = ["derive"] }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+directories = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+sony-ptpip-sim = { path = "../sony-ptpip-sim" }
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+tokio = { workspace = true }

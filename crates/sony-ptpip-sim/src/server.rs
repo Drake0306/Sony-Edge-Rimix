@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -61,12 +62,16 @@ struct Shared {
     live_view: Mutex<LiveView>,
 }
 
-/// Starts the simulator on 127.0.0.1 with an OS-chosen port.
+/// Starts the simulator on `config.bind_addr`, by default 127.0.0.1 with an
+/// OS-chosen port.
 ///
 /// Panics if the property fixture cannot be loaded.
 pub async fn spawn(config: SimConfig) -> SimHandle {
     let props = load_fixture(&config.fixture).expect("load simulator property fixture");
-    let listener = TcpListener::bind("127.0.0.1:0")
+    let bind_addr = config
+        .bind_addr
+        .unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], 0)));
+    let listener = TcpListener::bind(bind_addr)
         .await
         .expect("bind simulator listener");
     let addr = listener.local_addr().expect("listener address");

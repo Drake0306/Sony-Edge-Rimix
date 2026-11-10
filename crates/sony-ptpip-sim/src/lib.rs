@@ -51,6 +51,8 @@ pub struct SimConfig {
     /// Answer SSDP M-SEARCH requests on this 127.0.0.1 UDP port (0 picks
     /// one) and serve the UPnP descriptions over HTTP; `None` disables both.
     pub ssdp_port: Option<u16>,
+    /// Where to listen for PTP/IP; `None` picks a free port on 127.0.0.1.
+    pub bind_addr: Option<SocketAddr>,
 }
 
 impl Default for SimConfig {
@@ -67,6 +69,7 @@ impl Default for SimConfig {
             redeliver_after_drop: false,
             restart_numbering_after: None,
             ssdp_port: None,
+            bind_addr: None,
         }
     }
 }
