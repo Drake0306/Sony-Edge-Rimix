@@ -1,2 +1,5 @@
 .DS_Store
 .superpowers/
+target/
+node_modules/
+dist/
