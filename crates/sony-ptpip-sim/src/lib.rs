@@ -24,6 +24,8 @@ pub struct SimConfig {
     pub pairing_delay: Duration,
     /// Property fixture file (used from Task 5).
     pub fixture: PathBuf,
+    /// Hold back the response to this operation for this long (for timeout tests).
+    pub delay_op: Option<(u16, Duration)>,
 }
 
 impl Default for SimConfig {
@@ -33,6 +35,7 @@ impl Default for SimConfig {
             require_pairing: false,
             pairing_delay: Duration::ZERO,
             fixture: PathBuf::from("fixtures/zv-e10.json"),
+            delay_op: None,
         }
     }
 }

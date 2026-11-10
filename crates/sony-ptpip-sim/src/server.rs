@@ -319,6 +319,11 @@ async fn handle_packet(
         line.push_str(&format!(" data-out {}", data.len()));
     }
     shared.log.lock().unwrap().push(line);
+    if let Some((slow_op, delay)) = shared.config.delay_op {
+        if slow_op == op {
+            tokio::time::sleep(delay).await;
+        }
+    }
 
     let code = match op {
         OP_OPEN_SESSION | OP_CLOSE_SESSION => RC_OK,

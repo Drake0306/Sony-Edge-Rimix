@@ -37,6 +37,10 @@ pub struct ConnectOptions {
     /// Host name shown on the camera's pairing prompt.
     pub name: String,
     /// Limit for each TCP connect and each command round-trip.
+    ///
+    /// A command that hits this limit leaves the command stream part-way
+    /// through a frame, so the connection becomes unusable (every later
+    /// command returns [`Error::Disconnected`]) and must be reopened.
     pub timeout: Duration,
     /// How long to wait for InitCommandAck while the camera shows the pairing prompt.
     pub pairing_wait: Duration,
@@ -69,6 +73,10 @@ pub struct PtpIpConnection {
     reader: OwnedReadHalf,
     writer: OwnedWriteHalf,
     next_tid: u32,
+    /// Set while a transaction is in flight. If it is still set when the next
+    /// one starts, the previous transaction timed out or its future was
+    /// dropped, and the command stream may be mid-frame.
+    poisoned: bool,
     timeout: Duration,
     events: broadcast::Sender<PtpEvent>,
     disconnected: Arc<AtomicBool>,
@@ -217,6 +225,7 @@ impl PtpIpConnection {
             reader,
             writer,
             next_tid: 1,
+            poisoned: false,
             timeout: opts.timeout,
             events,
             disconnected,
@@ -227,29 +236,48 @@ impl PtpIpConnection {
     }
 
     fn begin(&mut self) -> Result<u32, Error> {
-        if self.disconnected.load(Ordering::SeqCst) {
+        if self.is_disconnected() {
             return Err(Error::Disconnected);
         }
+        self.poisoned = true;
         let tid = self.next_tid;
         self.next_tid = self.next_tid.wrapping_add(1).max(1);
         Ok(tid)
     }
 
+    /// Clears the in-flight marker when the transaction ran to its response,
+    /// leaving the stream at a frame boundary.
+    fn finish<T>(&mut self, result: Result<T, Error>) -> Result<T, Error> {
+        if matches!(result, Ok(_) | Err(Error::Response { .. })) {
+            self.poisoned = false;
+        }
+        result
+    }
+
     /// Runs a transaction with no data phase and returns the response parameters.
+    ///
+    /// A timeout, or dropping the returned future before it completes, makes
+    /// the connection unusable: later commands return [`Error::Disconnected`]
+    /// and the connection must be reopened.
     pub async fn command(&mut self, op: u16, params: &[u32]) -> Result<Vec<u32>, Error> {
         let tid = self.begin()?;
         let limit = self.timeout;
-        with_timeout(limit, async {
+        let result = with_timeout(limit, async {
             self.send_request(DATA_PHASE_NONE_OR_IN, op, tid, params)
                 .await?;
             let p = recv(&mut self.reader).await?;
             response(op, tid, p)
         })
-        .await
+        .await;
+        self.finish(result)
     }
 
     /// Runs a transaction with a data phase from the camera; returns the data
     /// and the response parameters.
+    ///
+    /// A timeout, or dropping the returned future before it completes, makes
+    /// the connection unusable: later commands return [`Error::Disconnected`]
+    /// and the connection must be reopened.
     pub async fn command_data_in(
         &mut self,
         op: u16,
@@ -257,7 +285,7 @@ impl PtpIpConnection {
     ) -> Result<(Vec<u8>, Vec<u32>), Error> {
         let tid = self.begin()?;
         let limit = self.timeout;
-        with_timeout(limit, async {
+        let result = with_timeout(limit, async {
             self.send_request(DATA_PHASE_NONE_OR_IN, op, tid, params)
                 .await?;
             let total_len = match recv(&mut self.reader).await? {
@@ -304,11 +332,16 @@ impl PtpIpConnection {
             let p = recv(&mut self.reader).await?;
             Ok((data, response(op, tid, p)?))
         })
-        .await
+        .await;
+        self.finish(result)
     }
 
     /// Runs a transaction with a data phase to the camera; returns the
     /// response parameters.
+    ///
+    /// A timeout, or dropping the returned future before it completes, makes
+    /// the connection unusable: later commands return [`Error::Disconnected`]
+    /// and the connection must be reopened.
     pub async fn command_data_out(
         &mut self,
         op: u16,
@@ -317,7 +350,7 @@ impl PtpIpConnection {
     ) -> Result<Vec<u32>, Error> {
         let tid = self.begin()?;
         let limit = self.timeout;
-        with_timeout(limit, async {
+        let result = with_timeout(limit, async {
             self.send_request(DATA_PHASE_OUT, op, tid, params).await?;
             send(
                 &mut self.writer,
@@ -338,7 +371,8 @@ impl PtpIpConnection {
             let p = recv(&mut self.reader).await?;
             response(op, tid, p)
         })
-        .await
+        .await;
+        self.finish(result)
     }
 
     async fn send_request(
@@ -365,10 +399,11 @@ impl PtpIpConnection {
         self.events.subscribe()
     }
 
-    /// True once the event socket has closed; every later command fails with
-    /// [`Error::Disconnected`].
+    /// True once the event socket has closed or a transaction was cut short
+    /// (timeout or dropped future); every later command fails with
+    /// [`Error::Disconnected`] and the connection must be reopened.
     pub fn is_disconnected(&self) -> bool {
-        self.disconnected.load(Ordering::SeqCst)
+        self.poisoned || self.disconnected.load(Ordering::SeqCst)
     }
 
     /// Closes the PTP session and drops both sockets.
@@ -382,7 +417,7 @@ impl std::fmt::Debug for PtpIpConnection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PtpIpConnection")
             .field("next_tid", &self.next_tid)
-            .field("disconnected", &self.disconnected.load(Ordering::SeqCst))
+            .field("disconnected", &self.is_disconnected())
             .finish_non_exhaustive()
     }
 }

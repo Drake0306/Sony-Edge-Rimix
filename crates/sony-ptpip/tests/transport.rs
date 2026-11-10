@@ -172,3 +172,36 @@ async fn drop_connection_yields_disconnected() {
     assert!(matches!(err, Error::Disconnected), "got {err:?}");
     shutdown(sim).await;
 }
+
+#[tokio::test]
+async fn timeout_poisons_the_connection() {
+    let sim = spawn(SimConfig {
+        delay_op: Some((OP_GET_DEVICE_INFO, Duration::from_millis(500))),
+        ..SimConfig::default()
+    })
+    .await;
+    let o = ConnectOptions {
+        timeout: Duration::from_millis(200),
+        ..opts()
+    };
+    let (mut conn, _) = PtpIpConnection::connect(sim.addr, o).await.unwrap();
+    let err = conn
+        .command_data_in(OP_GET_DEVICE_INFO, &[])
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Timeout), "got {err:?}");
+    assert!(conn.is_disconnected());
+    let err = conn.command(0x9999, &[]).await.unwrap_err();
+    assert!(matches!(err, Error::Disconnected), "got {err:?}");
+    shutdown(sim).await;
+}
+
+#[tokio::test]
+async fn response_error_does_not_poison() {
+    let (sim, mut conn, _) = start().await;
+    assert!(conn.command(0x9999, &[]).await.is_err());
+    assert!(!conn.is_disconnected());
+    conn.command_data_in(OP_GET_DEVICE_INFO, &[]).await.unwrap();
+    conn.close().await.unwrap();
+    shutdown(sim).await;
+}
