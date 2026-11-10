@@ -8,7 +8,9 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use sony_ptpip::capture::{Destination, DestinationMode};
 use sony_ptpip::ptp::PtpValue;
-use sony_ptpip::{load_or_create_guid, Camera, CameraConfig, CameraEvent, PropertySummary};
+use sony_ptpip::{
+    default_host_name, load_or_create_guid, Camera, CameraConfig, CameraEvent, PropertySummary,
+};
 use tokio::sync::broadcast::{error::RecvError, Receiver};
 use tokio::time::{timeout_at, Instant};
 
@@ -16,6 +18,9 @@ use crate::format::{hex_code, props_table, DOCK_PROPS};
 
 /// How long shoot and liveview wait for the camera.
 const WAIT: Duration = Duration::from_secs(20);
+/// After a file of a shot is saved, how long shoot waits for the camera to
+/// start sending another (RAW+JPEG gives two files per shot).
+const MORE_FILES_WAIT: Duration = Duration::from_secs(2);
 
 /// Failures that are the CLI's own rather than the camera's.
 #[derive(Debug)]
@@ -46,17 +51,6 @@ pub struct Target {
     pub guid_file: PathBuf,
 }
 
-fn host_name() -> String {
-    let host = std::env::var("HOSTNAME")
-        .or_else(|_| std::env::var("COMPUTERNAME"))
-        .unwrap_or_default();
-    if host.is_empty() {
-        "Rimix".into()
-    } else {
-        format!("Rimix on {host}")
-    }
-}
-
 async fn open(
     target: &Target,
     name: Option<String>,
@@ -74,7 +68,7 @@ async fn open(
     let camera = Camera::connect(CameraConfig {
         addr: target.addr,
         guid,
-        host_name: name.unwrap_or_else(host_name),
+        host_name: name.unwrap_or_else(default_host_name),
         destination,
         auto_receive,
         reconnect,
@@ -225,12 +219,20 @@ pub async fn shoot(target: &Target, out: &Path) -> Result<()> {
     let mut rx = camera.subscribe();
     let result = async {
         camera.shoot().await?;
-        let deadline = Instant::now() + WAIT;
+        // Every file of the shot is saved and printed: after each one, wait
+        // a little for the camera to start on the next.
+        let mut until = Instant::now() + WAIT;
+        let mut saved_any = false;
         loop {
-            match next_event(&mut rx, deadline).await {
+            match next_event(&mut rx, until).await {
+                Some(CameraEvent::CaptureStarted { .. }) => until = Instant::now() + WAIT,
                 Some(CameraEvent::CaptureSaved(saved)) => {
                     println!("Saved {}", saved.path.display());
-                    return Ok(());
+                    saved_any = true;
+                    until = Instant::now() + MORE_FILES_WAIT;
+                }
+                Some(CameraEvent::CaptureSkipped { .. }) => {
+                    until = Instant::now() + MORE_FILES_WAIT;
                 }
                 Some(CameraEvent::CaptureFailed { filename, error }) => {
                     return Err(anyhow::Error::new(CliError::Io(format!(
@@ -238,6 +240,7 @@ pub async fn shoot(target: &Target, out: &Path) -> Result<()> {
                     ))))
                 }
                 Some(_) => {}
+                None if saved_any => return Ok(()),
                 None => {
                     return Err(anyhow::Error::new(CliError::Io(
                         "no picture arrived within 20 seconds".into(),

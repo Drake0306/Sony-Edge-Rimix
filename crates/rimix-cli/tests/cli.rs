@@ -129,9 +129,38 @@ async fn shoot_saves_a_file() {
     cmd.args(["shoot", &env.addr(), "--out"]).arg(&out_dir);
     let out = run(cmd).await;
     assert!(out.status.success(), "{:?}", out);
-    assert!(stdout(&out).starts_with("Saved "), "{}", stdout(&out));
+    let text = stdout(&out);
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 1, "{text}");
+    assert!(lines[0].starts_with("Saved "), "{text}");
     let files: Vec<_> = std::fs::read_dir(&out_dir).unwrap().collect();
     assert_eq!(files.len(), 1);
+    env.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn shoot_saves_every_file_of_the_shot() {
+    // One release gives two files, as RAW+JPEG does.
+    let env = Env::new(SimConfig {
+        files_per_shot: 2,
+        ..SimConfig::default()
+    })
+    .await;
+    let out_dir = env.out();
+    let mut cmd = rimix(&env.guid());
+    cmd.args(["shoot", &env.addr(), "--out"]).arg(&out_dir);
+    let out = run(cmd).await;
+    assert!(out.status.success(), "{:?}", out);
+    let text = stdout(&out);
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 2, "{text}");
+    assert!(lines.iter().all(|l| l.starts_with("Saved ")), "{text}");
+    let mut files: Vec<String> = std::fs::read_dir(&out_dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    files.sort();
+    assert_eq!(files, ["DSC00001.JPG", "DSC00002.JPG"]);
     env.finish().await;
 }
 
