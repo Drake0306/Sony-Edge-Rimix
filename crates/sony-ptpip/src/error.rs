@@ -17,4 +17,11 @@ pub enum Error {
     Disconnected,
     #[error("unsupported: {0}")]
     Unsupported(&'static str),
+    /// A shot was downloaded but could not be written to its destination;
+    /// it was saved at `path` (in the recovery folder) instead.
+    #[error("{source}; the shot was kept in {}", .path.display())]
+    Recovered {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
 }

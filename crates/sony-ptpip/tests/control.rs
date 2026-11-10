@@ -238,3 +238,58 @@ async fn range_property_does_not_fall_back_to_steps() {
     assert_eq!(count_ops(&sim, OP_SDIO_CONTROL_DEVICE), 0);
     stop(sim, conn).await;
 }
+
+/// The 0x9207 log lines after the refused one, as `CODE=value`.
+fn controls_after_refusal(sim: &SimHandle) -> Vec<String> {
+    let log = sim.log.lock().unwrap();
+    let controls: Vec<&String> = log.iter().filter(|l| l.starts_with("op 0x9207 ")).collect();
+    let refused = controls
+        .iter()
+        .position(|l| l.ends_with(" refused"))
+        .expect("a refused control");
+    controls[refused + 1..]
+        .iter()
+        .map(|l| l.rsplit(' ').next().unwrap().to_string())
+        .collect()
+}
+
+#[tokio::test]
+async fn shutter_is_released_when_the_full_press_fails() {
+    // Control 1 is the half press, control 2 the full press.
+    let (sim, mut conn) = start_with(SimConfig {
+        fail_nth_control: Some(2),
+        ..SimConfig::default()
+    })
+    .await;
+    let err = shoot(&mut conn, true).await.unwrap_err();
+    assert!(
+        matches!(err, Error::Response { code: 0x2019, .. }),
+        "{err:?}"
+    );
+    assert_eq!(controls_after_refusal(&sim), ["D2C2=1", "D2C1=1"]);
+    stop(sim, conn).await;
+}
+
+#[tokio::test]
+async fn half_press_is_released_when_focus_fails() {
+    let (sim, mut conn) = start_with(SimConfig {
+        fail_nth_control: Some(1),
+        ..SimConfig::default()
+    })
+    .await;
+    assert!(focus(&mut conn).await.is_err());
+    assert_eq!(controls_after_refusal(&sim), ["D2C1=1"]);
+    stop(sim, conn).await;
+}
+
+#[tokio::test]
+async fn record_button_is_released_when_the_press_fails() {
+    let (sim, mut conn) = start_with(SimConfig {
+        fail_nth_control: Some(1),
+        ..SimConfig::default()
+    })
+    .await;
+    assert!(toggle_record(&mut conn).await.is_err());
+    assert_eq!(controls_after_refusal(&sim), ["D2C8=1"]);
+    stop(sim, conn).await;
+}

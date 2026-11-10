@@ -16,9 +16,9 @@ use crate::ptp::parse_object_info;
 use crate::sony::property::read_property;
 use crate::PtpIpConnection;
 
-/// Shortest time limit for one GetObject; a large RAW takes far longer than
-/// the default command timeout.
-const MIN_TRANSFER_TIMEOUT: Duration = Duration::from_secs(60);
+/// Longest silence from the camera while a shot downloads; the download as
+/// a whole has no limit, since a large RAW on a slow link takes long.
+pub const TRANSFER_IDLE: Duration = Duration::from_secs(10);
 /// Highest `-N` suffix tried when a file name is already taken.
 const MAX_SUFFIX: u32 = 999;
 /// Bit 15 of 0xD215: shots are waiting; the low bits count them.
@@ -40,6 +40,20 @@ pub enum DestinationMode {
 pub struct Destination {
     pub base: PathBuf,
     pub mode: DestinationMode,
+    /// Where a downloaded shot goes when it cannot be written to the target
+    /// folder; `None` means [`default_recovery_dir`].
+    #[serde(default)]
+    pub recovery_dir: Option<PathBuf>,
+}
+
+/// `<config folder>/Rimix/Recovered` (on macOS
+/// `~/Library/Application Support/Rimix/Recovered`), or a `Rimix/Recovered`
+/// folder in the temp folder where there is no config folder.
+pub fn default_recovery_dir() -> PathBuf {
+    directories::ProjectDirs::from("", "", "Rimix")
+        .map(|d| d.config_dir().to_path_buf())
+        .unwrap_or_else(|| std::env::temp_dir().join("Rimix"))
+        .join("Recovered")
 }
 
 impl Destination {
@@ -49,6 +63,13 @@ impl Destination {
             DestinationMode::CustomFolder | DestinationMode::LightroomWatched => self.base.clone(),
             DestinationMode::FolderPerDate => self.base.join(now.format("%Y-%m-%d").to_string()),
         }
+    }
+
+    /// The folder for shots that cannot be saved in the target folder.
+    pub fn recovery_dir(&self) -> PathBuf {
+        self.recovery_dir
+            .clone()
+            .unwrap_or_else(default_recovery_dir)
     }
 
     /// Creates the target folder if needed and checks a file can be written
@@ -70,6 +91,9 @@ pub struct Received {
     pub bytes: u64,
     /// The saved file's name, including any `-N` suffix.
     pub filename: String,
+    /// The camera's name for the file, before any `-N` suffix; progress
+    /// events name the file this way.
+    pub camera_filename: String,
 }
 
 /// How many shots the camera holds ready to fetch (property 0xD215).
@@ -97,7 +121,18 @@ pub async fn captured_ready(conn: &mut PtpIpConnection) -> Result<u16, Error> {
 /// The shot is written to `.rimix-<filename>.part` and renamed once complete,
 /// so watchers such as Lightroom never see a partial file. A name already in
 /// use gets a `-1`, `-2`, ... suffix. On any error the partial file is removed.
-/// `on_progress(received, total)` is called before and after the transfer.
+///
+/// Once GetObject has succeeded the camera counts the shot as delivered, so
+/// if it then cannot be written to the target folder (disk full, drive
+/// unplugged, no permission, every name taken) it is written to
+/// [`Destination::recovery_dir`] instead and [`Error::Recovered`] names
+/// where it went.
+///
+/// `on_progress(received, total)` is called before the transfer, after
+/// every packet of it, and once the file is saved. The transfer has no
+/// overall time limit; it fails with [`Error::Timeout`] only when the camera
+/// sends nothing for [`TRANSFER_IDLE`] (or the connection's timeout, if
+/// longer).
 pub async fn receive_one(
     conn: &mut PtpIpConnection,
     dest: &Destination,
@@ -108,33 +143,78 @@ pub async fn receive_one(
         .command_data_in(OP_GET_OBJECT_INFO, &[HANDLE_CAPTURED_STILL])
         .await?;
     let info = parse_object_info(&info)?;
-    let filename = check_filename(&info.filename)?;
-    on_progress(0, u64::from(info.compressed_size));
+    let camera_filename = check_filename(&info.filename)?;
+    let total = u64::from(info.compressed_size);
+    on_progress(0, total);
 
-    let part = dir.join(format!(".rimix-{filename}.part"));
-    let limit = conn.timeout().max(MIN_TRANSFER_TIMEOUT);
-    let result = async {
-        let (data, _) = conn
-            .command_data_in_with_timeout(OP_GET_OBJECT, &[HANDLE_CAPTURED_STILL], limit)
-            .await?;
-        std::fs::write(&part, &data)?;
-        let (path, filename) = free_name(&dir, filename)?;
-        std::fs::rename(&part, &path)?;
-        Ok(Received {
-            path,
-            bytes: data.len() as u64,
-            filename,
-        })
+    let idle = conn.timeout().max(TRANSFER_IDLE);
+    let (data, _) = conn
+        .command_data_in_streaming(
+            OP_GET_OBJECT,
+            &[HANDLE_CAPTURED_STILL],
+            idle,
+            &mut |received| on_progress(received, total),
+        )
+        .await?;
+    let bytes = data.len() as u64;
+    match save(&dir, camera_filename, &data) {
+        Ok((path, filename)) => {
+            on_progress(bytes, bytes);
+            Ok(Received {
+                path,
+                bytes,
+                filename,
+                camera_filename: camera_filename.to_string(),
+            })
+        }
+        Err(e) => Err(recover(&dest.recovery_dir(), camera_filename, &data, e)),
     }
-    .await;
-    match result {
-        Ok(received) => {
-            on_progress(received.bytes, received.bytes);
-            Ok(received)
+}
+
+/// Writes `data` to `dir/.rimix-<name>.part`, then renames it to a free
+/// name; returns the path and name. The partial file is removed on error.
+fn save(dir: &Path, name: &str, data: &[u8]) -> std::io::Result<(PathBuf, String)> {
+    let part = dir.join(format!(".rimix-{name}.part"));
+    let result = std::fs::write(&part, data).and_then(|()| {
+        let (path, filename) = free_name(dir, name)?;
+        std::fs::rename(&part, &path)?;
+        Ok((path, filename))
+    });
+    if result.is_err() {
+        let _ = std::fs::remove_file(&part);
+    }
+    result
+}
+
+/// Keeps a shot that could not be saved (`cause`) in `recovery`. Returns
+/// [`Error::Recovered`], or, if that fails too, an I/O error naming both
+/// failures.
+fn recover(recovery: &Path, name: &str, data: &[u8], cause: std::io::Error) -> Error {
+    let kept = std::fs::create_dir_all(recovery).and_then(|()| {
+        let (path, _) = free_name(recovery, name)?;
+        if let Err(e) = std::fs::write(&path, data) {
+            let _ = std::fs::remove_file(&path);
+            return Err(e);
+        }
+        Ok(path)
+    });
+    match kept {
+        Ok(path) => {
+            tracing::warn!(error = %cause, path = %path.display(), "shot kept in the recovery folder");
+            Error::Recovered {
+                path,
+                source: cause,
+            }
         }
         Err(e) => {
-            let _ = std::fs::remove_file(&part);
-            Err(e)
+            tracing::error!(error = %cause, recovery_error = %e, "a received shot could not be kept");
+            Error::Io(std::io::Error::new(
+                cause.kind(),
+                format!(
+                    "{cause}; keeping it in {} failed too: {e}",
+                    recovery.display()
+                ),
+            ))
         }
     }
 }
@@ -153,7 +233,7 @@ fn check_filename(name: &str) -> Result<&str, Error> {
 }
 
 /// `dir/name`, or `dir/<stem>-N.<ext>` with the first free N up to 999.
-fn free_name(dir: &Path, name: &str) -> Result<(PathBuf, String), Error> {
+fn free_name(dir: &Path, name: &str) -> std::io::Result<(PathBuf, String)> {
     let path = dir.join(name);
     if !path.exists() {
         return Ok((path, name.to_string()));
@@ -172,10 +252,10 @@ fn free_name(dir: &Path, name: &str) -> Result<(PathBuf, String), Error> {
             return Ok((path, candidate));
         }
     }
-    Err(Error::Io(std::io::Error::new(
+    Err(std::io::Error::new(
         ErrorKind::AlreadyExists,
         format!("every name from {name} to suffix -{MAX_SUFFIX} is taken"),
-    )))
+    ))
 }
 
 #[cfg(test)]
@@ -203,10 +283,7 @@ mod tests {
             std::fs::write(tmp.path().join(format!("A-{n}.JPG")), b"").unwrap();
         }
         let err = free_name(tmp.path(), "A.JPG").unwrap_err();
-        assert!(
-            matches!(&err, Error::Io(e) if e.kind() == ErrorKind::AlreadyExists),
-            "{err:?}"
-        );
+        assert_eq!(err.kind(), ErrorKind::AlreadyExists, "{err:?}");
     }
 
     #[test]

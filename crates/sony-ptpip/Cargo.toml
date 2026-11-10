@@ -13,6 +13,8 @@ chrono = { workspace = true }
 url = { workspace = true }
 quick-xml = { workspace = true }
 uuid = { workspace = true }
+directories = { workspace = true }
+hostname = "0.4"
 
 [dev-dependencies]
 sony-ptpip-sim = { path = "../sony-ptpip-sim" }

@@ -153,6 +153,8 @@ fn response(op: u16, tid: u32, p: Packet) -> Result<Vec<u32>, Error> {
     }
 }
 
+/// Reads the event socket until it closes: forwards events to `tx` and
+/// answers ProbeRequest with ProbeResponse.
 async fn read_events(
     mut r: TcpStream,
     tx: broadcast::Sender<PtpEvent>,
@@ -163,6 +165,15 @@ async fn read_events(
             Ok(Packet::Event { code, params, .. }) => {
                 // No receivers is fine: nobody is listening right now.
                 let _ = tx.send(PtpEvent { code, params });
+            }
+            // The camera checks that the host is still there; an
+            // unanswered probe may make it drop the link.
+            Ok(Packet::ProbeRequest) => {
+                if let Err(e) = send(&mut r, &Packet::ProbeResponse).await {
+                    tracing::debug!(error = %e, "answering a probe failed");
+                    disconnected.store(true, Ordering::SeqCst);
+                    return;
+                }
             }
             Ok(other) => tracing::debug!(?other, "ignoring packet on event socket"),
             Err(e) => {
@@ -286,68 +297,118 @@ impl PtpIpConnection {
         op: u16,
         params: &[u32],
     ) -> Result<(Vec<u8>, Vec<u32>), Error> {
-        self.command_data_in_with_timeout(op, params, self.timeout)
-            .await
+        let tid = self.begin()?;
+        let limit = self.timeout;
+        let result = with_timeout(
+            limit,
+            self.data_in_phase(op, params, tid, None, &mut |_| {}),
+        )
+        .await;
+        self.finish(result)
     }
 
-    /// Like [`command_data_in`](Self::command_data_in), but with `limit` in
-    /// place of the connection's timeout, for large objects such as stills.
-    pub async fn command_data_in_with_timeout(
+    /// Like [`command_data_in`](Self::command_data_in), but for large objects
+    /// such as stills: there is no limit on the whole transaction, only on
+    /// each wait for the next packet. `idle` without a packet from the
+    /// camera ends it with [`Error::Timeout`] (and makes the connection
+    /// unusable, as any timeout does).
+    pub async fn command_data_in_idle(
         &mut self,
         op: u16,
         params: &[u32],
-        limit: Duration,
+        idle: Duration,
+    ) -> Result<(Vec<u8>, Vec<u32>), Error> {
+        self.command_data_in_streaming(op, params, idle, &mut |_| {})
+            .await
+    }
+
+    /// Like [`command_data_in_idle`](Self::command_data_in_idle), and calls
+    /// `on_data(received)` with the bytes received so far after every Data
+    /// and EndData packet.
+    pub async fn command_data_in_streaming(
+        &mut self,
+        op: u16,
+        params: &[u32],
+        idle: Duration,
+        on_data: &mut (dyn FnMut(u64) + Send),
     ) -> Result<(Vec<u8>, Vec<u32>), Error> {
         let tid = self.begin()?;
-        let result = with_timeout(limit, async {
-            self.send_request(DATA_PHASE_NONE_OR_IN, op, tid, params)
-                .await?;
-            let total_len = match recv(&mut self.reader).await? {
-                Packet::StartData {
-                    tid: rtid,
-                    total_len,
-                } => {
+        let result = self
+            .data_in_phase(op, params, tid, Some(idle), on_data)
+            .await;
+        self.finish(result)
+    }
+
+    /// Sends the request and reads the data phase and the response. With
+    /// `idle`, each packet wait is limited to it; without, nothing is (the
+    /// caller limits the whole transaction).
+    async fn data_in_phase(
+        &mut self,
+        op: u16,
+        params: &[u32],
+        tid: u32,
+        idle: Option<Duration>,
+        on_data: &mut (dyn FnMut(u64) + Send),
+    ) -> Result<(Vec<u8>, Vec<u32>), Error> {
+        async fn limited<T>(
+            idle: Option<Duration>,
+            fut: impl Future<Output = Result<T, Error>>,
+        ) -> Result<T, Error> {
+            match idle {
+                Some(limit) => with_timeout(limit, fut).await,
+                None => fut.await,
+            }
+        }
+        limited(
+            idle,
+            self.send_request(DATA_PHASE_NONE_OR_IN, op, tid, params),
+        )
+        .await?;
+        let total_len = match limited(idle, recv(&mut self.reader)).await? {
+            Packet::StartData {
+                tid: rtid,
+                total_len,
+            } => {
+                check_tid(rtid, tid)?;
+                total_len
+            }
+            // The camera may answer with no data phase at all (usually an error).
+            p @ Packet::CmdResponse { .. } => return Ok((Vec::new(), response(op, tid, p)?)),
+            other => {
+                return Err(Error::Protocol(format!(
+                    "expected StartData, got {other:?}"
+                )))
+            }
+        };
+        let mut data = Vec::new();
+        loop {
+            match limited(idle, recv(&mut self.reader)).await? {
+                Packet::Data { tid: rtid, payload } => {
                     check_tid(rtid, tid)?;
-                    total_len
+                    data.extend_from_slice(&payload);
+                    on_data(data.len() as u64);
                 }
-                // The camera may answer with no data phase at all (usually an error).
-                p @ Packet::CmdResponse { .. } => return Ok((Vec::new(), response(op, tid, p)?)),
+                Packet::EndData { tid: rtid, payload } => {
+                    check_tid(rtid, tid)?;
+                    data.extend_from_slice(&payload);
+                    on_data(data.len() as u64);
+                    break;
+                }
                 other => {
                     return Err(Error::Protocol(format!(
-                        "expected StartData, got {other:?}"
+                        "expected Data or EndData, got {other:?}"
                     )))
                 }
-            };
-            let mut data = Vec::new();
-            loop {
-                match recv(&mut self.reader).await? {
-                    Packet::Data { tid: rtid, payload } => {
-                        check_tid(rtid, tid)?;
-                        data.extend_from_slice(&payload);
-                    }
-                    Packet::EndData { tid: rtid, payload } => {
-                        check_tid(rtid, tid)?;
-                        data.extend_from_slice(&payload);
-                        break;
-                    }
-                    other => {
-                        return Err(Error::Protocol(format!(
-                            "expected Data or EndData, got {other:?}"
-                        )))
-                    }
-                }
             }
-            if total_len != UNKNOWN_LEN && data.len() as u64 != total_len {
-                return Err(Error::Protocol(format!(
-                    "data phase carried {} bytes, announced {total_len}",
-                    data.len()
-                )));
-            }
-            let p = recv(&mut self.reader).await?;
-            Ok((data, response(op, tid, p)?))
-        })
-        .await;
-        self.finish(result)
+        }
+        if total_len != UNKNOWN_LEN && data.len() as u64 != total_len {
+            return Err(Error::Protocol(format!(
+                "data phase carried {} bytes, announced {total_len}",
+                data.len()
+            )));
+        }
+        let p = limited(idle, recv(&mut self.reader)).await?;
+        Ok((data, response(op, tid, p)?))
     }
 
     /// Runs a transaction with a data phase to the camera; returns the

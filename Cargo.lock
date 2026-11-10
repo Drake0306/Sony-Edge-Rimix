@@ -3178,7 +3178,6 @@ name = "rimix-desktop"
 version = "0.1.0"
 dependencies = [
  "directories",
- "hostname",
  "serde",
  "serde_json",
  "sony-ptpip",
@@ -3603,6 +3602,8 @@ name = "sony-ptpip"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "directories",
+ "hostname",
  "image",
  "quick-xml 0.37.5",
  "serde",

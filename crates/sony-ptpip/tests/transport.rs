@@ -209,3 +209,25 @@ async fn response_error_does_not_poison() {
     conn.close().await.unwrap();
     shutdown(sim).await;
 }
+
+#[tokio::test]
+async fn probe_request_gets_a_probe_response() {
+    let (sim, conn, _) = start().await;
+    sim.events.send(SimCommand::Probe).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !sim
+            .log
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|l| l == "event ProbeResponse")
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("a ProbeResponse on the event socket within 2 s");
+    assert!(!conn.is_disconnected());
+    conn.close().await.unwrap();
+    shutdown(sim).await;
+}

@@ -10,7 +10,7 @@ use tokio::task::JoinSet;
 use tokio::time::{interval, sleep, MissedTickBehavior};
 
 use super::{connect_once, lock, CameraEvent, Inner, RecentShot};
-use crate::capture::{captured_ready, receive_one};
+use crate::capture::{captured_ready, receive_one, Destination};
 use crate::error::Error;
 use crate::liveview::next_frame;
 use crate::ptp::codes::{EV_SONY_DEVICE_PROP_CHANGED, HANDLE_CAPTURED_STILL, OP_GET_OBJECT_INFO};
@@ -46,20 +46,16 @@ fn backoff(attempt: u32) -> Duration {
 
 /// Runs the loops while connected and reconnects when the link drops, until
 /// [`super::Camera::disconnect`] or drop aborts it.
-pub(super) async fn supervise(
-    inner: Arc<Inner>,
-    mut events: broadcast::Receiver<PtpEvent>,
-    mut live_view: bool,
-) {
+pub(super) async fn supervise(inner: Arc<Inner>, mut events: broadcast::Receiver<PtpEvent>) {
     loop {
-        let reason = run_session(&inner, events, live_view).await;
+        let reason = run_session(&inner, events).await;
         tracing::info!(%reason, "camera connection lost");
         inner.lose_connection(reason).await;
         if !inner.reconnect {
             return;
         }
         let mut attempt = 0;
-        (events, live_view) = loop {
+        events = loop {
             attempt += 1;
             sleep(backoff(attempt)).await;
             if inner.stopped() {
@@ -81,16 +77,10 @@ pub(super) async fn supervise(
 
 /// Runs the loops until the first one finds the connection gone, then stops
 /// the rest and returns the reason.
-async fn run_session(
-    inner: &Arc<Inner>,
-    events: broadcast::Receiver<PtpEvent>,
-    live_view: bool,
-) -> String {
+async fn run_session(inner: &Arc<Inner>, events: broadcast::Receiver<PtpEvent>) -> String {
     let mut loops = JoinSet::new();
     loops.spawn(event_loop(inner.clone(), events));
-    if live_view {
-        loops.spawn(live_view_loop(inner.clone()));
-    }
+    loops.spawn(live_view_loop(inner.clone()));
     if inner.auto_receive {
         loops.spawn(capture_loop(inner.clone()));
     }
@@ -243,10 +233,15 @@ async fn receive_next(inner: &Inner, conn: &mut PtpIpConnection) -> Result<(), E
     let info = parse_object_info(&info)?;
     let filename = info.filename;
     let size = u64::from(info.compressed_size);
+    let dest = lock(&inner.destination).clone();
+    // Nothing is fetched while the folder cannot be written: the shot stays
+    // on the camera and is tried again after a pause.
+    if let Err(e) = dest.ensure_writable(chrono::Local::now().date_naive()) {
+        return Err(report_failure(inner, &dest, filename, e));
+    }
     inner.emit(CameraEvent::CaptureStarted {
         filename: filename.clone(),
     });
-    let dest = lock(&inner.destination).clone();
     let mut on_progress = |received, total| {
         inner.emit(CameraEvent::CaptureProgress {
             filename: filename.clone(),
@@ -266,6 +261,7 @@ async fn receive_next(inner: &Inner, conn: &mut PtpIpConnection) -> Result<(), E
                 if let Err(e) = std::fs::remove_file(&saved.path) {
                     tracing::warn!(path = %saved.path.display(), error = %e, "could not remove a repeated shot");
                 }
+                lock(&inner.last_failure).take();
                 inner.emit(CameraEvent::CaptureSkipped { filename });
                 return Ok(());
             }
@@ -280,23 +276,44 @@ async fn receive_next(inner: &Inner, conn: &mut PtpIpConnection) -> Result<(), E
                     path: saved.path.clone(),
                 });
             }
+            lock(&inner.last_failure).take();
             inner.mark_shot();
             inner.emit(CameraEvent::CaptureSaved(saved));
             inner.emit_state();
             Ok(())
         }
-        Err(e) => {
-            let error = match &e {
-                Error::Io(_) => {
-                    let dir = dest.target_dir(chrono::Local::now().date_naive());
-                    format!("{e} (saving to {})", dir.display())
-                }
-                _ => e.to_string(),
-            };
-            tracing::warn!(file = %filename, %error, "receiving a shot failed");
-            inner.emit(CameraEvent::CaptureFailed { filename, error });
-            Err(e)
-        }
+        Err(e) => Err(report_failure(inner, &dest, filename, e)),
+    }
+}
+
+/// Emits [`CameraEvent::CaptureFailed`] for `e`, unless the last failure
+/// had the same file name and text (a folder that stays unwritable fails
+/// the same way on every retry); returns `e`.
+fn report_failure(inner: &Inner, dest: &Destination, filename: String, e: Error) -> Error {
+    let error = failure_text(dest, &e);
+    let failure = (filename, error);
+    let repeat = lock(&inner.last_failure).replace(failure.clone()).as_ref() == Some(&failure);
+    if repeat {
+        tracing::debug!(file = %failure.0, error = %failure.1, "receiving a shot failed again");
+    } else {
+        tracing::warn!(file = %failure.0, error = %failure.1, "receiving a shot failed");
+        let (filename, error) = failure;
+        inner.emit(CameraEvent::CaptureFailed { filename, error });
+    }
+    e
+}
+
+/// The text of a failed delivery, naming the folder when saving failed.
+fn failure_text(dest: &Destination, e: &Error) -> String {
+    let dir = || dest.target_dir(chrono::Local::now().date_naive());
+    match e {
+        Error::Io(io) => format!("Cannot save to {}: {io}", dir().display()),
+        Error::Recovered { path, source } => format!(
+            "Cannot save to {}: {source}. The shot was kept in {}",
+            dir().display(),
+            path.display()
+        ),
+        other => other.to_string(),
     }
 }
 

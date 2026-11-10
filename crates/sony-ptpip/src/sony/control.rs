@@ -31,33 +31,91 @@ pub async fn control(conn: &mut PtpIpConnection, code: u16, value: &PtpValue) ->
 
 /// Takes one picture. With `with_af` the shutter is half pressed first so the
 /// camera can focus.
+///
+/// If any step fails after a press was sent, every button pressed so far is
+/// released (best effort, errors ignored) before the first error is returned,
+/// so the camera is not left with its shutter held down.
 pub async fn shoot(conn: &mut PtpIpConnection, with_af: bool) -> Result<(), Error> {
+    let mut held = Vec::new();
+    let result = shoot_steps(conn, with_af, &mut held).await;
+    release_on_error(conn, &held, result).await
+}
+
+async fn shoot_steps(
+    conn: &mut PtpIpConnection,
+    with_af: bool,
+    held: &mut Vec<u16>,
+) -> Result<(), Error> {
     if with_af {
-        control(conn, CTRL_SHUTTER_HALF, &PRESS).await?;
+        press(conn, CTRL_SHUTTER_HALF, held).await?;
         sleep(Duration::from_millis(500)).await;
     }
-    control(conn, CTRL_SHUTTER_FULL, &PRESS).await?;
+    press(conn, CTRL_SHUTTER_FULL, held).await?;
     sleep(Duration::from_millis(35)).await;
-    control(conn, CTRL_SHUTTER_FULL, &RELEASE).await?;
+    release(conn, CTRL_SHUTTER_FULL, held).await?;
     if with_af {
         sleep(Duration::from_millis(1000)).await;
-        control(conn, CTRL_SHUTTER_HALF, &RELEASE).await?;
+        release(conn, CTRL_SHUTTER_HALF, held).await?;
     }
     Ok(())
 }
 
-/// Half presses the shutter long enough to focus, then lets go.
+/// Half presses the shutter long enough to focus, then lets go. The half
+/// press is released even if a step fails.
 pub async fn focus(conn: &mut PtpIpConnection) -> Result<(), Error> {
-    control(conn, CTRL_SHUTTER_HALF, &PRESS).await?;
-    sleep(Duration::from_millis(700)).await;
-    control(conn, CTRL_SHUTTER_HALF, &RELEASE).await
+    let mut held = Vec::new();
+    let result = async {
+        press(conn, CTRL_SHUTTER_HALF, &mut held).await?;
+        sleep(Duration::from_millis(700)).await;
+        release(conn, CTRL_SHUTTER_HALF, &mut held).await
+    }
+    .await;
+    release_on_error(conn, &held, result).await
 }
 
-/// Starts movie recording if stopped, or stops it if recording.
+/// Starts movie recording if stopped, or stops it if recording. The button
+/// is released even if a step fails.
 pub async fn toggle_record(conn: &mut PtpIpConnection) -> Result<(), Error> {
-    control(conn, CTRL_MOVIE_REC, &PRESS).await?;
-    sleep(Duration::from_millis(35)).await;
-    control(conn, CTRL_MOVIE_REC, &RELEASE).await
+    let mut held = Vec::new();
+    let result = async {
+        press(conn, CTRL_MOVIE_REC, &mut held).await?;
+        sleep(Duration::from_millis(35)).await;
+        release(conn, CTRL_MOVIE_REC, &mut held).await
+    }
+    .await;
+    release_on_error(conn, &held, result).await
+}
+
+/// Presses button `code`. It counts as held from before the request goes
+/// out, since a failed request may still have reached the camera.
+async fn press(conn: &mut PtpIpConnection, code: u16, held: &mut Vec<u16>) -> Result<(), Error> {
+    held.push(code);
+    control(conn, code, &PRESS).await
+}
+
+/// Releases button `code` and stops counting it as held once the camera
+/// accepted the release.
+async fn release(conn: &mut PtpIpConnection, code: u16, held: &mut Vec<u16>) -> Result<(), Error> {
+    control(conn, code, &RELEASE).await?;
+    held.retain(|&c| c != code);
+    Ok(())
+}
+
+/// On error, releases the buttons in `held`, last pressed first, ignoring
+/// their errors, then returns the original error.
+async fn release_on_error(
+    conn: &mut PtpIpConnection,
+    held: &[u16],
+    result: Result<(), Error>,
+) -> Result<(), Error> {
+    if result.is_err() {
+        for &code in held.iter().rev() {
+            if let Err(e) = control(conn, code, &RELEASE).await {
+                tracing::debug!(code, error = %e, "releasing a button after a failure failed");
+            }
+        }
+    }
+    result
 }
 
 /// Sets a property to `target`, which must be one the property lists.

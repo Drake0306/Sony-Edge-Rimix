@@ -4,7 +4,9 @@ use std::time::Duration;
 use chrono::NaiveDate;
 use sony_ptpip::capture::{captured_ready, receive_one, Destination, DestinationMode};
 use sony_ptpip::error::Error;
-use sony_ptpip::ptp::codes::{EV_SONY_DEVICE_PROP_CHANGED, PROP_CAPTURED_READY};
+use sony_ptpip::ptp::codes::{
+    EV_SONY_DEVICE_PROP_CHANGED, HANDLE_CAPTURED_STILL, OP_GET_OBJECT, PROP_CAPTURED_READY,
+};
 use sony_ptpip::sony::sdio_connect;
 use sony_ptpip::{shoot, ConnectOptions, PtpIpConnection};
 use sony_ptpip_sim::{spawn, SimCommand, SimConfig, SimHandle};
@@ -34,6 +36,7 @@ fn custom(base: &Path) -> Destination {
     Destination {
         base: base.to_path_buf(),
         mode: DestinationMode::CustomFolder,
+        recovery_dir: None,
     }
 }
 
@@ -53,6 +56,7 @@ fn folder_per_date_creates_dated_dir() {
     let dest = Destination {
         base: tmp.path().to_path_buf(),
         mode: DestinationMode::FolderPerDate,
+        recovery_dir: None,
     };
     let want = tmp.path().join("2026-11-10");
     assert_eq!(dest.target_dir(date()), want);
@@ -71,6 +75,7 @@ fn custom_folder_uses_base() {
         let dest = Destination {
             base: base.clone(),
             mode,
+            recovery_dir: None,
         };
         assert_eq!(dest.target_dir(date()), base);
         assert_eq!(dest.ensure_writable(date()).unwrap(), base);
@@ -90,6 +95,7 @@ fn unwritable_destination_is_io_error() {
         let dest = Destination {
             base: file.clone(),
             mode,
+            recovery_dir: None,
         };
         let err = dest.ensure_writable(date()).unwrap_err();
         assert!(matches!(err, Error::Io(_)), "{err:?}");
@@ -113,6 +119,7 @@ async fn receives_shot_into_folder() {
     .unwrap();
 
     assert_eq!(got.filename, "DSC00001.JPG");
+    assert_eq!(got.camera_filename, "DSC00001.JPG");
     assert_eq!(got.path, tmp.path().join("DSC00001.JPG"));
     let bytes = std::fs::read(&got.path).unwrap();
     assert_eq!(bytes.len() as u64, got.bytes);
@@ -148,6 +155,7 @@ async fn existing_name_gets_suffix() {
         .await
         .unwrap();
     assert_eq!(got.filename, "DSC00001-2.JPG");
+    assert_eq!(got.camera_filename, "DSC00001.JPG");
     assert_eq!(got.path, tmp.path().join("DSC00001-2.JPG"));
     assert_eq!(
         std::fs::read(tmp.path().join("DSC00001.JPG")).unwrap(),
@@ -191,4 +199,115 @@ async fn drop_mid_transfer_leaves_no_partial_file() {
     assert!(names(tmp.path()).is_empty(), "{:?}", names(tmp.path()));
     drop(conn);
     sim.events.send(SimCommand::Shutdown).await.unwrap();
+}
+
+#[tokio::test]
+async fn write_failure_after_download_keeps_the_shot_in_the_recovery_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let shots = tmp.path().join("shots");
+    std::fs::create_dir_all(&shots).unwrap();
+    // Every name from DSC00001.JPG to DSC00001-999.JPG is taken, so the
+    // download succeeds but the shot cannot be named in the target folder.
+    std::fs::write(shots.join("DSC00001.JPG"), b"older").unwrap();
+    for n in 1..=999 {
+        std::fs::write(shots.join(format!("DSC00001-{n}.JPG")), b"older").unwrap();
+    }
+    let recovery = tmp.path().join("recovered");
+    let dest = Destination {
+        recovery_dir: Some(recovery.clone()),
+        ..custom(&shots)
+    };
+    let (sim, mut conn) = start_with(SimConfig::default()).await;
+    shoot(&mut conn, false).await.unwrap();
+    let err = receive_one(&mut conn, &dest, &mut |_, _| {})
+        .await
+        .unwrap_err();
+    let Error::Recovered { path, .. } = &err else {
+        panic!("expected Recovered, got {err:?}");
+    };
+    assert_eq!(path, &recovery.join("DSC00001.JPG"));
+    assert!(
+        err.to_string().contains(&path.display().to_string()),
+        "{err}"
+    );
+    let bytes = std::fs::read(path).unwrap();
+    image::load_from_memory_with_format(&bytes, image::ImageFormat::Jpeg).unwrap();
+    let left = names(&shots);
+    assert_eq!(left.len(), 1000);
+    assert!(left.iter().all(|n| !n.ends_with(".part")), "{left:?}");
+    // The camera counts the shot as delivered.
+    assert_eq!(captured_ready(&mut conn).await.unwrap(), 0);
+    stop(sim, conn).await;
+}
+
+#[tokio::test]
+async fn idle_limit_allows_a_slow_but_steady_transfer() {
+    // Five packets 300 ms apart: about 1.2 s in all, never 1 s of silence.
+    let (sim, mut conn) = start_with(SimConfig {
+        capture_packet_pause: Some(Duration::from_millis(300)),
+        ..SimConfig::default()
+    })
+    .await;
+    shoot(&mut conn, false).await.unwrap();
+    let started = std::time::Instant::now();
+    let (data, _) = conn
+        .command_data_in_idle(
+            OP_GET_OBJECT,
+            &[HANDLE_CAPTURED_STILL],
+            Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+    assert!(started.elapsed() > Duration::from_secs(1));
+    assert_eq!(&data[..2], &[0xFF, 0xD8]);
+    stop(sim, conn).await;
+}
+
+#[tokio::test]
+async fn idle_limit_times_out_when_the_camera_goes_quiet() {
+    let (sim, mut conn) = start_with(SimConfig {
+        capture_packet_pause: Some(Duration::from_millis(1500)),
+        ..SimConfig::default()
+    })
+    .await;
+    shoot(&mut conn, false).await.unwrap();
+    let err = conn
+        .command_data_in_idle(
+            OP_GET_OBJECT,
+            &[HANDLE_CAPTURED_STILL],
+            Duration::from_secs(1),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Timeout), "{err:?}");
+    assert!(conn.is_disconnected());
+    drop(conn);
+    sim.events.send(SimCommand::Shutdown).await.unwrap();
+}
+
+#[tokio::test]
+async fn progress_is_reported_for_every_data_packet() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (sim, mut conn) = start_with(SimConfig {
+        capture_packet_pause: Some(Duration::from_millis(5)),
+        ..SimConfig::default()
+    })
+    .await;
+    shoot(&mut conn, false).await.unwrap();
+    let mut progress = Vec::new();
+    let got = receive_one(&mut conn, &custom(tmp.path()), &mut |done, total| {
+        progress.push((done, total))
+    })
+    .await
+    .unwrap();
+    let received: Vec<u64> = progress.iter().map(|&(done, _)| done).collect();
+    // The start, one call per packet (five), and the end.
+    assert!(progress.len() >= 7, "{progress:?}");
+    assert!(received.windows(2).all(|w| w[0] <= w[1]), "{progress:?}");
+    assert!(
+        received.iter().any(|&d| d > 0 && d < got.bytes),
+        "{progress:?}"
+    );
+    assert!(progress.iter().all(|&(_, total)| total == got.bytes));
+    stop(sim, conn).await;
 }

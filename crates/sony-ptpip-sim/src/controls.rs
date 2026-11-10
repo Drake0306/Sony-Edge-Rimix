@@ -29,6 +29,8 @@ pub struct Controls {
     last_jpeg: Option<Vec<u8>>,
     /// Timer that reports focus found while the half press is held.
     focus_timer: Option<AbortHandle>,
+    /// Files queued per shutter release; 0 counts as 1.
+    files_per_shot: u32,
 }
 
 /// What a control did, for the session to act on.
@@ -43,6 +45,14 @@ pub enum Outcome {
 }
 
 impl Controls {
+    /// Controls whose every shutter release queues `files_per_shot` files.
+    pub fn new(files_per_shot: u32) -> Controls {
+        Controls {
+            files_per_shot,
+            ..Controls::default()
+        }
+    }
+
     /// Applies one 0x9207 control. `Err` holds the response code.
     pub fn apply(&mut self, props: &mut PropStore, code: u16, data: &[u8]) -> Result<Outcome, u16> {
         match code {
@@ -81,7 +91,9 @@ impl Controls {
                 Outcome::Unchanged
             }
             (CTRL_SHUTTER_FULL, false) if std::mem::take(&mut self.full_pressed) => {
-                self.capture_queue = self.capture_queue.saturating_add(1);
+                self.capture_queue = self
+                    .capture_queue
+                    .saturating_add(self.files_per_shot.max(1));
                 let count = self.capture_queue.min(0x7FFF) as u16;
                 changed(
                     props,

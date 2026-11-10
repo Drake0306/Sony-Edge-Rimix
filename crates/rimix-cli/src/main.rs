@@ -143,6 +143,7 @@ fn exit_code(err: &anyhow::Error) -> i32 {
             | Error::Protocol(_),
         ) => 3,
         Some(Error::Response { .. } | Error::Unsupported(_)) => 4,
+        Some(Error::Recovered { .. }) => 5,
         None => 1,
     }
 }

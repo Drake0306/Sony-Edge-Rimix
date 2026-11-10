@@ -1,10 +1,29 @@
-//! The host GUID that identifies this computer to the camera. It must stay
-//! the same across runs so the camera remembers the pairing.
+//! The host GUID that identifies this computer to the camera, and the name
+//! the camera shows for it. The GUID must stay the same across runs so the
+//! camera remembers the pairing.
 
 use std::io::{self, ErrorKind};
 use std::path::Path;
 
 use crate::error::Error;
+
+/// The name shown on the camera's pairing prompt: "Rimix on <host name>",
+/// or "Rimix" when the host name cannot be read. The CLI and the app both
+/// use it, so the camera sees one name for this computer.
+pub fn default_host_name() -> String {
+    host_name_from(
+        hostname::get()
+            .ok()
+            .map(|h| h.to_string_lossy().into_owned()),
+    )
+}
+
+fn host_name_from(host: Option<String>) -> String {
+    match host.as_deref().map(str::trim) {
+        Some(h) if !h.is_empty() => format!("Rimix on {h}"),
+        _ => "Rimix".into(),
+    }
+}
 
 /// Reads the GUID stored at `path`, or creates one (random, UUID v4) and
 /// stores it there, creating parent folders as needed.
@@ -51,6 +70,17 @@ fn parse(text: &str) -> Option<[u8; 16]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_name_names_this_computer() {
+        assert_eq!(
+            host_name_from(Some("studio-mac".into())),
+            "Rimix on studio-mac"
+        );
+        assert_eq!(host_name_from(Some(" ".into())), "Rimix");
+        assert_eq!(host_name_from(None), "Rimix");
+        assert!(default_host_name().starts_with("Rimix"));
+    }
 
     #[test]
     fn guid_is_stable_across_calls() {

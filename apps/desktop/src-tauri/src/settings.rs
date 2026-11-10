@@ -77,6 +77,7 @@ impl AppSettings {
         Destination {
             base: self.destination_base.clone(),
             mode: self.destination_mode.clone(),
+            recovery_dir: None,
         }
     }
 

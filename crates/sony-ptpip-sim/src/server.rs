@@ -9,7 +9,7 @@ use sony_ptpip::ptp::codes::*;
 use sony_ptpip::ptp::{encode_device_info, DeviceInfo};
 use sony_ptpip::ptpip::{read_frame, Packet};
 use tokio::io::AsyncWriteExt;
-use tokio::net::tcp::OwnedReadHalf;
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
@@ -28,6 +28,8 @@ const VENDOR_EXT_ID: u32 = 0x11;
 const EVENT_SOCKET_WAIT: Duration = Duration::from_secs(10);
 const EXT_CONTROLS: [u16; 3] = [0xD2C1, 0xD2C2, 0xD2C8];
 const EXT_VERSION: u16 = 0x012C;
+/// How many Data packets a paced capture is split into.
+const PACED_PACKETS: usize = 5;
 /// How long a held half press takes to find focus.
 const FOCUS_DELAY: Duration = Duration::from_millis(200);
 const SUPPORTED_OPS: [u16; 11] = [
@@ -60,6 +62,10 @@ struct Shared {
     /// Button state and the capture queue; lock before `props` when both are needed.
     controls: Mutex<Controls>,
     live_view: Mutex<LiveView>,
+    /// GetObjectInfo requests on the live view handle so far.
+    live_view_infos: AtomicU32,
+    /// 0x9207 controls received so far.
+    controls_seen: AtomicU32,
 }
 
 /// Starts the simulator on `config.bind_addr`, by default 127.0.0.1 with an
@@ -76,6 +82,7 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
         .expect("bind simulator listener");
     let addr = listener.local_addr().expect("listener address");
     let log: Log = Arc::default();
+    let controls = Controls::new(config.files_per_shot);
     let shared = Arc::new(Shared {
         config,
         log: log.clone(),
@@ -83,8 +90,10 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
         pending: Mutex::default(),
         current: Mutex::default(),
         props: Mutex::new(PropStore::new(props)),
-        controls: Mutex::default(),
+        controls: Mutex::new(controls),
         live_view: Mutex::default(),
+        live_view_infos: AtomicU32::new(0),
+        controls_seen: AtomicU32::new(0),
     });
     // Dropping the set when `run` exits aborts every connection, session and
     // discovery task.
@@ -225,6 +234,13 @@ struct Session {
     handshake_phase: u8,
 }
 
+/// Logs every packet the client sends on the event socket.
+async fn log_event_packets(mut r: OwnedReadHalf, log: Log) {
+    while let Ok(p) = recv(&mut r).await {
+        log.lock().unwrap().push(format!("event {p:?}"));
+    }
+}
+
 /// Forwards command-socket packets to the session loop; `read_frame` is not
 /// cancel-safe, so it cannot sit directly in a `select!`.
 async fn read_packets(mut r: OwnedReadHalf, tx: mpsc::Sender<Result<Packet, Error>>) {
@@ -242,10 +258,12 @@ impl Session {
         let Session {
             shared,
             stream,
-            mut event,
+            event,
             mut handshake_phase,
         } = self;
         let (r, mut w) = stream.into_split();
+        let (event_r, mut event) = event.into_split();
+        let event_reader = tokio::spawn(log_event_packets(event_r, shared.log.clone()));
         let (pkt_tx, mut packets) = mpsc::channel(16);
         let reader = tokio::spawn(read_packets(r, pkt_tx));
         let result = loop {
@@ -270,6 +288,11 @@ impl Session {
                             break Err(e);
                         }
                     }
+                    Some(SimCommand::Probe) => {
+                        if let Err(e) = send(&mut event, &Packet::ProbeRequest).await {
+                            break Err(e);
+                        }
+                    }
                     Some(SimCommand::DropConnection) => {
                         if shared.config.redeliver_after_drop {
                             let mut controls = shared.controls.lock().unwrap();
@@ -285,6 +308,7 @@ impl Session {
         // Dropping the read half (via abort), the write half and the event
         // stream closes both sockets.
         reader.abort();
+        event_reader.abort();
         result
     }
 }
@@ -351,7 +375,37 @@ async fn send_data_in(
     .await
 }
 
-async fn send_prop_changed(event: &mut TcpStream, code: u16) -> Result<(), Error> {
+/// Sends `data` as StartData and [`PACED_PACKETS`] packets, pausing before
+/// each packet after the first.
+async fn send_data_in_paced(
+    w: &mut (impl AsyncWriteExt + Unpin),
+    tid: u32,
+    data: &[u8],
+    pause: Duration,
+) -> Result<(), Error> {
+    let total_len = data.len() as u64;
+    send(w, &Packet::StartData { tid, total_len }).await?;
+    let chunk = data.len().div_ceil(PACED_PACKETS).max(1);
+    let chunks: Vec<&[u8]> = data.chunks(chunk).collect();
+    for (i, part) in chunks.iter().enumerate() {
+        if i > 0 {
+            tokio::time::sleep(pause).await;
+        }
+        let payload = part.to_vec();
+        let p = if i + 1 == chunks.len() {
+            Packet::EndData { tid, payload }
+        } else {
+            Packet::Data { tid, payload }
+        };
+        send(w, &p).await?;
+    }
+    Ok(())
+}
+
+async fn send_prop_changed(
+    event: &mut (impl AsyncWriteExt + Unpin),
+    code: u16,
+) -> Result<(), Error> {
     let ev = Packet::Event {
         code: EV_SONY_DEVICE_PROP_CHANGED,
         tid: 0,
@@ -364,7 +418,7 @@ async fn send_prop_changed(event: &mut TcpStream, code: u16) -> Result<(), Error
 struct Ctx<'a, W> {
     packets: &'a mut mpsc::Receiver<Result<Packet, Error>>,
     w: &'a mut W,
-    event: &'a mut TcpStream,
+    event: &'a mut OwnedWriteHalf,
     shared: &'a Shared,
 }
 
@@ -392,7 +446,15 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
         line.push_str(&format!(" data-out {}", d.len()));
         data = Some(d);
     }
-    shared.log.lock().unwrap().push(line);
+    if op == OP_SDIO_CONTROL_DEVICE {
+        if let (Some(control), Some(value)) = (prop_code(&params), &data) {
+            let mut n = 0u64;
+            for (i, b) in value.iter().take(8).enumerate() {
+                n |= u64::from(*b) << (8 * i);
+            }
+            line.push_str(&format!(" {control:04X}={n}"));
+        }
+    }
     if let Some((slow_op, delay)) = shared.config.delay_op {
         if slow_op == op {
             tokio::time::sleep(delay).await;
@@ -423,7 +485,14 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
         }
         OP_GET_OBJECT_INFO | OP_GET_OBJECT => {
             let answer = match (op, params.first()) {
-                (OP_GET_OBJECT_INFO, Some(&HANDLE_LIVE_VIEW)) => Ok(frames::object_info()),
+                (OP_GET_OBJECT_INFO, Some(&HANDLE_LIVE_VIEW)) => {
+                    let seen = shared.live_view_infos.fetch_add(1, Ordering::SeqCst);
+                    if seen < shared.config.live_view_info_denied {
+                        Err(RC_ACCESS_DENIED)
+                    } else {
+                        Ok(frames::object_info())
+                    }
+                }
                 (OP_GET_OBJECT, Some(&HANDLE_LIVE_VIEW)) => {
                     let busy_every = shared.config.live_view_busy_every;
                     shared.live_view.lock().unwrap().next(busy_every)
@@ -491,6 +560,13 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
             }
             _ => RC_INVALID_PARAMETER,
         },
+        OP_SDIO_CONTROL_DEVICE
+            if shared.config.fail_nth_control
+                == Some(shared.controls_seen.fetch_add(1, Ordering::SeqCst) + 1) =>
+        {
+            line.push_str(" refused");
+            RC_DEVICE_BUSY
+        }
         OP_SDIO_CONTROL_DEVICE => match (prop_code(&params), &data) {
             (Some(control), Some(value)) => match apply_control(shared, control, value) {
                 Ok(changed) => {
@@ -503,6 +579,7 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
         },
         _ => RC_OPERATION_NOT_SUPPORTED,
     };
+    shared.log.lock().unwrap().push(line);
     send(
         ctx.w,
         &Packet::CmdResponse {
@@ -545,7 +622,10 @@ async fn captured_still<W: AsyncWriteExt + Unpin>(
         // Ending the session closes both sockets.
         return Err(Error::Disconnected);
     }
-    send_data_in(ctx.w, tid, &jpeg).await?;
+    match shared.config.capture_packet_pause {
+        Some(pause) => send_data_in_paced(ctx.w, tid, &jpeg, pause).await?,
+        None => send_data_in(ctx.w, tid, &jpeg).await?,
+    }
     let mut controls = shared.controls.lock().unwrap();
     let mut props = shared.props.lock().unwrap();
     let popped = controls.pop_capture(&mut props);

@@ -20,6 +20,7 @@ fn config(sim: &SimHandle, dir: &Path) -> CameraConfig {
         destination: Destination {
             base: dir.to_path_buf(),
             mode: DestinationMode::CustomFolder,
+            recovery_dir: None,
         },
         auto_receive: true,
         reconnect: true,
@@ -395,4 +396,104 @@ fn state_and_events_serialise() {
     assert_serde::<CameraState>();
     assert_serde::<CameraEvent>();
     assert_serde::<CameraConfig>();
+}
+
+#[tokio::test]
+async fn connect_survives_a_live_view_refusal_and_frames_arrive_later() {
+    let tmp = tempfile::tempdir().unwrap();
+    // The live view check at connect is answered with AccessDenied.
+    let (sim, camera) = start(
+        SimConfig {
+            live_view_info_denied: 1,
+            ..SimConfig::default()
+        },
+        tmp.path(),
+    )
+    .await;
+    let mut rx = camera.subscribe();
+    wait_for(&mut rx, "a Frame", |ev| {
+        matches!(ev, CameraEvent::Frame).then_some(())
+    })
+    .await;
+    assert!(camera.latest_frame().is_some());
+    stop(sim, camera).await;
+}
+
+#[tokio::test]
+async fn unwritable_destination_reports_one_failure() {
+    let tmp = tempfile::tempdir().unwrap();
+    let not_a_dir = tmp.path().join("not-a-dir");
+    std::fs::write(&not_a_dir, b"x").unwrap();
+    let (sim, camera) = start(SimConfig::default(), &not_a_dir).await;
+    let mut rx = camera.subscribe();
+    camera.shoot().await.unwrap();
+    let mut failed = Vec::new();
+    let mut started = 0;
+    let _ = timeout(WAIT, async {
+        loop {
+            match rx.recv().await {
+                Ok(CameraEvent::CaptureFailed { filename, error }) => {
+                    failed.push((filename, error))
+                }
+                Ok(CameraEvent::CaptureStarted { .. }) => started += 1,
+                Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(e) => panic!("event channel failed: {e}"),
+            }
+        }
+    })
+    .await;
+    assert_eq!(failed.len(), 1, "{failed:?}");
+    assert_eq!(failed[0].0, "DSC00001.JPG");
+    assert!(
+        failed[0].1.contains(&not_a_dir.display().to_string()),
+        "{}",
+        failed[0].1
+    );
+    assert_eq!(started, 0);
+    stop(sim, camera).await;
+}
+
+#[tokio::test]
+async fn suffixed_save_names_the_camera_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("DSC00001.JPG"), b"older").unwrap();
+    let (sim, camera) = start(SimConfig::default(), tmp.path()).await;
+    let mut rx = camera.subscribe();
+    camera.shoot().await.unwrap();
+    let saved = wait_for(&mut rx, "CaptureSaved", |ev| match ev {
+        CameraEvent::CaptureSaved(r) => Some(r.clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(saved.filename, "DSC00001-1.JPG");
+    assert_eq!(saved.camera_filename, "DSC00001.JPG");
+    stop(sim, camera).await;
+}
+
+#[tokio::test]
+async fn shot_that_cannot_be_saved_is_recovered_and_reported() {
+    let tmp = tempfile::tempdir().unwrap();
+    let shots = tmp.path().join("shots");
+    std::fs::create_dir_all(&shots).unwrap();
+    std::fs::write(shots.join("DSC00001.JPG"), b"older").unwrap();
+    for n in 1..=999 {
+        std::fs::write(shots.join(format!("DSC00001-{n}.JPG")), b"older").unwrap();
+    }
+    let recovery = tmp.path().join("recovered");
+    let sim = spawn(SimConfig::default()).await;
+    let mut cfg = config(&sim, &shots);
+    cfg.destination.recovery_dir = Some(recovery.clone());
+    let camera = Camera::connect(cfg).await.unwrap();
+    let mut rx = camera.subscribe();
+    camera.shoot().await.unwrap();
+    let (filename, error) = wait_for(&mut rx, "CaptureFailed", |ev| match ev {
+        CameraEvent::CaptureFailed { filename, error } => Some((filename.clone(), error.clone())),
+        _ => None,
+    })
+    .await;
+    assert_eq!(filename, "DSC00001.JPG");
+    let kept = recovery.join("DSC00001.JPG");
+    assert!(error.contains(&kept.display().to_string()), "{error}");
+    assert!(kept.is_file());
+    stop(sim, camera).await;
 }

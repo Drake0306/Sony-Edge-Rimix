@@ -3,20 +3,21 @@
 //! app use this type rather than the protocol layers.
 //!
 //! A supervisor task owns the connection's lifecycle. While connected it runs
-//! up to three loops that share the one connection through a mutex:
+//! two or three loops that share the one connection through a mutex:
 //!
 //! - the event loop re-reads changed properties after DevicePropChanged
 //!   events (at most every 100 ms) and emits [`CameraEvent::StateChanged`];
 //! - the live view loop fetches frames and emits [`CameraEvent::Frame`];
-//! - the capture loop saves new shots into the destination folder.
+//! - the capture loop, when `auto_receive` is on, saves new shots into the
+//!   destination folder.
 //!
 //! When any loop finds the connection gone, the supervisor emits
 //! [`CameraEvent::Disconnected`], stops the loops and, if reconnecting is on,
 //! retries with a growing delay until the camera answers again.
 //!
-//! PTP/IP ProbeRequest packets on the event socket are not answered yet: the
-//! transport has no way to reply on that socket. Real cameras that probe an
-//! idle host may drop the link; the reconnect path then recovers it.
+//! PTP/IP ProbeRequest packets on the event socket are answered with a
+//! ProbeResponse by the transport, so a camera checking on an idle host
+//! keeps the link.
 
 mod loops;
 mod state;
@@ -165,6 +166,9 @@ struct Inner {
     /// The last shots saved, kept across reconnects so a shot the camera
     /// offers again is not saved twice.
     recent: StdMutex<VecDeque<RecentShot>>,
+    /// The last delivery failure reported, as (camera file name, error
+    /// text); the same failure again is not reported. Cleared by a save.
+    last_failure: StdMutex<Option<(String, String)>>,
 }
 
 /// A saved shot, remembered for spotting a repeated delivery.
@@ -184,7 +188,6 @@ struct Session {
     model: String,
     firmware: String,
     props: Vec<PropertyDesc>,
-    live_view: bool,
 }
 
 /// Locks a std mutex, carrying on if a panicking holder poisoned it.
@@ -224,7 +227,7 @@ impl Inner {
 
     /// Stores a fresh session's connection and facts; returns what the loops
     /// need.
-    async fn install(&self, session: Session) -> (broadcast::Receiver<PtpEvent>, bool) {
+    async fn install(&self, session: Session) -> broadcast::Receiver<PtpEvent> {
         *self.conn.lock().await = Some(session.conn);
         let mut snap = lock(&self.snapshot);
         snap.connected = true;
@@ -232,7 +235,7 @@ impl Inner {
         snap.firmware = session.firmware;
         snap.props = session.props;
         snap.live_view_fps = 0.0;
-        (session.events, session.live_view)
+        session.events
     }
 
     /// Drops the connection and tells subscribers.
@@ -250,7 +253,6 @@ impl Inner {
 
 /// Opens the connection and reads what the facade needs: transport connect,
 /// GetDeviceInfo, the SDIO handshake, every property, and a live view check.
-/// A camera without live view is not an error; the session runs without it.
 async fn connect_once(inner: &Inner) -> Result<Session, Error> {
     let opts = ConnectOptions {
         guid: inner.guid,
@@ -264,21 +266,23 @@ async fn connect_once(inner: &Inner) -> Result<Session, Error> {
     let info = parse_device_info(&data)?;
     sdio_connect(&mut conn).await?;
     let props = read_all_props(&mut conn).await?;
-    let live_view = match liveview::start(&mut conn).await {
-        Ok(()) => true,
-        Err(Error::Unsupported(why)) => {
-            tracing::warn!(why, "live view disabled for this session");
-            false
+    // Live view never fails the connection: a camera that refuses the check
+    // (live view still starting, busy, or off) is polled anyway, and
+    // `next_frame` waits quietly until frames come. Only a transport failure
+    // here ends the attempt.
+    match liveview::start(&mut conn).await {
+        Ok(()) => {}
+        Err(e @ (Error::Unsupported(_) | Error::Response { .. })) => {
+            tracing::info!(error = %e, "live view not ready yet; polling anyway");
         }
         Err(e) => return Err(e),
-    };
+    }
     Ok(Session {
         conn,
         events,
         model: info.model,
         firmware: info.device_version,
         props,
-        live_view,
     })
 }
 
@@ -300,11 +304,12 @@ impl Camera {
             events: broadcast::channel(EVENT_CHANNEL_CAPACITY).0,
             stop: AtomicBool::new(false),
             recent: StdMutex::new(VecDeque::new()),
+            last_failure: StdMutex::new(None),
         });
         let session = connect_once(&inner).await?;
-        let (events, live_view) = inner.install(session).await;
+        let events = inner.install(session).await;
         inner.emit(CameraEvent::Connected);
-        let supervisor = tokio::spawn(loops::supervise(inner.clone(), events, live_view));
+        let supervisor = tokio::spawn(loops::supervise(inner.clone(), events));
         Ok(Camera {
             inner,
             supervisor: StdMutex::new(Some(supervisor)),

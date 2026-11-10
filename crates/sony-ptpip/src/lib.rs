@@ -9,7 +9,7 @@ pub mod sony;
 
 pub use camera::{Camera, CameraConfig, CameraEvent, CameraState, Choice, PropertySummary};
 pub use discovery::{discover, DiscoveredCamera, DiscoverySource};
-pub use guid::load_or_create_guid;
+pub use guid::{default_host_name, load_or_create_guid};
 pub use ptpip::transport::{ConnectOptions, PtpEvent, PtpIpConnection};
 pub use quirks::{quirks_for, Quirks, WriteMode};
 pub use sony::{focus, sdio_connect, set_value, shoot, toggle_record, ExtDeviceInfo};
@@ -26,6 +26,6 @@ pub mod liveview {
 /// `capture::receive_one` for each.
 pub mod capture {
     pub use crate::sony::capture::{
-        captured_ready, receive_one, Destination, DestinationMode, Received,
+        captured_ready, default_recovery_dir, receive_one, Destination, DestinationMode, Received,
     };
 }

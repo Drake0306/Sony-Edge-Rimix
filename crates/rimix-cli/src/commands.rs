@@ -69,6 +69,7 @@ async fn open(
     let destination = Destination {
         base: out.map(Path::to_path_buf).unwrap_or_else(|| ".".into()),
         mode: DestinationMode::CustomFolder,
+        recovery_dir: None,
     };
     let camera = Camera::connect(CameraConfig {
         addr: target.addr,
@@ -331,6 +332,7 @@ pub async fn watch(target: &Target, out: &Path, exit_after: Option<Duration>) ->
     camera.set_destination(Destination {
         base: out.to_path_buf(),
         mode: DestinationMode::CustomFolder,
+        recovery_dir: None,
     });
     let mut rx = camera.subscribe();
     println!("connected");
