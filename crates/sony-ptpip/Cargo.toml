@@ -12,6 +12,7 @@ tracing = { workspace = true }
 chrono = { workspace = true }
 url = { workspace = true }
 quick-xml = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 sony-ptpip-sim = { path = "../sony-ptpip-sim" }

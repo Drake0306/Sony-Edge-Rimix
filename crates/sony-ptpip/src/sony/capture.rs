@@ -101,7 +101,7 @@ pub async fn captured_ready(conn: &mut PtpIpConnection) -> Result<u16, Error> {
 pub async fn receive_one(
     conn: &mut PtpIpConnection,
     dest: &Destination,
-    on_progress: &mut dyn FnMut(u64, u64),
+    on_progress: &mut (dyn FnMut(u64, u64) + Send),
 ) -> Result<Received, Error> {
     let dir = dest.ensure_writable(chrono::Local::now().date_naive())?;
     let (info, _) = conn

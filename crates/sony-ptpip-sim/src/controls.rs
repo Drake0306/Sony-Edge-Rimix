@@ -23,6 +23,8 @@ pub struct Controls {
     /// JPEG of the oldest waiting picture, made at GetObjectInfo time so the
     /// size it reports matches what GetObject sends.
     pending_jpeg: Option<Vec<u8>>,
+    /// JPEG of the most recently fetched picture, kept so it can be redelivered.
+    last_jpeg: Option<Vec<u8>>,
     /// Timer that reports focus found while the half press is held.
     focus_timer: Option<AbortHandle>,
 }
@@ -119,13 +121,27 @@ impl Controls {
         let shot = self.next_capture()?;
         self.capture_queue -= 1;
         self.fetched = shot;
-        self.pending_jpeg = None;
+        self.last_jpeg = self.pending_jpeg.take();
         let ready = match self.capture_queue {
             0 => 0,
             n => 0x8000 | n.min(0x7FFF) as u16,
         };
         let outcome = changed(props, PROP_CAPTURED_READY, Some(PtpValue::U16(ready)));
         Some((shot, outcome))
+    }
+
+    /// Puts the most recently fetched picture back at the front of the queue,
+    /// byte for byte, and updates 0xD215. Returns false if there is none.
+    pub fn requeue_last(&mut self, props: &mut PropStore) -> bool {
+        let Some(jpeg) = self.last_jpeg.take() else {
+            return false;
+        };
+        self.fetched -= 1;
+        self.capture_queue = self.capture_queue.saturating_add(1);
+        self.pending_jpeg = Some(jpeg);
+        let count = self.capture_queue.min(0x7FFF) as u16;
+        props.set(PROP_CAPTURED_READY, PtpValue::U16(0x8000 | count));
+        true
     }
 
     /// Remembers the running focus timer so a release can cancel it.

@@ -40,6 +40,10 @@ pub struct SimConfig {
     /// Cut GetObject on the captured still handle short: send StartData and
     /// the first half of the picture, then close both sockets.
     pub drop_during_capture: bool,
+    /// When a session ends with [`SimCommand::DropConnection`], put the most
+    /// recently fetched picture back in the capture queue, as a camera does
+    /// when the link drops before it learns the transfer finished.
+    pub redeliver_after_drop: bool,
     /// Answer SSDP M-SEARCH requests on this 127.0.0.1 UDP port (0 picks
     /// one) and serve the UPnP descriptions over HTTP; `None` disables both.
     pub ssdp_port: Option<u16>,
@@ -56,6 +60,7 @@ impl Default for SimConfig {
             write_mode_step: false,
             live_view_busy_every: None,
             drop_during_capture: false,
+            redeliver_after_drop: false,
             ssdp_port: None,
         }
     }

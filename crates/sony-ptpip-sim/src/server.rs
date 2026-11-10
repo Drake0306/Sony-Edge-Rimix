@@ -265,7 +265,15 @@ impl Session {
                             break Err(e);
                         }
                     }
-                    Some(SimCommand::DropConnection) | Some(SimCommand::Shutdown) | None => break Ok(()),
+                    Some(SimCommand::DropConnection) => {
+                        if shared.config.redeliver_after_drop {
+                            let mut controls = shared.controls.lock().unwrap();
+                            let mut props = shared.props.lock().unwrap();
+                            controls.requeue_last(&mut props);
+                        }
+                        break Ok(());
+                    }
+                    Some(SimCommand::Shutdown) | None => break Ok(()),
                 },
             }
         };
