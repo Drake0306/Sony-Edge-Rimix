@@ -745,14 +745,20 @@ pub fn get_settings(state: &AppState) -> AppSettings {
 /// receiver, at the new destination. The receiver's own settings are kept:
 /// only the `sftp_*` commands change them.
 pub async fn save_settings(state: &AppState, mut s: AppSettings) -> Result<(), String> {
-    let moved = {
-        let current = lock(&state.settings);
+    // The settings lock is held across merge, save and assign: a concurrent
+    // `sftp_set_enabled` (which also saves under this lock) lands either
+    // wholly before, and its `sftp` is copied in here, or wholly after, and
+    // it changes what is assigned here. Either way the switch is not lost.
+    let (moved, destination) = {
+        let mut current = lock(&state.settings);
         s.sftp = current.sftp.clone();
-        current.destination() != s.destination()
+        let moved = current.destination() != s.destination();
+        settings::save(&state.settings_path, &s)
+            .map_err(|e| format!("Cannot save settings: {e}"))?;
+        let destination = s.destination();
+        *current = s;
+        (moved, destination)
     };
-    settings::save(&state.settings_path, &s).map_err(|e| format!("Cannot save settings: {e}"))?;
-    let destination = s.destination();
-    *lock(&state.settings) = s;
     for slot in state.cameras.lock().await.iter() {
         slot.camera.set_destination(destination.clone());
     }
@@ -2294,6 +2300,35 @@ mod tests {
         // Stopped: a new day starts nothing.
         assert!(!crate::sftp::restart_if_day_changed(&state, day(2031, 1, 3)).await);
         assert!(!crate::sftp::status(&state).await.running);
+    }
+
+    #[tokio::test]
+    async fn a_custom_folder_receiver_is_not_restarted_at_midnight() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _) = sftp_state(tmp.path());
+        crate::sftp::set_enabled(&state, true).await.unwrap();
+        let before = crate::sftp::status(&state).await;
+        assert!(before.running, "{:?}", before.error);
+        // Same folder on the new day: nothing to move.
+        assert!(!crate::sftp::restart_if_day_changed(&state, day(2031, 1, 2)).await);
+        let after = crate::sftp::status(&state).await;
+        assert!(after.running);
+        assert_eq!(after.port, before.port, "the receiver was restarted");
+        crate::sftp::stop(&state).await;
+    }
+
+    #[tokio::test]
+    async fn a_day_change_restart_does_not_start_a_switched_off_receiver() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _) = sftp_state(tmp.path());
+        lock(&state.settings).destination_mode = DestinationMode::FolderPerDate;
+        crate::sftp::set_enabled(&state, true).await.unwrap();
+        assert!(crate::sftp::status(&state).await.running);
+        // A disable lands after the day-change check but before the start.
+        lock(&state.settings).sftp.enabled = false;
+        crate::sftp::restart_if_day_changed(&state, day(2031, 1, 2)).await;
+        assert!(!crate::sftp::status(&state).await.running);
+        crate::sftp::stop(&state).await;
     }
 
     #[tokio::test]

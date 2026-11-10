@@ -60,29 +60,24 @@ pub struct SftpStatus {
 }
 
 /// The receiver's settings, making and saving the password on first use.
+/// The file is written under the settings lock, like every settings save,
+/// so an older snapshot can never land on disk after a newer one.
 fn sftp_settings(state: &AppState) -> SftpSettings {
-    let snapshot = {
-        let mut s = lock(&state.settings);
-        if !s.sftp.ensure_password() {
-            return s.sftp.clone();
+    let mut s = lock(&state.settings);
+    if s.sftp.ensure_password() {
+        if let Err(e) = settings::save(&state.settings_path, &s) {
+            tracing::warn!(error = %e, "cannot save settings after making the SFTP password");
         }
-        s.clone()
-    };
-    if let Err(e) = settings::save(&state.settings_path, &snapshot) {
-        tracing::warn!(error = %e, "cannot save settings after making the SFTP password");
     }
-    snapshot.sftp
+    s.sftp.clone()
 }
 
-/// Changes the stored receiver settings and saves them.
+/// Changes the stored receiver settings and saves them (under the settings
+/// lock, see [`sftp_settings`]).
 fn update(state: &AppState, change: impl FnOnce(&mut SftpSettings)) -> Result<(), String> {
-    let snapshot = {
-        let mut s = lock(&state.settings);
-        change(&mut s.sftp);
-        s.clone()
-    };
-    settings::save(&state.settings_path, &snapshot)
-        .map_err(|e| format!("Cannot save settings: {e}"))
+    let mut s = lock(&state.settings);
+    change(&mut s.sftp);
+    settings::save(&state.settings_path, &s).map_err(|e| format!("Cannot save settings: {e}"))
 }
 
 /// `<config>/sftp_host_key`, next to the settings file.
@@ -127,13 +122,19 @@ async fn start(state: &AppState) {
 }
 
 /// [`start`] for the day `day`: with a folder per date, files go into that
-/// day's folder.
+/// day's folder. The switch is read again under the receiver lock, so a
+/// turn-off that lands between a caller's check and this start wins: the
+/// old receiver stops and no new one starts.
 async fn start_on(state: &AppState, day: NaiveDate) {
     let mut slot = state.sftp.receiver.lock().await;
     if let Some(old) = slot.take() {
         old.stop().await;
     }
     *lock(&state.sftp.started_on) = None;
+    if !lock(&state.settings).sftp.enabled {
+        *lock(&state.sftp.last_error) = None;
+        return;
+    }
     let cfg = sftp_settings(state);
     let target = lock(&state.settings).destination();
     let emit = lock(&state.sftp.emit).clone();
@@ -208,19 +209,22 @@ pub async fn restart_if_enabled(state: &AppState) {
     start_if_enabled(state).await;
 }
 
-/// When the running receiver's folder was chosen on another day than
-/// `day`, restarts it so files go into `day`'s folder (with a folder per
-/// date). True when it restarted. The app calls this every minute, which
+/// When `day`'s folder differs from the one the running receiver writes
+/// into (with a folder per date, after midnight), restarts it so files go
+/// into `day`'s folder. A custom folder is the same every day and is left
+/// alone. True when it restarted. The app calls this every minute, which
 /// also catches a computer waking from sleep after midnight.
 pub async fn restart_if_day_changed(state: &AppState, day: NaiveDate) -> bool {
     let started = *lock(&state.sftp.started_on);
-    match started {
-        Some(on) if on != day => {
-            start_on(state, day).await;
-            true
-        }
-        _ => false,
+    let Some(on) = started.filter(|on| *on != day) else {
+        return false;
+    };
+    let target = lock(&state.settings).destination();
+    if target.target_dir(day) == target.target_dir(on) {
+        return false;
     }
+    start_on(state, day).await;
+    true
 }
 
 /// Every minute, moves a running receiver to the new day's folder after
