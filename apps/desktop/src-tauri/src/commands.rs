@@ -5,8 +5,8 @@ use tauri::ipc::Response;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 
-use crate::settings::AppSettings;
-use crate::state::{self, AppState};
+use crate::settings::{AppSettings, PresetValue};
+use crate::state::{self, AppState, ApplyOutcome};
 
 /// The Tauri event that carries each `CameraEvent` (except `Frame`) as JSON.
 pub const CAMERA_EVENT: &str = "camera-event";
@@ -51,6 +51,14 @@ pub async fn set_property(
     raw: serde_json::Value,
 ) -> Result<(), String> {
     state::set_property(&state, code, raw).await
+}
+
+#[tauri::command]
+pub async fn apply_values(
+    state: State<'_, AppState>,
+    values: Vec<PresetValue>,
+) -> Result<Vec<ApplyOutcome>, String> {
+    state::apply_values(&state, values).await
 }
 
 #[tauri::command]

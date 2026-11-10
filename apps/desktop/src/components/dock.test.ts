@@ -99,6 +99,18 @@ describe('dock', () => {
     expect(root.querySelector<HTMLElement>('.pop')!.hidden).toBe(true);
   });
 
+  test('the presets control has four live slots and its form opens inside the dock', () => {
+    const { root } = setup();
+    const slots = [...root.querySelectorAll<HTMLButtonElement>('.dock [role="radiogroup"] [role="radio"]')];
+    expect(slots.map((b) => b.querySelector('small')!.textContent)).toEqual(['C1', 'C2', 'C3', 'C4']);
+    expect(slots.some((b) => b.hasAttribute('aria-disabled') || b.disabled)).toBe(false);
+    expect(root.querySelector('[title="Presets arrive in the next version"]')).toBeNull();
+    slots[0].click();
+    const form = root.querySelector<HTMLElement>('.dockwrap > .preset-form')!;
+    expect(form.hidden).toBe(false);
+    expect(form.querySelector('label')!.textContent).toBe('Save current settings as C1');
+  });
+
   test('Shoot, Record and Focus call their commands', () => {
     const { root } = setup();
     const acts = [...root.querySelectorAll<HTMLButtonElement>('.act')];

@@ -7,7 +7,8 @@ import type { Actions } from '../actions';
 import { el } from '../dom';
 import { chipValue, CHIP_CODES, findProp, PROP, SETTING_NAMES } from '../props';
 import { watch, type AppStore } from '../state';
-import { presets, statusText } from './dock';
+import { statusText } from './dock';
+import { presetsControl } from './presetsControl';
 import { createSettingsPopover } from './settingsPopover';
 
 /** Segment outline and value position in the 400 by 400 viewBox, in CHIP_CODES order then Picture profile. */
@@ -59,7 +60,8 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   bar.setAttribute('role', 'group');
   bar.setAttribute('aria-label', 'Presets and live view status');
   const live = el('span', 'live');
-  bar.append(presets(), live);
+  const presets = presetsControl(store, actions);
+  bar.append(presets.el, live);
 
   const popover = createSettingsPopover(store, actions, { beside: true });
   const ring = el('div', 'ring');
@@ -119,6 +121,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   return () => {
     offs.forEach((off) => off());
     popover.destroy();
+    presets.destroy();
     window.clearInterval(tick);
     document.removeEventListener('keydown', onKey);
     [bar, popover.pop, ring].forEach((e) => e.remove());

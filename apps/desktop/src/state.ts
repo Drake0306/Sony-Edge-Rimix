@@ -64,6 +64,10 @@ export interface AppState {
   /** Progress of a connect started from the connect screen, otherwise null. */
   connecting: { phase: 'joining' | 'finding' | 'connecting'; text: string } | null;
   error: string | null;
+  /** The preset slot being applied, otherwise null. */
+  presetBusy: number | null;
+  /** The slot last applied without failures, until another is applied or the camera disconnects. */
+  activePreset: number | null;
 }
 
 export type AppStore = Store<AppState>;
@@ -84,6 +88,8 @@ export const initialState = (): AppState => ({
   reconnecting: null,
   connecting: null,
   error: null,
+  presetBusy: null,
+  activePreset: null,
 });
 
 /** What the app uses when the settings file cannot be read. */

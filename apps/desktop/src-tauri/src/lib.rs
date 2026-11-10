@@ -24,6 +24,7 @@ pub fn run() {
             commands::get_state,
             commands::set_property,
             commands::step_property,
+            commands::apply_values,
             commands::shoot,
             commands::focus,
             commands::toggle_record,

@@ -11,7 +11,7 @@ use sony_ptpip::ptp::PtpValue;
 use sony_ptpip::{Camera, CameraConfig, CameraEvent, CameraState, DiscoveredCamera};
 use tokio::sync::broadcast::{self, error::RecvError};
 
-use crate::settings::{self, AppSettings};
+use crate::settings::{self, AppSettings, PresetValue};
 use crate::wifi::{SystemRunner, Wifi};
 
 /// The error every camera command gives while no camera is connected.
@@ -242,6 +242,32 @@ pub async fn set_property(
     camera.set(code, value).await.map_err(|e| e.to_string())
 }
 
+/// What happened to one value of [`apply_values`]: `error` is `None` when
+/// the camera took it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ApplyOutcome {
+    pub code: u16,
+    pub error: Option<String>,
+}
+
+/// Writes each value to the camera in order (a preset), carrying on past
+/// any the camera refuses, and reports how each one went.
+pub async fn apply_values(
+    state: &AppState,
+    values: Vec<PresetValue>,
+) -> Result<Vec<ApplyOutcome>, String> {
+    let camera = state.camera().await?;
+    let mut out = Vec::with_capacity(values.len());
+    for v in values {
+        let error = camera.set(v.code, v.raw).await.err().map(|e| e.to_string());
+        out.push(ApplyOutcome {
+            code: v.code,
+            error,
+        });
+    }
+    Ok(out)
+}
+
 pub async fn step_property(state: &AppState, code: u16, delta: i32) -> Result<(), String> {
     let camera = state.camera().await?;
     camera.step(code, delta).await.map_err(|e| e.to_string())
@@ -326,7 +352,7 @@ pub fn read_thumbnail(path: &Path) -> Result<Vec<u8>, String> {
 mod tests {
     use super::*;
     use sony_ptpip::capture::DestinationMode;
-    use sony_ptpip::ptp::codes::{PROP_ISO, PROP_SHUTTER_SPEED};
+    use sony_ptpip::ptp::codes::{PROP_F_NUMBER, PROP_ISO, PROP_SHUTTER_SPEED};
     use sony_ptpip::{Choice, PropertySummary};
     use sony_ptpip_sim::{spawn, SimCommand, SimConfig, SimHandle};
     use std::time::Duration;
@@ -436,6 +462,61 @@ mod tests {
         let stepped = get_state(&state).await.unwrap();
         assert_ne!(short_of(&stepped, PROP_SHUTTER_SPEED), "1/125");
         stop(sim, &state).await;
+    }
+
+    #[tokio::test]
+    async fn apply_values_writes_in_order_and_reports_each_failure() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (sim, state, _) = connected(tmp.path()).await;
+        let values = vec![
+            PresetValue {
+                code: PROP_ISO,
+                raw: PtpValue::U32(1600),
+            },
+            // Not in the aperture's settable list.
+            PresetValue {
+                code: PROP_F_NUMBER,
+                raw: PtpValue::U16(9999),
+            },
+            PresetValue {
+                code: PROP_SHUTTER_SPEED,
+                raw: PtpValue::U32(66536),
+            },
+        ];
+        let out = apply_values(&state, values).await.unwrap();
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[0].code, PROP_ISO);
+        assert!(out[0].error.is_none(), "{:?}", out[0].error);
+        assert_eq!(out[1].code, PROP_F_NUMBER);
+        assert!(out[1].error.is_some());
+        assert_eq!(out[2].code, PROP_SHUTTER_SPEED);
+        assert!(out[2].error.is_none(), "{:?}", out[2].error);
+        let after = get_state(&state).await.unwrap();
+        assert_eq!(short_of(&after, PROP_ISO), "1600");
+        assert_ne!(short_of(&after, PROP_SHUTTER_SPEED), "1/125");
+        stop(sim, &state).await;
+    }
+
+    #[tokio::test]
+    async fn apply_values_needs_a_camera() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = app_state(tmp.path());
+        assert_eq!(
+            apply_values(&state, vec![]).await.unwrap_err(),
+            NOT_CONNECTED
+        );
+    }
+
+    #[test]
+    fn apply_outcome_json_is_stable() {
+        let out = ApplyOutcome {
+            code: 0x5007,
+            error: Some("nope".into()),
+        };
+        assert_eq!(
+            serde_json::to_value(&out).unwrap(),
+            serde_json::json!({ "code": 20487, "error": "nope" })
+        );
     }
 
     #[tokio::test]

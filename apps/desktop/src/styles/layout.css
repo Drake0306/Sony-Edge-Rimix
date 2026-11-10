@@ -244,7 +244,6 @@ body{overflow:hidden}
 .r button:disabled:hover{background:none}
 .r.pending .v{opacity:.5}
 .r.pending .mini{opacity:.6}
-.segc[aria-label="Presets"] button{cursor:default}
 
 /* ring: segments the camera has switched off, and Record while recording */
 .ring .seg.off{opacity:.45}
@@ -301,6 +300,35 @@ body{overflow:hidden}
 /* toasts */
 .toasts{position:fixed;left:50%;top:64px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;z-index:70;pointer-events:none}
 .toast{padding:9px 16px;font-size:12.5px;max-width:560px;text-align:center}
+
+/* presets: slots C1 to C4, the save or rename form and the options menu */
+.presets{display:flex;flex:none}
+.presets .pslot{display:inline-flex;align-items:center}
+.presets .segc button[role="radio"] small{margin-right:6px;font-size:11px;color:var(--ink-3)}
+.presets .segc button[role="radio"].on small{color:var(--sel-ink-2)}
+.presets .segc button.empty{color:var(--ink-3)}
+.presets .segc button:disabled{opacity:.45;cursor:default}
+.presets .segc button:disabled:hover{background:none}
+.presets .segc button.on:disabled:hover{background:var(--sel)}
+.presets .segc button.busy{animation:preset-busy 1.1s ease-in-out infinite alternate;cursor:progress}
+@keyframes preset-busy{from{opacity:1}to{opacity:.5}}
+.presets .segc .more{min-width:0;width:18px;padding:0;margin-left:-2px;color:var(--ink-3);font-weight:600;letter-spacing:-.02em}
+.presets .segc .more:hover{color:var(--ink);background:var(--hov)}
+.presets .segc .more[aria-expanded="true"]{color:var(--ink);background:var(--hov)}
+.preset-form,.preset-menu{position:absolute;z-index:40;border-radius:16px}
+.preset-form{display:flex;flex-direction:column;gap:8px;width:240px;padding:10px}
+.preset-form label{font-size:11.5px;font-weight:600;color:var(--ink-2);padding:0 2px}
+.preset-form input{height:30px;border:0;border-radius:10px;background:var(--input-bg);box-shadow:inset 0 0 0 .5px var(--input-ring);padding:0 10px;font-size:12.5px;color:var(--ink);min-width:0}
+.preset-form input:hover{background:var(--input-hov)}
+.preset-form input:focus-visible{box-shadow:var(--focus)!important}
+.preset-form .btns{display:flex;justify-content:flex-end;gap:6px}
+.preset-form .btns .pbtn{height:26px;padding:0 12px;font-size:12px}
+.preset-form .sbtn{height:26px;padding:0 12px;border-radius:9px;font-size:12px;font-weight:500;background:var(--well-2);color:var(--ink)}
+.preset-form .sbtn:hover{background:var(--hov-2)}
+.preset-menu{display:flex;flex-direction:column;min-width:200px;padding:5px}
+.preset-menu button{height:28px;padding:0 10px;border-radius:9px;text-align:left;font-size:12.5px;white-space:nowrap}
+.preset-menu button:hover,.preset-menu button:focus-visible{background:var(--hov)}
+.preset-menu button:last-child{color:var(--error-ink)}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 

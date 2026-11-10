@@ -160,6 +160,12 @@ export interface Preset {
   values: PresetValue[];
 }
 
+/** How one value of a preset went: `error` is null when the camera took it. */
+export interface ApplyOutcome {
+  code: number;
+  error: string | null;
+}
+
 export interface AppSettings {
   appearance: Appearance;
   layout: Layout;
@@ -194,6 +200,8 @@ export const setProperty = (code: number, raw: PtpValue) =>
   invoke<void>('set_property', { code, raw });
 export const stepProperty = (code: number, delta: number) =>
   invoke<void>('step_property', { code, delta });
+/** Writes each value in order, carrying on past refusals; one outcome per value. */
+export const applyValues = (values: PresetValue[]) => invoke<ApplyOutcome[]>('apply_values', { values });
 export const shoot = () => invoke<void>('shoot');
 export const focus = () => invoke<void>('focus');
 export const toggleRecord = () => invoke<void>('toggle_record');

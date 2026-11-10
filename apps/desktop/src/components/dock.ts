@@ -5,9 +5,9 @@ import type { Actions } from '../actions';
 import { button, el } from '../dom';
 import { chipValue, CHIP_CODES, findProp, SETTING_NAMES } from '../props';
 import { watch, type AppState, type AppStore } from '../state';
+import { presetsControl } from './presetsControl';
 import { createSettingsPopover } from './settingsPopover';
 
-const PRESETS_SOON = 'Presets arrive in the next version';
 const FOCUS_GLYPH =
   '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M13 3h2a2 2 0 0 1 2 2v2M17 13v2a2 2 0 0 1-2 2h-2M7 17H5a2 2 0 0 1-2-2v-2"/><circle cx="10" cy="10" r="2.2"/></svg>';
 
@@ -23,26 +23,6 @@ function chip(label: string): HTMLButtonElement {
   const b = button('chip');
   b.append(el('small', '', label), el('b'));
   return b;
-}
-
-/** The four preset slots; presets arrive in the next version. */
-export function presets(): HTMLElement {
-  const segc = el('div', 'segc');
-  segc.setAttribute('role', 'radiogroup');
-  segc.setAttribute('aria-label', 'Presets');
-  segc.title = PRESETS_SOON;
-  ['C1', 'C2', 'C3', 'C4'].forEach((name, i) => {
-    const b = button(i === 0 ? 'on' : '');
-    b.setAttribute('role', 'radio');
-    b.setAttribute('aria-checked', String(i === 0));
-    b.setAttribute('aria-disabled', 'true');
-    b.title = PRESETS_SOON;
-    b.append(el('small', '', name));
-    if (i === 0) b.append('Talking head');
-    else b.setAttribute('aria-label', `Preset ${name}, empty`);
-    segc.append(b);
-  });
-  return segc;
 }
 
 function action(label: string, extra: string, glyph: (c: HTMLElement) => void, run: () => void) {
@@ -87,7 +67,8 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   acts.append(record, shoot, focus);
 
   const left = el('div', 'left');
-  left.append(presets());
+  const presets = presetsControl(store, actions);
+  left.append(presets.el);
   const right = el('div', 'right');
   right.setAttribute('aria-live', 'off');
   const row = el('div', 'dockrow');
@@ -125,6 +106,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   return () => {
     offs.forEach((off) => off());
     popover.destroy();
+    presets.destroy();
     window.clearInterval(tick);
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('resize', onResize);

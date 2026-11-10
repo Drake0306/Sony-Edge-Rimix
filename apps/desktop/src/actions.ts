@@ -10,7 +10,8 @@ import {
   joiningText,
   wifiErrorMessage,
 } from './copy';
-import type { AppSettings, PtpValue, RecentCamera } from './ipc';
+import type { AppSettings, Preset, PtpValue, RecentCamera } from './ipc';
+import { describeFailures, upsertPreset } from './presets';
 import type { WifiCredentials } from './qr/payload';
 import type { AppStore } from './state';
 
@@ -34,6 +35,11 @@ export interface Actions {
   stepProperty(code: number, delta: number): void;
   setProperty(code: number, raw: PtpValue): void;
   saveSettings(settings: AppSettings): Promise<void>;
+  /** Writes a preset's values to the camera, toasting any it refused. */
+  applyPreset(preset: Preset): Promise<void>;
+  /** Stores a preset, replacing the one in its slot for its model. */
+  savePreset(preset: Preset): Promise<void>;
+  deletePreset(id: string): Promise<void>;
   pickFolder(): Promise<string | null>;
   toast(message: string): void;
 }
@@ -127,7 +133,14 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     },
     async disconnect() {
       await ipc.disconnect().catch((e) => toast(message(e)));
-      store.set({ screen: 'connect', camera: null, reconnecting: null, captures: [], transfers: {} });
+      store.set({
+        screen: 'connect',
+        camera: null,
+        reconnecting: null,
+        captures: [],
+        transfers: {},
+        activePreset: null,
+      });
     },
     shoot: () => run(ipc.shoot()),
     focus: () => run(ipc.focus()),
@@ -135,6 +148,29 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     stepProperty: (code, delta) => run(ipc.stepProperty(code, delta)),
     setProperty: (code, raw) => run(ipc.setProperty(code, raw)),
     saveSettings,
+    async applyPreset(preset) {
+      store.set({ presetBusy: preset.slot });
+      try {
+        const outcomes = await ipc.applyValues(preset.values);
+        const failed = describeFailures(outcomes);
+        if (failed) toast(failed);
+        else store.set({ activePreset: preset.slot });
+      } catch (e) {
+        toast(message(e));
+      } finally {
+        store.set({ presetBusy: null });
+      }
+    },
+    async savePreset(preset) {
+      const settings = store.get().settings;
+      if (!settings) return;
+      await saveSettings({ ...settings, presets: upsertPreset(settings.presets, preset) });
+    },
+    async deletePreset(id) {
+      const settings = store.get().settings;
+      if (!settings) return;
+      await saveSettings({ ...settings, presets: settings.presets.filter((p) => p.id !== id) });
+    },
     async pickFolder() {
       try {
         return await ipc.pickFolder();

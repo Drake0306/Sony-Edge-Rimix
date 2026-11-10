@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import cameraState from './fixtures/camera-state.json';
 import { ASK_FIND_MS, createActions, FIND_MS } from './actions';
 import * as ipc from './ipc';
-import type { AppSettings, CameraState, DiscoveredCamera, RecentCamera, WifiJoin } from './ipc';
+import type { AppSettings, CameraState, DiscoveredCamera, Preset, RecentCamera, WifiJoin } from './ipc';
 import { createStore, defaultSettings, initialState, type AppState } from './state';
 
 vi.mock('./ipc', () => ({
@@ -13,6 +13,7 @@ vi.mock('./ipc', () => ({
   joinNetwork: vi.fn(),
   waitForCamera: vi.fn(),
   disconnect: vi.fn(),
+  applyValues: vi.fn(),
 }));
 
 const camera = cameraState as unknown as CameraState;
@@ -179,5 +180,84 @@ describe('connect over Wi-Fi', () => {
     const store = storeWith('Automatic', { recentCameras: [a, b], lastIp: a.ip });
     await createActions(store).forgetCamera(b);
     expect(store.get().settings).toMatchObject({ recentCameras: [a], lastIp: a.ip });
+  });
+});
+
+describe('presets', () => {
+  const preset: Preset = {
+    id: 'a',
+    name: 'Talking head',
+    model: 'ZV-E10',
+    slot: 2,
+    values: [
+      { code: 0xd21e, raw: { U32: 1600 } },
+      { code: 0x5007, raw: { U16: 9999 } },
+    ],
+  };
+  const other: Preset = { ...preset, id: 'b', slot: 3, name: 'Night' };
+
+  test('applyPreset is busy while it runs and toasts what failed', async () => {
+    vi.mocked(ipc.applyValues).mockResolvedValue([
+      { code: 0xd21e, error: null },
+      { code: 0x5007, error: 'Value not allowed' },
+    ]);
+    const store = storeWith('Automatic', {}, { camera, activePreset: 1 });
+    const toast = vi.fn();
+    const busy: (number | null)[] = [];
+    store.subscribe((s) => busy.push(s.presetBusy));
+    await createActions(store, toast).applyPreset(preset);
+    expect(ipc.applyValues).toHaveBeenCalledWith(preset.values);
+    expect(busy[0]).toBe(2);
+    expect(store.get().presetBusy).toBeNull();
+    expect(toast).toHaveBeenCalledWith('Could not set Aperture');
+    // Not a full success, so the previous active preset stays.
+    expect(store.get().activePreset).toBe(1);
+  });
+
+  test('applyPreset marks the slot active on full success', async () => {
+    vi.mocked(ipc.applyValues).mockResolvedValue([
+      { code: 0xd21e, error: null },
+      { code: 0x5007, error: null },
+    ]);
+    const store = storeWith('Automatic', {}, { camera });
+    const toast = vi.fn();
+    await createActions(store, toast).applyPreset(preset);
+    expect(toast).not.toHaveBeenCalled();
+    expect(store.get().activePreset).toBe(2);
+    expect(store.get().presetBusy).toBeNull();
+  });
+
+  test('applyPreset clears busy and toasts when the command fails', async () => {
+    vi.mocked(ipc.applyValues).mockRejectedValue('Not connected to a camera');
+    const store = storeWith('Automatic', {}, { camera });
+    const toast = vi.fn();
+    await createActions(store, toast).applyPreset(preset);
+    expect(toast).toHaveBeenCalledWith('Not connected to a camera');
+    expect(store.get().presetBusy).toBeNull();
+    expect(store.get().activePreset).toBeNull();
+  });
+
+  test('savePreset adds or replaces the slot and saves the settings', async () => {
+    const store = storeWith('Automatic', { presets: [other] });
+    const actions = createActions(store);
+    await actions.savePreset(preset);
+    expect(vi.mocked(ipc.saveSettings).mock.calls[0][0].presets).toEqual([other, preset]);
+    const renamed = { ...preset, name: 'Vlog' };
+    await actions.savePreset(renamed);
+    expect(vi.mocked(ipc.saveSettings).mock.calls[1][0].presets).toEqual([other, renamed]);
+    expect(store.get().settings?.presets).toEqual([other, renamed]);
+  });
+
+  test('deletePreset drops it by id', async () => {
+    const store = storeWith('Automatic', { presets: [preset, other] });
+    await createActions(store).deletePreset('a');
+    expect(vi.mocked(ipc.saveSettings).mock.calls[0][0].presets).toEqual([other]);
+  });
+
+  test('disconnect forgets the active preset', async () => {
+    vi.mocked(ipc.disconnect).mockResolvedValue();
+    const store = storeWith('Automatic', {}, { camera, activePreset: 2 });
+    await createActions(store).disconnect();
+    expect(store.get().activePreset).toBeNull();
   });
 });

@@ -113,6 +113,17 @@ describe('ring', () => {
     expect(onDoc).not.toHaveBeenCalled();
   });
 
+  test('the presets bar holds the live presets control', () => {
+    const { root, unmount } = setup();
+    const slots = [...root.querySelectorAll<HTMLButtonElement>('.ringbar [role="radio"]')];
+    expect(slots.map((b) => b.querySelector('small')!.textContent)).toEqual(['C1', 'C2', 'C3', 'C4']);
+    expect(slots.every((b) => !b.disabled)).toBe(true);
+    slots[3].click();
+    expect(root.querySelector<HTMLElement>('.preset-form')!.hidden).toBe(false);
+    unmount();
+    expect(root.querySelector('.preset-form')).toBeNull();
+  });
+
   test('unmount removes the ring, its panel and the presets bar', () => {
     const { root, unmount } = setup();
     unmount();
