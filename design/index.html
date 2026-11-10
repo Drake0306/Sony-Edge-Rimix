@@ -43,12 +43,27 @@ header p{max-width:68ch;color:var(--fg-2);margin:.3rem 0}
 <body>
 <div class="wrap">
 <header>
-  <h1>Glass variants for Rimix</h1>
-  <p>Round two. Every variant combines the two things kept from round one: the Viewfinder layout, where the live view fills the window and the controls float over it, and the Remote Console settings list, one row per setting with inline controls. All of them use an Apple-style frosted glass material. Same two screens, same content, so only the design changes.</p>
+  <h1>Rimix design</h1>
+  <p>Decision: Glass Dock (13) is the base. The light theme comes from Glass Daylight (16) and the Ring layout from Glass Ring (15), both switchable in the app's settings. The first card below is the combined, interactive reference: open it and use the gear button in its top bar to switch Appearance and Layout.</p>
   <p>Click any preview to open it full size in a new tab. Each page scrolls: the main screen is on top, the connect screen below it. Press Escape and come back here to compare the next one.</p>
   <div class="how"><span>Previews are the real files, scaled down.</span><span>Each card lists the one idea, the palette, and the typefaces.</span></div>
 </header>
-<h2 class="group">Round two: glass variants</h2>
+<h2 class="group">Chosen direction, interactive</h2>
+<section class="grid">
+
+<article class="card" id="d20">
+  <a class="frame" href="mockups/20-rimix-final.html" title="Open Final full size">
+    <iframe src="mockups/20-rimix-final.html" loading="lazy" tabindex="-1" title="Final preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">20</span><h2>Final</h2><a class="open" href="mockups/20-rimix-final.html">Open full size</a></div>
+    <p class="idea">design 13&#x27;s floating glass dock is the base; the same page also carries design 15&#x27;s lens-style control ring and design 16&#x27;s frosted-white theme, switched at runtime from a small App settings popover (gear, top right) and remembered in localStorage, so one file is the whole design reference.</p>
+    <div class="row"><span class="sw"><i style="background:#0C0E12" title="#0C0E12"></i><i style="background:#FFFFFF" title="#FFFFFF"></i><i style="background:#1D1D1F" title="#1D1D1F"></i><i style="background:#0B0D11" title="#0B0D11"></i><i style="background:#E9EBEF" title="#E9EBEF"></i><i style="background:#4A4A4F" title="#4A4A4F"></i><i style="background:#73737A" title="#73737A"></i></span><span class="fonts">Inter 400-700 (Google Fonts) with -apple-system / SF Pro Text / Helvetica Neue fallbacks; tabular numerals on every value.</span></div>
+    <p class="avoid">Avoided: a colour accent for selection (hierarchy is brighter or more opaque glass only), uppercase labels, monospace values, identical cards with one radius (dock 24, panels 18, groups 12, steppers 7), load animations, arrows on buttons; the app settings and the camera settings are kept as two separate popovers so the two meanings of &quot;settings&quot; never share a panel.</p>
+  </div>
+</article>
+</section>
+<h2 class="group">Round two: the glass variants it was chosen from</h2>
 <section class="grid">
 
 <article class="card" id="d11">
