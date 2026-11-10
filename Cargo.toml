@@ -1,6 +1,5 @@
 [workspace]
-# apps/desktop/src-tauri is added in Task 13.
-members = ["crates/*"]
+members = ["crates/*", "apps/desktop/src-tauri"]
 resolver = "2"
 
 [workspace.package]

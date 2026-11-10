@@ -1,0 +1,1 @@
+{"StateChanged":{"connected":true,"model":"ZV-E10","firmware":"2.00","battery":72,"recording":false,"focus_found":false,"properties":[{"code":20493,"label":"1/125","short":"1/125","raw":{"U32":65661},"writable":true,"enabled":"On","choices":[{"raw":{"U32":65661},"label":"1/125"}]}],"live_view_fps":29.5,"last_shot_at":null}}
