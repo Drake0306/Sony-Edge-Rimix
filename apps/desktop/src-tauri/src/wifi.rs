@@ -247,6 +247,7 @@ mod tests {
                 calls: Mutex::new(Vec::new()),
             })
         }
+        #[cfg(target_os = "macos")]
         fn calls(&self) -> Vec<Vec<String>> {
             self.calls.lock().unwrap().clone()
         }
@@ -266,6 +267,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "macos")]
     fn out(stdout: &str) -> Output {
         Output {
             success: true,

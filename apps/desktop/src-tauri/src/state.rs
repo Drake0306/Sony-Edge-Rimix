@@ -110,6 +110,21 @@ pub async fn current_network(state: &AppState) -> Result<Option<String>, String>
 /// Waits up to `timeout` for a camera to answer. `RIMIX_CAMERA_ADDR`
 /// (`host:port`, port 15740 by default) stands in for one during development.
 pub async fn wait_for_camera(timeout: Duration) -> Result<DiscoveredCamera, String> {
+    wait_for_camera_with(sony_ptpip::discover, timeout).await
+}
+
+/// How long one discovery round listens, and so how often it repeats.
+const DISCOVER_ROUND: Duration = Duration::from_millis(1500);
+
+/// [`wait_for_camera`] over any discovery function, so tests need no network.
+pub(crate) async fn wait_for_camera_with<F, Fut>(
+    discover: F,
+    timeout: Duration,
+) -> Result<DiscoveredCamera, String>
+where
+    F: Fn(Duration) -> Fut,
+    Fut: std::future::Future<Output = Result<Vec<DiscoveredCamera>, sony_ptpip::error::Error>>,
+{
     if let Ok(addr) = std::env::var("RIMIX_CAMERA_ADDR") {
         let addr = parse_addr(&addr)?;
         return Ok(DiscoveredCamera {
@@ -125,9 +140,8 @@ pub async fn wait_for_camera(timeout: Duration) -> Result<DiscoveredCamera, Stri
     }
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
-        let found = sony_ptpip::discover(Duration::from_millis(1500))
-            .await
-            .unwrap_or_default();
+        let round_start = tokio::time::Instant::now();
+        let found = discover(DISCOVER_ROUND).await.unwrap_or_default();
         let pick = found
             .iter()
             .position(|c| c.source == DiscoverySource::Gateway)
@@ -138,6 +152,8 @@ pub async fn wait_for_camera(timeout: Duration) -> Result<DiscoveredCamera, Stri
         if tokio::time::Instant::now() >= deadline {
             return Err(NO_CAMERA.to_string());
         }
+        // A round that failed at once (no address yet) must not spin.
+        tokio::time::sleep_until(round_start + DISCOVER_ROUND).await;
     }
 }
 
@@ -592,16 +608,63 @@ mod tests {
     /// Serialises the tests that set `RIMIX_CAMERA_ADDR`.
     static CAMERA_ADDR: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+    fn camera(name: &str, source: DiscoverySource) -> DiscoveredCamera {
+        DiscoveredCamera {
+            model: name.to_string(),
+            friendly_name: name.to_string(),
+            ip: "192.168.122.1".parse().unwrap(),
+            ptp_port: PTP_PORT,
+            ptp_version: None,
+            pairing_required: None,
+            ssh_supported: None,
+            source,
+        }
+    }
+
     #[tokio::test]
-    async fn wait_for_camera_honours_the_dev_override_and_times_out_otherwise() {
+    async fn wait_for_camera_honours_the_dev_override() {
         let _guard = CAMERA_ADDR.lock().await;
         std::env::set_var("RIMIX_CAMERA_ADDR", "127.0.0.1:15740");
         let cam = wait_for_camera(Duration::from_millis(10)).await.unwrap();
+        std::env::remove_var("RIMIX_CAMERA_ADDR");
         assert_eq!(cam.ip, "127.0.0.1".parse::<IpAddr>().unwrap());
         assert_eq!(cam.ptp_port, 15740);
+    }
+
+    #[tokio::test]
+    async fn wait_for_camera_times_out_without_spinning() {
+        let _guard = CAMERA_ADDR.lock().await;
         std::env::remove_var("RIMIX_CAMERA_ADDR");
-        let err = wait_for_camera(Duration::from_millis(1)).await.unwrap_err();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let err = wait_for_camera_with(
+            |_| {
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                async { Ok(Vec::new()) }
+            },
+            Duration::from_millis(10),
+        )
+        .await
+        .unwrap_err();
         assert_eq!(err, NO_CAMERA);
+        assert!(calls.load(std::sync::atomic::Ordering::SeqCst) < 5);
+    }
+
+    #[tokio::test]
+    async fn wait_for_camera_prefers_the_gateway_camera() {
+        let _guard = CAMERA_ADDR.lock().await;
+        std::env::remove_var("RIMIX_CAMERA_ADDR");
+        let cam = wait_for_camera_with(
+            |_| async {
+                Ok(vec![
+                    camera("ssdp", DiscoverySource::Ssdp),
+                    camera("gateway", DiscoverySource::Gateway),
+                ])
+            },
+            Duration::from_millis(10),
+        )
+        .await
+        .unwrap();
+        assert_eq!(cam.model, "gateway");
     }
 
     #[tokio::test]
