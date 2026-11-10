@@ -57,7 +57,7 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     async saveSettings(settings) {
       try {
         await ipc.saveSettings(settings);
-        store.set({ settings });
+        store.set({ settings, unsaved: false });
       } catch (e) {
         toast(message(e));
       }

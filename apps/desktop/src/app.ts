@@ -13,20 +13,19 @@ import * as sidePanels from './components/sidePanels';
 import * as topbar from './components/topbar';
 import { el, isTyping } from './dom';
 import { getSettings, getState, onCameraEvent, type CameraEvent } from './ipc';
-import { applyEvent, createStore, initialState, watch, type AppStore } from './state';
+import { applyEvent, createStore, defaultSettings, initialState, watch, type AppState, type AppStore } from './state';
 import { applyAppearance, applyLayout } from './theme';
 
 const TOAST_MS = 4000;
 
 type Mount = (root: HTMLElement, store: AppStore, actions: Actions) => () => void;
 
-/** The dock or the ring, whichever `data-layout` names; swapped when it changes. */
+/** The dock or the ring, whichever the layout setting names; swapped when it changes. */
 export const controls: Mount = (root, store, actions) => {
   let unmount = () => {};
-  const off = watch(store, (s) => s.settings?.layout ?? 'Dock', () => {
+  const off = watch(store, (s) => s.settings?.layout === 'Ring', (isRing) => {
     unmount();
-    const layout = document.documentElement.getAttribute('data-layout');
-    unmount = (layout === 'ring' ? ring.mount : dock.mount)(root, store, actions);
+    unmount = (isRing ? ring.mount : dock.mount)(root, store, actions);
   });
   return () => {
     off();
@@ -66,12 +65,14 @@ export function handleShortcut(e: KeyboardEvent, store: AppStore, actions: Actio
 }
 
 export async function startApp(root: HTMLElement): Promise<void> {
+  // Settings that fail to load are replaced by unsaved defaults, so every
+  // change still flows through the store; saving is tried on each change.
   let settingsError: unknown = null;
   const settings = await getSettings().catch((e: unknown) => {
     settingsError = e;
-    return null;
+    return defaultSettings();
   });
-  const store = createStore({ ...initialState(), settings });
+  const store: AppStore = createStore<AppState>({ ...initialState(), settings, unsaved: settingsError !== null });
   // Theme and layout go on <html> before anything renders (Dark and Dock
   // when settings fail to load) and follow the settings from then on.
   watch(store, (s) => s.settings?.appearance ?? 'Dark', (a) => applyAppearance(a));
@@ -111,8 +112,8 @@ export async function startApp(root: HTMLElement): Promise<void> {
     if (Object.keys(patch).length) store.set(patch);
   });
 
+  if (settingsError) toast(`Cannot load settings: ${String(settingsError)}`);
   try {
-    if (settingsError) throw settingsError;
     const camera = await getState();
     if (camera) {
       store.set({

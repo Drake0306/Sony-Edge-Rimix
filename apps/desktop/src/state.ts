@@ -41,6 +41,8 @@ export interface AppState {
   screen: 'connect' | 'main';
   camera: CameraState | null;
   settings: AppSettings | null;
+  /** True while `settings` are defaults standing in for settings that failed to load and have not been saved since. */
+  unsaved: boolean;
   nearby: DiscoveredCamera[];
   /** Newest first, at most six. */
   captures: CaptureItem[];
@@ -62,6 +64,7 @@ export const initialState = (): AppState => ({
   screen: 'connect',
   camera: null,
   settings: null,
+  unsaved: false,
   nearby: [],
   captures: [],
   transfers: {},
@@ -69,6 +72,16 @@ export const initialState = (): AppState => ({
   overlays: { thirds: true, zebra: false },
   reconnecting: null,
   error: null,
+});
+
+/** What the app uses when the settings file cannot be read. */
+export const defaultSettings = (destinationBase = ''): AppSettings => ({
+  appearance: 'Dark',
+  layout: 'Dock',
+  destinationMode: 'FolderPerDate',
+  destinationBase,
+  recentCameras: [],
+  lastIp: null,
 });
 
 /**

@@ -5,7 +5,7 @@
 import type { Actions } from '../actions';
 import { button, el, icon } from '../dom';
 import type { AppSettings, Appearance, Layout } from '../ipc';
-import { watch, type AppStore } from '../state';
+import { defaultSettings, watch, type AppStore } from '../state';
 import { applyAppearance, applyLayout } from '../theme';
 import { saveToSection, sect } from './sidePanels';
 
@@ -76,12 +76,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   const change = (patch: Partial<AppSettings>) => {
     if (patch.appearance) applyAppearance(patch.appearance);
     if (patch.layout) applyLayout(patch.layout);
-    const current = store.get().settings;
-    if (!current) {
-      actions.toast('Settings did not load, so this change will not be kept');
-      return;
-    }
-    const next = { ...current, ...patch };
+    const next = { ...(store.get().settings ?? defaultSettings()), ...patch };
     store.set({ settings: next });
     void actions.saveSettings(next);
   };
