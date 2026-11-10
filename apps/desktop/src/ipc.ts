@@ -140,6 +140,24 @@ export interface RecentCamera {
   model: string;
   /** Milliseconds since the Unix epoch. */
   lastUsed: number;
+  /** The camera's Wi-Fi network name, when known. Never its password. */
+  ssid: string | null;
+}
+
+export type WifiJoin = 'Automatic' | 'Ask';
+
+export interface PresetValue {
+  code: number;
+  raw: PtpValue;
+}
+
+/** A saved set of camera properties for one model; `slot` is 1 to 4. */
+export interface Preset {
+  id: string;
+  name: string;
+  model: string;
+  slot: number;
+  values: PresetValue[];
 }
 
 export interface AppSettings {
@@ -149,6 +167,9 @@ export interface AppSettings {
   destinationBase: string;
   recentCameras: RecentCamera[];
   lastIp: string | null;
+  wifiJoin: WifiJoin;
+  webcamId: string | null;
+  presets: Preset[];
 }
 
 export const discover = (timeoutMs: number) =>

@@ -13,6 +13,9 @@ const settings: AppSettings = {
   destinationBase: '/Volumes/Card/Shots',
   recentCameras: [],
   lastIp: null,
+  wifiJoin: 'Automatic',
+  webcamId: null,
+  presets: [],
 };
 
 describe('Save to', () => {

@@ -109,7 +109,7 @@ pub async fn connect(
     }
     let snapshot = {
         let mut s = lock(&state.settings);
-        s.remember_camera(ip.trim(), &camera_state.model, now_millis());
+        s.remember_camera(ip.trim(), &camera_state.model, None, now_millis());
         s.clone()
     };
     if let Err(e) = settings::save(&state.settings_path, &snapshot) {

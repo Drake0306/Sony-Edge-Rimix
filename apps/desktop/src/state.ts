@@ -91,6 +91,9 @@ export const defaultSettings = (destinationBase = ''): AppSettings => ({
   destinationBase,
   recentCameras: [],
   lastIp: null,
+  wifiJoin: 'Automatic',
+  webcamId: null,
+  presets: [],
 });
 
 /**

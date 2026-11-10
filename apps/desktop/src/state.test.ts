@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import fixture from './fixtures/state-changed.json';
 import captureSaved from './fixtures/capture-saved.json';
-import { applyEvent, createStore, initialState } from './state';
+import { applyEvent, createStore, defaultSettings, initialState } from './state';
 import type { CameraEvent } from './ipc';
 
 describe('store', () => {
@@ -72,4 +72,11 @@ describe('store', () => {
     expect(applyEvent(initialState(), { CaptureSkipped: { filename: 'DSC00001.JPG' } })).toEqual({});
     expect(applyEvent({ ...initialState(), reconnecting: 2 }, 'Connected')).toEqual({ reconnecting: null });
   });
+});
+
+test('default settings carry the connection and preset fields', () => {
+  const s = defaultSettings('/x');
+  expect(s.wifiJoin).toBe('Automatic');
+  expect(s.webcamId).toBeNull();
+  expect(s.presets).toEqual([]);
 });

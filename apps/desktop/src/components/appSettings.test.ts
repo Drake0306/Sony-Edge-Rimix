@@ -13,8 +13,11 @@ const settings: AppSettings = {
   layout: 'Dock',
   destinationMode: 'FolderPerDate',
   destinationBase: '/Users/roy/Pictures/Rimix',
-  recentCameras: [{ ip: '192.168.122.1', model: 'ZV-E10', lastUsed: 1700000000000 }],
+  recentCameras: [{ ip: '192.168.122.1', model: 'ZV-E10', lastUsed: 1700000000000, ssid: null }],
   lastIp: '192.168.122.1',
+  wifiJoin: 'Automatic',
+  webcamId: null,
+  presets: [],
 };
 
 function setup(): { root: HTMLElement; store: AppStore; unmount: () => void } {

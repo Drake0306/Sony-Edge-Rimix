@@ -40,6 +40,9 @@ describe('startApp', () => {
         destinationBase: '',
         recentCameras: [],
         lastIp: null,
+        wifiJoin: 'Automatic',
+        webcamId: null,
+        presets: [],
       },
     });
 
