@@ -51,13 +51,16 @@ const SECOND_LIST_LIMIT: u16 = 0x0200;
 impl PropertyDesc {
     /// True if `value` is one the camera lists as settable for this property:
     /// in the enum's settable list, or inside the range on a step. A property
-    /// with no form accepts any value of the same type as its current value.
+    /// with no form lists nothing, so it accepts no value.
+    ///
+    /// This only checks the value. Callers must check `writable` and
+    /// `enabled` themselves before writing.
     pub fn accepts(&self, value: &PtpValue) -> bool {
         if std::mem::discriminant(value) != std::mem::discriminant(&self.current) {
             return false;
         }
         match &self.form {
-            Form::None => true,
+            Form::None => false,
             Form::Enum { settable, .. } => settable.contains(value),
             Form::Range { min, max, step } => {
                 let (Some(v), Some(min), Some(max), Some(step)) =
@@ -417,5 +420,9 @@ mod tests {
         assert!(!range.accepts(&PtpValue::U16(5250)));
         assert!(!range.accepts(&PtpValue::U16(10000)));
         assert!(!range.accepts(&PtpValue::U32(5200)));
+        let mut no_form = props[0].clone();
+        no_form.form = Form::None;
+        assert!(!no_form.accepts(&PtpValue::U16(3)));
+        assert!(!no_form.accepts(&PtpValue::U16(1)));
     }
 }
