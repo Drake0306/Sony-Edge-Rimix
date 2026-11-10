@@ -4,7 +4,8 @@
 
 import type { Actions } from '../actions';
 import { button, el, icon } from '../dom';
-import type { AppSettings, Appearance, Layout } from '../ipc';
+import type { AppSettings, Appearance, Layout, RecentCamera, WifiJoin } from '../ipc';
+import { listWebcams } from '../qr/scanner';
 import { defaultSettings, watch, type AppStore } from '../state';
 import { applyAppearance, applyLayout } from '../theme';
 import { saveToSection, sect } from './sidePanels';
@@ -29,6 +30,7 @@ function segmented<T extends string>(
   label: string,
   values: T[],
   choose: (value: T) => void,
+  labels: string[] = values,
 ): Segmented<T> {
   const r = el('div', 'r');
   r.setAttribute('role', 'listitem');
@@ -36,7 +38,7 @@ function segmented<T extends string>(
   mini.setAttribute('role', 'radiogroup');
   mini.setAttribute('aria-label', label);
   const buttons = values.map((v) => {
-    const b = button('', v);
+    const b = button('', labels[values.indexOf(v)]);
     b.setAttribute('role', 'radio');
     b.addEventListener('click', () => choose(v));
     mini.append(b);
@@ -57,6 +59,8 @@ function segmented<T extends string>(
     },
   };
 }
+
+const where = (rc: RecentCamera) => rc.ssid ?? rc.ip;
 
 export function mount(root: HTMLElement, store: AppStore, actions: Actions): () => void {
   const gear = button('gear glass quiet', undefined, 'App settings');
@@ -84,16 +88,67 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     change({ appearance: v }),
   );
   const layout = segmented<Layout>('Controls', 'Controls layout', ['Dock', 'Ring'], (v) => change({ layout: v }));
+  const wifi = segmented<WifiJoin>('Wi-Fi join', 'Wi-Fi join', ['Automatic', 'Ask'], (v) => change({ wifiJoin: v }), [
+    'Automatic',
+    'Ask me',
+  ]);
+
+  const select = document.createElement('select');
+  select.className = 'webcam-select';
+  select.setAttribute('aria-label', 'Webcam');
+  const webcamRow = el('div', 'r');
+  webcamRow.append(el('span', 'k', 'Webcam'), select);
+  const webcamGroup = el('div', 'group');
+  webcamGroup.setAttribute('role', 'list');
+  webcamRow.setAttribute('role', 'listitem');
+  webcamGroup.append(webcamRow);
+  let cams: { id: string; label: string }[] = [];
+  const fillWebcams = () => {
+    const opts = [new Option('Default', ''), ...cams.map((c) => new Option(c.label, c.id))];
+    select.replaceChildren(...opts);
+    const id = store.get().settings?.webcamId ?? '';
+    select.value = cams.some((c) => c.id === id) ? id : '';
+  };
+  select.addEventListener('change', () => change({ webcamId: select.value || null }));
+  fillWebcams();
+
+  const remembered = el('div', 'group remembered');
+  remembered.setAttribute('role', 'list');
+  remembered.setAttribute('aria-label', 'Remembered cameras');
+  const fillRemembered = (list: RecentCamera[]) => {
+    if (list.length === 0) {
+      remembered.replaceChildren(el('div', 'quiet', 'None yet'));
+      return;
+    }
+    remembered.replaceChildren(
+      ...list.map((rc) => {
+        const r = el('div', 'r');
+        r.setAttribute('role', 'listitem');
+        const forget = button('pathbtn', 'Forget', `Forget ${rc.model} on ${where(rc)}`);
+        forget.addEventListener('click', () => void actions.forgetCamera(rc));
+        r.append(el('span', 'k', rc.model), el('span', 'v', where(rc)), forget);
+        return r;
+      }),
+    );
+  };
   const saveTo = saveToSection(store, actions);
   const hint = el('div', 'hint');
   hint.innerHTML = KEYBOARD_GLYPH;
   hint.append(shortcutHint());
-  pop.append(el('div', 'ttl', 'App settings'), sect('Appearance', theme.el), sect('Layout', layout.el), saveTo.el, hint);
+  pop.append(el('div', 'ttl', 'App settings'), sect('Appearance', theme.el), sect('Layout', layout.el),
+    sect('Connection', wifi.el, webcamGroup, el('div', 'sub', 'Remembered cameras'), remembered),
+    saveTo.el, hint);
   pop.hidden = arrow.hidden = true;
 
   const setOpen = (open: boolean) => {
     pop.hidden = arrow.hidden = !open;
     gear.setAttribute('aria-expanded', String(open));
+    if (open) {
+      void listWebcams().then((list) => {
+        cams = list;
+        fillWebcams();
+      });
+    }
     if (open) pop.querySelector<HTMLElement>('.mini .on, button')?.focus();
   };
   gear.addEventListener('click', () => setOpen(pop.hidden));
@@ -114,10 +169,13 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   const off = watch(store, (s) => s.settings, (s) => {
     theme.sync(s?.appearance);
     layout.sync(s?.layout);
+    wifi.sync(s?.wifiJoin);
   });
+  const offRecent = watch(store, (s) => s.settings?.recentCameras, (list) => fillRemembered(list ?? []));
 
   return () => {
     off();
+    offRecent();
     saveTo.destroy();
     document.removeEventListener('keydown', onKey);
     [gear, arrow, pop].forEach((e) => e.remove());
