@@ -5,6 +5,7 @@ use super::{CameraState, Choice, PropertySummary};
 use crate::error::Error;
 use crate::ptp::codes::{PROP_BATTERY, PROP_FOCUS_FOUND, PROP_MOVIE_REC_STATE, PROP_WHITE_BALANCE};
 use crate::ptp::PtpValue;
+use crate::quirks::quirks_for;
 use crate::sony::decode::{label_for, wb_label};
 use crate::sony::property::{Form, PropertyDesc};
 
@@ -46,6 +47,7 @@ impl Snapshot {
             secured: self.secured,
             model: self.model.clone(),
             firmware: self.firmware.clone(),
+            generation: quirks_for(&self.model).generation.label().into(),
             battery: number(PROP_BATTERY)
                 .and_then(|v| u8::try_from(v).ok())
                 .filter(|&v| v <= 100),

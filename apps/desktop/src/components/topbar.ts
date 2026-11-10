@@ -36,8 +36,9 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
   const battText = el('b', 'num');
   const battPair = pair(batt, battText);
   const fw = el('b', 'num');
-  status.append(el('span', 'brand', 'Rimix'), model, pair(bars, link, lock), battPair, pair('Firmware ', fw));
-  status.lastElementChild!.classList.add('fw');
+  const fwPair = pair('Firmware ', fw);
+  fwPair.classList.add('fw');
+  status.append(el('span', 'brand', 'Rimix'), model, pair(bars, link, lock), battPair, fwPair);
 
   root.append(status);
 
@@ -50,6 +51,7 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
         s.camera?.secured,
         s.camera?.battery,
         s.camera?.firmware,
+        s.camera?.generation,
         s.reconnecting,
       ]),
     (_, { camera, reconnecting }) => {
@@ -63,6 +65,7 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
       battText.textContent = `${pct ?? 0}%`;
       level.style.width = `calc((100% - 3px) * ${Math.max(0, Math.min(100, pct ?? 0)) / 100})`;
       fw.textContent = camera?.firmware ?? '';
+      fwPair.title = camera ? `Firmware ${camera.firmware}, generation ${camera.generation}` : '';
     },
   );
 

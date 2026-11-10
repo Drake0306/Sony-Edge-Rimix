@@ -3,6 +3,7 @@
  "secured": false,
  "model": "ZV-E10",
  "firmware": "2.00",
+ "generation": "3",
  "battery": 72,
  "recording": false,
  "focus_found": false,

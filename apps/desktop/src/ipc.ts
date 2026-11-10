@@ -51,6 +51,8 @@ export interface CameraState {
   secured: boolean;
   model: string;
   firmware: string;
+  /** "3" or "4". */
+  generation: string;
   battery: number | null;
   recording: boolean;
   focus_found: boolean;

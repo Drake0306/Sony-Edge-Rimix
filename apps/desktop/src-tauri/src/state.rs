@@ -1009,6 +1009,7 @@ mod tests {
             secured: true,
             model: "ZV-E10".into(),
             firmware: "2.00".into(),
+            generation: "3".into(),
             battery: Some(72),
             recording: false,
             focus_found: false,

@@ -97,6 +97,7 @@ async fn connect_populates_state_with_labels() {
     let state = camera.state();
     assert!(state.connected);
     assert_eq!(state.model, "ZV-E10");
+    assert_eq!(state.generation, "3");
     assert_eq!(state.firmware, "2.00");
     assert_eq!(state.battery, Some(72));
     assert!(!state.recording);
@@ -570,4 +571,19 @@ async fn the_reconnect_hook_runs_before_the_second_attempt() {
     camera.disconnect().await;
     let revived = revived.lock().unwrap().take().unwrap();
     revived.events.send(SimCommand::Shutdown).await.unwrap();
+}
+
+#[tokio::test]
+async fn a7_iv_reports_generation_four() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sim_config = SimConfig {
+        model: "ILCE-7M4".into(),
+        fixture: "fixtures/ilce-7m4.json".into(),
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(sim_config, tmp.path()).await;
+    let state = camera.state();
+    assert_eq!(state.model, "ILCE-7M4");
+    assert_eq!(state.generation, "4");
+    stop(sim, camera).await;
 }

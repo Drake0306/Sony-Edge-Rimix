@@ -15,7 +15,7 @@ pub use camera::{
 pub use discovery::{discover, DiscoveredCamera, DiscoverySource};
 pub use guid::{default_host_name, load_or_create_guid};
 pub use ptpip::transport::{ConnectOptions, PtpEvent, PtpIpConnection};
-pub use quirks::{quirks_for, Quirks, WriteMode};
+pub use quirks::{quirks_for, quirks_from, Generation, Quirks, WriteMode};
 pub use sony::{focus, sdio_connect, set_value, shoot, toggle_record, ExtDeviceInfo};
 pub use ssh::{normalize_fingerprint, SshConfig, SshTunnel};
 

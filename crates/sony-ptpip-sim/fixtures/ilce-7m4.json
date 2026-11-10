@@ -1,0 +1,339 @@
+[
+  {
+    "code": "0x500E",
+    "datatype": "0x0004",
+    "writable": true,
+    "enabled": 1,
+    "default": 1,
+    "current": 1,
+    "form": {
+      "enum": {
+        "settable": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "reportable": []
+      }
+    }
+  },
+  {
+    "code": "0xD20D",
+    "datatype": "0x0006",
+    "writable": true,
+    "enabled": 1,
+    "default": 65661,
+    "current": 65661,
+    "form": {
+      "enum": {
+        "settable": [
+          69536,
+          68736,
+          68036,
+          67536,
+          67136,
+          66786,
+          66536,
+          66336,
+          66176,
+          66036,
+          65936,
+          65856,
+          65786,
+          65736,
+          65696,
+          65661,
+          65636,
+          65616,
+          65596,
+          65586
+        ],
+        "reportable": []
+      }
+    }
+  },
+  {
+    "code": "0x5007",
+    "datatype": "0x0004",
+    "writable": true,
+    "enabled": 1,
+    "default": 400,
+    "current": 400,
+    "form": {
+      "enum": {
+        "settable": [
+          400,
+          450,
+          500,
+          560,
+          630,
+          710,
+          800,
+          900,
+          1000,
+          1100
+        ],
+        "reportable": []
+      }
+    }
+  },
+  {
+    "code": "0xD21E",
+    "datatype": "0x0006",
+    "writable": true,
+    "enabled": 1,
+    "default": 800,
+    "current": 800,
+    "form": {
+      "enum": {
+        "settable": [
+          16777215,
+          100,
+          125,
+          160,
+          200,
+          250,
+          320,
+          400,
+          500,
+          640,
+          800,
+          1000,
+          1250,
+          1600,
+          2000,
+          2500,
+          3200,
+          6400,
+          12800,
+          25600,
+          32000
+        ],
+        "reportable": []
+      }
+    }
+  },
+  {
+    "code": "0x5010",
+    "datatype": "0x0003",
+    "writable": true,
+    "enabled": 1,
+    "default": 300,
+    "current": 300,
+    "form": {
+      "enum": {
+        "settable": [
+          -5000,
+          -4800,
+          -4500,
+          -4200,
+          -3900,
+          -3600,
+          -3300,
+          -3000,
+          -2700,
+          -2400,
+          -2100,
+          -1800,
+          -1500,
+          -1200,
+          -900,
+          -600,
+          -300,
+          0,
+          300,
+          600,
+          900,
+          1200,
+          1500,
+          1800,
+          2100,
+          2400,
+          2700,
+          3000,
+          3300,
+          3600,
+          3900,
+          4200,
+          4500,
+          4800,
+          5000
+        ],
+        "reportable": []
+      }
+    }
+  },
+  {
+    "code": "0x5005",
+    "datatype": "0x0004",
+    "writable": true,
+    "enabled": 1,
+    "default": 32775,
+    "current": 32775,
+    "form": {
+      "enum": {
+        "settable": [
+          2,
+          4,
+          32785,
+          32784,
+          6,
+          32769,
+          32770,
+          32771,
+          32772,
+          7,
+          32775,
+          32800
+        ],
+        "reportable": []
+      }
+    }
+  },
+  {
+    "code": "0xD20F",
+    "datatype": "0x0004",
+    "writable": true,
+    "enabled": 1,
+    "default": 5200,
+    "current": 5200,
+    "form": {
+      "range": {
+        "min": 2500,
+        "max": 9900,
+        "step": 100
+      }
+    }
+  },
+  {
+    "code": "0x500A",
+    "datatype": "0x0004",
+    "writable": true,
+    "enabled": 1,
+    "default": 32772,
+    "current": 32772,
+    "form": {
+      "enum": {
+        "settable": [
+          1,
+          2,
+          32772,
+          32773,
+          32774
+        ],
+        "reportable": []
+      }
+    }
+  },
+  {
+    "code": "0x5013",
+    "datatype": "0x0004",
+    "writable": true,
+    "enabled": 1,
+    "default": 1,
+    "current": 1,
+    "form": {
+      "enum": {
+        "settable": [
+          1,
+          2,
+          32786,
+          32772
+        ],
+        "reportable": []
+      }
+    }
+  },
+  {
+    "code": "0x5004",
+    "datatype": "0x0002",
+    "writable": true,
+    "enabled": 1,
+    "default": 19,
+    "current": 19,
+    "form": {
+      "enum": {
+        "settable": [
+          2,
+          3,
+          4,
+          16,
+          19
+        ],
+        "reportable": []
+      }
+    }
+  },
+  {
+    "code": "0xD215",
+    "datatype": "0x0004",
+    "writable": false,
+    "enabled": 2,
+    "default": 0,
+    "current": 0,
+    "form": "none"
+  },
+  {
+    "code": "0xD218",
+    "datatype": "0x0002",
+    "writable": false,
+    "enabled": 2,
+    "default": 72,
+    "current": 72,
+    "form": "none"
+  },
+  {
+    "code": "0xD21D",
+    "datatype": "0x0002",
+    "writable": false,
+    "enabled": 2,
+    "default": 0,
+    "current": 0,
+    "form": "none"
+  },
+  {
+    "code": "0xD222",
+    "datatype": "0x0004",
+    "writable": true,
+    "enabled": 1,
+    "default": 17,
+    "current": 17,
+    "form": {
+      "enum": {
+        "settable": [
+          1,
+          16,
+          17
+        ],
+        "reportable": []
+      }
+    }
+  },
+  {
+    "code": "0xD268",
+    "datatype": "0x0002",
+    "writable": true,
+    "enabled": 1,
+    "default": 1,
+    "current": 1,
+    "form": {
+      "enum": {
+        "settable": [
+          1,
+          2
+        ],
+        "reportable": []
+      }
+    }
+  },
+  {
+    "code": "0xD213",
+    "datatype": "0x0002",
+    "writable": false,
+    "enabled": 2,
+    "default": 0,
+    "current": 0,
+    "form": "none"
+  }
+]

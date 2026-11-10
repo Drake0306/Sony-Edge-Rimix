@@ -115,6 +115,8 @@ pub struct CameraState {
     pub secured: bool,
     pub model: String,
     pub firmware: String,
+    /// The camera generation, "3" or "4", from the model table.
+    pub generation: String,
     /// Battery level in percent, when the camera reports one.
     pub battery: Option<u8>,
     pub recording: bool,

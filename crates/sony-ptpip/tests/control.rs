@@ -65,6 +65,7 @@ fn zv_e10_and_unknown_models_write_directly() {
         write_mode: WriteMode::Direct,
         live_view_via_http: false,
         pairing: true,
+        ..quirks_for("ZV-E10")
     };
     assert_eq!(quirks_for("ZV-E10"), expected);
     assert_eq!(quirks_for("Some Future Camera"), expected);
