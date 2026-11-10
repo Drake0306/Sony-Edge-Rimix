@@ -1,0 +1,901 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sony Edge Rimix Research</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: fixed left rail of contents, one reading column (~70ch) for prose, tables break out to full width and scroll inside their own frame. Datasheet feel: condensed display face, mono for data. */
+:root{
+  --bg:#f4f6f8; --surface:#ffffff; --surface-2:#eaeef2; --line:#d5dbe2; --line-strong:#aeb8c3;
+  --fg:#15202b; --fg-2:#46545f; --fg-3:#6d7a86;
+  --accent:#0b6e7f; --accent-soft:#d6ecef; --accent-ink:#064a56;
+  --ok:#1f7a3f; --ok-soft:#dbf0e1; --warn:#9a6300; --warn-soft:#fbeccc; --bad:#a7342d; --bad-soft:#f8dedb; --info:#355ea8; --info-soft:#dde6f7;
+  --display:"IBM Plex Sans Condensed","Avenir Next Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans","Helvetica Neue",Arial,system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --rail:248px; --measure:72ch; --radius:6px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --bg:#0f151b; --surface:#161e26; --surface-2:#1d2730; --line:#2b3741; --line-strong:#3f4d5a;
+  --fg:#e6ecf1; --fg-2:#b4c0cb; --fg-3:#8593a0;
+  --accent:#4fb3c3; --accent-soft:#143a42; --accent-ink:#9fdbe5;
+  --ok:#5cc47f; --ok-soft:#163d25; --warn:#e2b04a; --warn-soft:#3f3115; --bad:#f08a82; --bad-soft:#44201d; --info:#8fb0ee; --info-soft:#1d2d4b;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0f151b; --surface:#161e26; --surface-2:#1d2730; --line:#2b3741; --line-strong:#3f4d5a;
+  --fg:#e6ecf1; --fg-2:#b4c0cb; --fg-3:#8593a0;
+  --accent:#4fb3c3; --accent-soft:#143a42; --accent-ink:#9fdbe5;
+  --ok:#5cc47f; --ok-soft:#163d25; --warn:#e2b04a; --warn-soft:#3f3115; --bad:#f08a82; --bad-soft:#44201d; --info:#8fb0ee; --info-soft:#1d2d4b;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; scroll-padding-top:16px}
+@media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto} }
+body{margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 var(--body); -webkit-font-smoothing:antialiased}
+a{color:var(--accent); text-decoration:none; border-bottom:1px solid transparent}
+a:hover{border-bottom-color:var(--accent)}
+a:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+code{font:0.9em var(--mono); background:var(--surface-2); padding:.05em .35em; border-radius:4px}
+strong{font-weight:600}
+h1,h2,h3{font-family:var(--display); text-wrap:balance; line-height:1.15; margin:0}
+h2{font-size:1.75rem; font-weight:700; margin-top:3.2rem; padding-top:1.2rem; border-top:1px solid var(--line); letter-spacing:-.01em}
+h3{font-size:1.25rem; font-weight:600; margin-top:2.2rem; color:var(--fg)}
+p{margin:1rem 0}
+.eyebrow{font:500 .72rem/1 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--fg-3)}
+
+/* shell */
+.shell{display:grid; grid-template-columns:var(--rail) minmax(0,1fr); min-height:100vh}
+.rail{position:sticky; top:0; height:100vh; overflow-y:auto; border-right:1px solid var(--line); background:var(--surface); padding:22px 14px 24px max(16px,env(safe-area-inset-left,0px)); font-size:.86rem}
+.rail .brand{font-family:var(--display); font-weight:700; font-size:1.05rem; letter-spacing:.01em; margin-bottom:2px}
+.rail .brandsub{color:var(--fg-3); font:400 .72rem/1.4 var(--mono); margin-bottom:18px}
+.rail ol{list-style:none; margin:0; padding:0}
+.rail li a{display:block; padding:5px 8px; border-radius:4px; color:var(--fg-2); border-bottom:0; line-height:1.35}
+.rail li.lvl3 a{padding-left:20px; font-size:.8rem; color:var(--fg-3)}
+.rail li a:hover{background:var(--surface-2); color:var(--fg)}
+.rail li a.active{background:var(--accent-soft); color:var(--accent-ink); font-weight:500}
+main{min-width:0; padding-block:28px 72px; padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px))}
+.col{max-width:var(--measure); margin:0}
+.report{max-width:none}
+.report>p,.report>h2,.report>h3,.report>ul,.report>ol,.report>blockquote{max-width:var(--measure)}
+.report .filterbar{max-width:none}
+@media (min-width:1200px){ main{padding-left:56px; padding-right:40px} }
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr}
+  .rail{position:static; height:auto; border-right:0; border-bottom:1px solid var(--line)}
+  .rail ol{display:flex; flex-wrap:wrap; gap:2px}
+  .rail li.lvl3{display:none}
+}
+
+/* hero */
+.hero{padding-bottom:1.5rem; border-bottom:1px solid var(--line)}
+.hero h1{font-size:clamp(2.1rem,4.5vw,3.2rem); font-weight:700; letter-spacing:-.02em; margin:.4rem 0 .6rem}
+.hero .lede{font-size:1.1rem; color:var(--fg-2); max-width:var(--measure); margin:0}
+.meta{display:flex; flex-wrap:wrap; gap:10px 22px; margin-top:1rem; font:400 .78rem/1.4 var(--mono); color:var(--fg-3)}
+.meta b{color:var(--fg-2); font-weight:500}
+
+/* overview */
+.takeaways{display:grid; gap:14px; margin:1.4rem 0; padding:0; list-style:none; counter-reset:t}
+.takeaways li{position:relative; padding-left:3.2rem; min-width:0}
+.takeaways li::before{counter-increment:t; content:counter(t,decimal-leading-zero); position:absolute; left:0; top:.15rem; font:600 1.2rem/1 var(--display); color:var(--accent)}
+.takeaways li b{display:block; font-family:var(--display); font-weight:600; font-size:1.05rem; margin-bottom:.15rem}
+.takeaways li span{color:var(--fg-2); font-size:.95rem}
+
+.flow{margin:1.6rem 0; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); overflow:hidden}
+.flow .row{display:grid; grid-template-columns:150px 1fr; gap:0; border-top:1px solid var(--line); align-items:stretch}
+.flow .row:first-child{border-top:0}
+.flow .who{padding:12px 14px; font:600 .85rem/1.3 var(--display); background:var(--surface-2); color:var(--fg-2); display:flex; flex-direction:column; justify-content:center}
+.flow .who small{font:400 .7rem/1.3 var(--mono); color:var(--fg-3); margin-top:3px}
+.flow .steps{display:flex; flex-wrap:wrap; align-items:center; gap:6px 4px; padding:10px 12px; min-width:0}
+.step{font:500 .78rem/1.2 var(--mono); padding:5px 9px; border-radius:999px; background:var(--surface-2); border:1px solid var(--line); white-space:nowrap}
+.step.good{background:var(--ok-soft); border-color:transparent; color:var(--ok)}
+.step.pain{background:var(--warn-soft); border-color:transparent; color:var(--warn)}
+.step.radio{background:var(--info-soft); border-color:transparent; color:var(--info)}
+.step.gap{background:var(--bad-soft); border-color:transparent; color:var(--bad)}
+.arrow{color:var(--fg-3); font-size:.8rem}
+@media (max-width:600px){ .flow .row{grid-template-columns:1fr} .verdicts{grid-template-columns:1fr} }
+
+.verdicts{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:1.4rem 0}
+.verdict{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; min-width:0; display:flex; flex-direction:column; gap:6px}
+.verdict .tag{align-self:flex-start}
+.verdict h4{margin:0; font:600 1.05rem/1.2 var(--display)}
+.verdict h4 a{color:var(--fg)}
+.verdict p{margin:0; font-size:.88rem; color:var(--fg-2)}
+.verdict .facts{font:400 .72rem/1.5 var(--mono); color:var(--fg-3); margin-top:auto}
+
+details.bluf{margin:1.4rem 0; border-left:3px solid var(--accent); padding:4px 0 4px 16px}
+details.bluf summary{cursor:pointer; font-family:var(--display); font-weight:600; color:var(--accent-ink)}
+details.bluf p{color:var(--fg-2); font-size:.95rem}
+
+/* chips */
+.chip,.tag,.chipbtn{display:inline-block; font:500 .7rem/1 var(--mono); letter-spacing:.04em; text-transform:uppercase; padding:4px 7px; border-radius:4px; vertical-align:middle}
+.chip-alive,.tag-alive{background:var(--ok-soft); color:var(--ok)}
+.chip-stalled,.tag-stalled{background:var(--warn-soft); color:var(--warn)}
+.chip-dead{background:var(--bad-soft); color:var(--bad)}
+.chip-new{background:var(--info-soft); color:var(--info)}
+.tag-fork{background:var(--accent-soft); color:var(--accent-ink)}
+.tag-study{background:var(--info-soft); color:var(--info)}
+
+/* tables */
+.table-wrap{overflow-x:auto; margin:1.4rem 0; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); max-width:100%}
+table{border-collapse:separate; border-spacing:0; width:100%; font-size:.84rem; line-height:1.45}
+.wide-table table{min-width:1150px}
+.repo-table table{min-width:1600px}
+th,td{text-align:left; vertical-align:top; padding:9px 11px; border-bottom:1px solid var(--line); min-width:0}
+th{position:sticky; top:0; z-index:2; background:var(--surface-2); font:600 .72rem/1.3 var(--mono); letter-spacing:.06em; text-transform:uppercase; color:var(--fg-2); border-bottom:1px solid var(--line-strong)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:color-mix(in srgb,var(--surface-2) 55%,transparent)}
+td{font-variant-numeric:tabular-nums}
+.repo-table th:first-child,.repo-table td:first-child{position:sticky; left:0; z-index:1; background:var(--surface); box-shadow:1px 0 0 var(--line); min-width:200px; max-width:230px; font-weight:500}
+.repo-table th:first-child{z-index:3; background:var(--surface-2)}
+.repo-table tr[data-verdict="fork"] td:first-child{box-shadow:inset 3px 0 0 var(--accent),1px 0 0 var(--line)}
+.repo-table tr.hide{display:none}
+.repo-table td:nth-child(2){min-width:210px}
+.repo-table td:nth-child(7),.repo-table td:nth-child(8){min-width:260px}
+.repo-table td:nth-child(6){min-width:170px}
+td .chip{margin-right:4px; margin-bottom:3px}
+
+/* filter bar */
+.filterbar{position:sticky; top:0; z-index:5; margin:1.6rem 0 0; padding:12px 14px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius)}
+.filterrow{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:8px}
+.filterrow input{flex:1 1 260px; min-width:0; font:400 .95rem var(--body); padding:8px 11px; border:1px solid var(--line-strong); border-radius:4px; background:var(--bg); color:var(--fg)}
+.chips{display:flex; flex-wrap:wrap; gap:6px}
+.chipbtn{cursor:pointer; border:1px solid var(--line-strong); background:transparent; color:var(--fg-2)}
+.chipbtn.is-on{background:var(--fg); color:var(--bg); border-color:var(--fg)}
+.filternote{margin:8px 0 0; font:400 .75rem/1.4 var(--mono); color:var(--fg-3)}
+
+/* decisions */
+.decisions{counter-reset:d; list-style:none; padding:0; margin:1.2rem 0; display:grid; gap:10px}
+.decisions li{position:relative; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:12px 14px 12px 56px; font-size:.97rem}
+.decisions li::before{counter-increment:d; content:"Q" counter(d); position:absolute; left:14px; top:12px; font:600 .95rem/1.3 var(--display); color:var(--accent)}
+.callout{border-left:3px solid var(--warn); background:var(--surface); padding:10px 16px; margin:1.4rem 0; font-size:.95rem; color:var(--fg-2)}
+footer{margin-top:4rem; padding-top:1.2rem; border-top:1px solid var(--line); font:400 .78rem/1.6 var(--mono); color:var(--fg-3)}
+footer code{font-size:.95em}
+</style>
+</head>
+<body>
+<div class="shell">
+<nav class="rail" aria-label="Contents">
+  <div class="brand">Sony Edge Rimix</div>
+  <div class="brandsub">Research report · 2026-11-10</div>
+  <ol>
+<li><a href="#overview">Read this first</a></li>
+<li class="lvl2"><a href="#sony-splits-its-lineup-ble-native-phone-apps-usb-first-desktop-apps">Sony's own apps</a></li>
+<li class="lvl2"><a href="#what-mobile-can-do-that-desktop-cannot-and-the-reverse">Mobile vs desktop gap</a></li>
+<li class="lvl2"><a href="#connection-methods-per-camera-generation-decide-what-is-even-possible">Connection by camera generation</a></li>
+<li class="lvl2"><a href="#under-the-hood-ssdp-ptpip-on-15740-ssh-and-a-thin-ble-layer">Protocols under the hood</a></li>
+<li class="lvl2"><a href="#the-official-sdk-free-c-wi-fi-since-2024-awkward-to-package">Camera Remote SDK</a></li>
+<li class="lvl2"><a href="#implementation-options-isolate-the-camera-layer-then-pick-a-shell">Implementation options</a></li>
+<li class="lvl3"><a href="#camera-layer-routes">Camera-layer routes</a></li>
+<li class="lvl3"><a href="#ui-shells">UI shells</a></li>
+<li class="lvl2"><a href="#open-source-repositories-compared-fork-remotecam-study-alpha2go">GitHub repositories compared</a></li>
+<li class="lvl3"><a href="#a-apps-and-wrappers-built-on-sonys-camera-remote-sdk">A. Built on the SDK</a></li>
+<li class="lvl3"><a href="#b-sdk-free-ptpip-control-of-modern-bodies-plus-the-usb-only-modern-protocol-cousins">B. SDK-free PTP/IP</a></li>
+<li class="lvl3"><a href="#c-bluetooth-le-remote-geotag-and-credential-handoff">C. Bluetooth LE</a></li>
+<li class="lvl3"><a href="#d-wireless-image-transfer-only">D. Transfer only</a></li>
+<li class="lvl3"><a href="#e-legacy-camera-remote-api-mobile-only-and-miscellaneous-references">E. Legacy and misc</a></li>
+<li class="lvl2"><a href="#recommended-architecture-crsdk-sidecar-behind-a-thin-shell-ptpip-in-reserve">Recommended architecture</a></li>
+<li class="lvl2"><a href="#conclusion">Conclusion</a></li>
+<li><a href="#decisions">Decisions for you</a></li>
+  </ol>
+</nav>
+<main>
+<header class="hero">
+  <div class="eyebrow">Research report · Sony Alpha wireless desktop control</div>
+  <h1>Going wireless on the desktop</h1>
+  <p class="lede">What Sony's Creators' App and Imaging Edge apps do, how they talk to the camera, what a Mac and Windows app of your own can realistically replicate, and who has already built pieces of it.</p>
+  <div class="meta">
+    <span><b>Scope</b> macOS first, Windows second</span>
+    <span><b>Sources</b> 158 linked, collected 2026-11-10</span>
+    <span><b>Repos compared</b> ~60 surveyed, 41 catalogued</span>
+  </div>
+</header>
+
+<section id="overview" class="col">
+  <h2 style="border-top:0; margin-top:2rem">Read this first</h2>
+  <ol class="takeaways">
+    <li><b>Desktop over Wi-Fi is already possible, so the premise is half wrong.</b><span>Imaging Edge Desktop Remote has supported Wi-Fi Direct and router mode since 2019, but only on 2019-and-later bodies. The a7 III generation is USB-only, which is where the folklore comes from.</span></li>
+    <li><b>Every 2020+ Alpha runs a PTP/IP server on TCP 15740.</b><span>Sony's "Access Authentication" is an ordinary SSH tunnel to that port. The username, password and host-key fingerprint are shown on the camera screen. Five open-source projects have connected this way without Sony's SDK.</span></li>
+    <li><b>Sony's free Camera Remote SDK does Wi-Fi too.</b><span>C++ library, Windows x64 and macOS universal, Wi-Fi since April 2024, 31 bodies. You may embed it in a commercial app but not redistribute it. Everyone who shipped with it runs it in a separate helper process because it crashes on re-init.</span></li>
+    <li><b>The real gap between phone and desktop is the connection bootstrap, not control.</b><span>The phone pairs over Bluetooth, wakes the camera and receives Wi-Fi credentials automatically. None of that is in any Sony desktop app. Once connected, the desktop actually has more stills control than the phone.</span></li>
+    <li><b>A better onboarding flow is the whole product opportunity.</b><span>Webcam QR scan, programmatic Wi-Fi join, SSDP discovery, one-tap fingerprint confirmation, cached credentials and auto-reconnect are all buildable with documented APIs today. Full BLE bootstrap is partly reverse-engineered and partly unknown.</span></li>
+    <li><b>Camera generation decides everything.</b><span>If your own body is an a7 III, a6400 or a6600 class camera, no route delivers wireless control. If it is a7 IV or newer, both routes work.</span></li>
+  </ol>
+
+  <div class="eyebrow" style="margin-top:2rem">How each client gets from "camera on" to live view</div>
+  <div class="flow" role="img" aria-label="Comparison of connection flows for the phone app, Sony's desktop app, and the proposed app">
+    <div class="row"><div class="who">Creators' App<small>phone, today</small></div><div class="steps"><span class="step radio">BLE pair, 6-digit code</span><span class="arrow">→</span><span class="step radio">BLE wake + Wi-Fi handoff</span><span class="arrow">→</span><span class="step">PTP/IP :15740</span><span class="arrow">→</span><span class="step good">live view, 2 MP copies</span></div></div>
+    <div class="row"><div class="who">Imaging Edge Desktop<small>Sony, today</small></div><div class="steps"><span class="step pain">read SSID + password off screen</span><span class="arrow">→</span><span class="step pain">join Wi-Fi by hand</span><span class="arrow">→</span><span class="step pain">type user, password, compare fingerprint</span><span class="arrow">→</span><span class="step">SSH → PTP/IP :15740</span><span class="arrow">→</span><span class="step good">live view, full RAW</span></div></div>
+    <div class="row"><div class="who">Your app<small>proposed</small></div><div class="steps"><span class="step good">webcam QR or SSDP discovery</span><span class="arrow">→</span><span class="step good">auto-join Wi-Fi (manual fallback)</span><span class="arrow">→</span><span class="step good">one-tap fingerprint, cached</span><span class="arrow">→</span><span class="step">SSH → PTP/IP via SDK or own stack</span><span class="arrow">→</span><span class="step good">live view, full RAW, presets</span><span class="arrow">·</span><span class="step gap">BLE wake: not yet public</span></div></div>
+  </div>
+
+  <div class="eyebrow" style="margin-top:2rem">Four repositories that matter most</div>
+  <div class="verdicts">
+    <div class="verdict"><span class="tag tag-fork">Fork candidate</span><h4><a href="https://github.com/RemingtonWilcox/RemoteCam">RemoteCam</a></h4><p>Windows + macOS app over Sony's SDK with Wi-Fi and Access Authentication, live view, capture, presets, auto-reconnect, phone second screen.</p><div class="facts">C# .NET + C++ bridge · MIT · v1.0.13, 2026-11-08 · a7S III tested</div></div>
+    <div class="verdict"><span class="tag tag-study">Study: protocol</span><h4><a href="https://github.com/Knallli/alpha2go">alpha2go</a></h4><p>Most complete SDK-free implementation: SSH tunnel, every property, 30 fps live view, resumable downloads, LUT import, settings backup, Wake-on-LAN.</p><div class="facts">Pure Go · Apache-2.0 · 2026-10-11 · a6700</div></div>
+    <div class="verdict"><span class="tag tag-study">Study: onboarding</span><h4><a href="https://github.com/sarnau/sony-camera-protocol">sony-camera-protocol</a></h4><p>Only desktop code that reads the camera's Wi-Fi SSID and password over Bluetooth, then connects via PTP/IP. The template for QR-less pairing.</p><div class="facts">Python + write-up · 2026-08-09 · a7R V</div></div>
+    <div class="verdict"><span class="tag tag-study">Study: SDK connect</span><h4><a href="https://github.com/goudvuur/sonshell">sonshell</a></h4><p>Most defensive SDK Wi-Fi connection code: fingerprint cache, retry with the opposite SSH flag, keepalive reconnect.</p><div class="facts">C++ CLI · Apache-2.0 · 257★ · 2026-04-23 · a6700</div></div>
+  </div>
+
+  <details class="bluf"><summary>Full bottom-line paragraph from the research report</summary><p>a macOS-first, Windows-second desktop app that controls Sony Alpha bodies over Wi-Fi the way Creators' App does is feasible right now, by one of two proven routes, and the thing that makes the phone feel "wireless" while the desktop feels "USB-only" is not the control protocol but the connection bootstrap. Every 2020-and-later Alpha, ZV and FX body already runs a PTP/IP server on TCP 15740 for "Remote Shoot Function", reachable over Wi-Fi Direct or a shared router, with Sony's "Access Authentication" being nothing more exotic than an SSH tunnel whose username, password and host-key fingerprint are printed on the camera's screen (<a href="https://helpguide.sony.net/ilc/2230/v1/en/contents/TP0002927440.html">Sony a7R V Help Guide</a>; <a href="https://github.com/jakkuh/sony-alpha-python/blob/main/sony_camera/connection.py">jakkuh/sony-alpha-python connection.py</a>). Sony's own free C++ <strong>Camera Remote SDK 2.02.00</strong> (June 2026) has supported Wi-Fi since v1.12 (April 2024), covers <strong>31 bodies</strong>, ships for Windows 11 x64 and macOS 14/15/26 as a universal library, and permits commercial apps that embed its binaries inseparably, though it forbids redistributing the SDK itself (<a href="https://support.d-imaging.sony.co.jp/app/sdk/en/index.html">Sony SDK portal</a>; <a href="https://support.d-imaging.sony.co.jp/app/sdk/licenseagreement/en-US.html">SDK licence</a>). Independently, at least five open-source projects have reverse-engineered the same handshake without the SDK and validated it on the a6700, a7R V, FX30, FX3 and ZV-E10 (<a href="https://github.com/Knallli/alpha2go">Knallli/alpha2go</a>; <a href="https://github.com/sarnau/sony-camera-protocol">sarnau/sony-camera-protocol</a>). What the desktop cannot fully replicate is Creators' App's Bluetooth bootstrap, powering the camera on and handing it Wi-Fi credentials over BLE, because Sony's BLE pairing exchange is undocumented; but one desktop Python script already pulls the camera's SSID and password over BLE on an a7R V, and a webcam QR scan plus programmatic Wi-Fi join plus SSDP discovery gets you most of the way with documented APIs. The hard boundary is camera generation: a7 III / a6400-class bodies (2017-2019) have no Wi-Fi PC Remote at all and are outside the SDK, so an app for them is either USB or the dying legacy JSON API. The closest fork candidate is <strong>RemoteCam</strong> (MIT, Win+Mac, CrSDK over Wi-Fi, released November 2026); the best protocol study is <strong>alpha2go</strong> (Apache-2.0, pure Go, SSH + PTP/IP, the most complete documented op coverage); the recommended architecture is a C++ CrSDK sidecar process behind a Tauri v2 (or native SwiftUI + WinUI) shell, with an SDK-free PTP/IP path held in reserve.</p></details>
+</section>
+
+<div class="col report">
+
+<h2 id="sony-splits-its-lineup-ble-native-phone-apps-usb-first-desktop-apps">Sony splits its lineup: BLE-native phone apps, USB-first desktop apps</h2>
+<p>Sony's current umbrella is <strong>Creators' Cloud</strong>, and its apps divide cleanly by radio. Every mobile app (Creators' App, Monitor &amp; Control, Transfer &amp; Tagging) is built around Bluetooth LE as the control plane that discovers, wakes and auto-joins the camera to Wi-Fi; no Sony desktop app uses Bluetooth at all, and no BLE step appears anywhere in the Imaging Edge Desktop or Remote Camera Tool documentation (<a href="https://support.d-imaging.sony.co.jp/app/imagingedge/en/instruction/4_1_connection.php">Imaging Edge Desktop: Connecting the camera</a>). That said, the "desktop is USB-only" folklore is only half true: <strong>Imaging Edge Desktop Remote has supported Wi-Fi tethering since version 2.0.00 on 2019-08-07</strong>, in both Wi-Fi Direct (laptop joins the camera's <code>DIRECT-xxxx</code> SSID) and Wi-Fi Access Point mode (shared router, with first-time Pairing on older bodies or username/password/fingerprint "Access Authentication" on newer ones), plus wired LAN on the a1/a1 II/a9 II/a9 III/ILX-LR1 (<a href="https://support.d-imaging.sony.co.jp/app/imagingedge/en/index.php">Imaging Edge Desktop support page</a>; <a href="https://support.d-imaging.sony.co.jp/app/imagingedge/en/instruction/4_1_connection.php">Connecting the camera</a>). The catch is that Sony's own compatibility grouping leaves most of the installed base out: "ZV-1F/1M2 and ZV-1A/1: USB only", "Other cameras: USB only, using the PC Remote setting in the MENU" (<a href="https://support.d-imaging.sony.co.jp/app/imagingedge/en/instruction/4_1_connection.php">Connecting the camera</a>), and the a7 III help guide describes Remote only "from a computer connected to the camera with a USB cable" (<a href="https://helpguide.sony.net/ilc/1720/v1/en/contents/TP0001667702.html">Sony a7 III Help Guide</a>).</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>App</th>
+<th>Platforms</th>
+<th>How it connects</th>
+<th>What it does</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Imaging Edge Desktop</strong> (Remote / Viewer / Edit) 4.1.01</td>
+<td>Windows 11 x64 (no ARM), macOS 14/15/26</td>
+<td>USB; Wi-Fi Direct; Wi-Fi AP (Pairing or Access Authen.); wired LAN on a1/a1 II/a9 II/a9 III/ILX-LR1. No BLE.</td>
+<td>Tethered full-res RAW/JPEG to disk, live view, focus/exposure/WB panel, interval timer, movie start/stop, Pixel Shift / NR / HDR composites</td>
+<td><a href="https://support.d-imaging.sony.co.jp/app/imagingedge/en/index.php">Support page</a>; <a href="https://support.d-imaging.sony.co.jp/app/imagingedge/en/instruction/4_5_remote.php">Remote Shooting</a></td>
+</tr>
+<tr>
+<td><strong>Creators' App</strong> (ex Imaging Edge Mobile Plus, Feb 2023)</td>
+<td>iOS, Android</td>
+<td>BLE pairing (6-digit code) then automatic Wi-Fi handoff; "Connect only via Wi-Fi"; USB; AP mode with automatic direct-connection fallback</td>
+<td>Transfer (2M copies by default), remote shooting with touch focus/tracking, cloud upload (camera-direct), firmware update, LUT and licence import, settings save/apply, livestream setup, geotag/time sync, FTP settings push, wake while powered off</td>
+<td><a href="https://helpguide.sony.net/di-app/ca/v1/en/contents/CA_introduction.html">What you can do</a>; <a href="https://helpguide.sony.net/di-app/ca/v1/en/contents/CA_connect_camera.html">First-time connection</a>; <a href="https://helpguide.sony.net/di-app/ca/v1/en/contents/CA_ap_connect.html">AP connect</a></td>
+</tr>
+<tr>
+<td><strong>Imaging Edge Mobile</strong> (legacy)</td>
+<td>iOS, Android</td>
+<td>QR code (encodes camera SSID + password), NFC, manual SSID; BLE only for location</td>
+<td>Transfer and remote for pre-2023 bodies; no announced end date</td>
+<td><a href="https://helpguide.sony.net/ilc/2040/v1/en/contents/TP1000416941.html">Sony a1 Help Guide: QR Code</a></td>
+</tr>
+<tr>
+<td><strong>Monitor &amp; Control</strong> 3.1</td>
+<td>iOS/iPadOS 18.2+, macOS 15.3+ on Apple silicon (since Sept 2025)</td>
+<td>Wi-Fi via router; wired via USB-Ethernet adapter; some models need Access Authen. Off</td>
+<td>Video monitoring: waveform, false colour, histogram, focus map, de-squeeze, clip flags; up to 20 cameras (paid Premium)</td>
+<td><a href="https://www.provideocoalition.com/sony-expands-monitor-control-with-mac-support/">ProVideo Coalition</a>; <a href="https://apps.apple.com/us/app/id1643900558">App Store</a></td>
+</tr>
+<tr>
+<td><strong>Remote Camera Tool</strong> 5.1 / 6.0</td>
+<td>Windows, macOS, iPad</td>
+<td><strong>Wired LAN only</strong></td>
+<td>Multi-camera control of a9/a9 II/a9 III/a1/a1 II, Wake On LAN, interval, FTP settings</td>
+<td><a href="https://www.sony.ca/en/electronics/support/e-mount-body-ilce-1-series/ilce-1/articles/DIRCT01000">Sony DIRCT01000</a>; <a href="https://helpguide.sony.net/ilc/2380/v1/en/contents/0902P_pc_remote_software.html">a9 III Help Guide</a></td>
+</tr>
+<tr>
+<td><strong>Transfer &amp; Tagging</strong> 2.4</td>
+<td>iOS, Android</td>
+<td>Camera's FTP client pushes to the phone; USB mass storage</td>
+<td>Background FTP transfer, IPTC tagging, FTP presets</td>
+<td><a href="https://support.d-imaging.sony.co.jp/app/transfer/en/">Support page</a></td>
+</tr>
+<tr>
+<td><strong>Imaging Edge Webcam</strong></td>
+<td>Windows, macOS</td>
+<td>USB only</td>
+<td>UVC-style webcam</td>
+<td><a href="https://support.d-imaging.sony.co.jp/app/webcam/en/">Support page</a></td>
+</tr>
+<tr>
+<td><strong>Camera Remote SDK</strong> 2.02.00 / <strong>Camera Remote Command</strong> 2.02.00</td>
+<td>Developer; Win x64, macOS, Linux</td>
+<td>USB, wired LAN, Wi-Fi (PTP-IP)</td>
+<td>SDK: free C++ library, commercial apps allowed. Command: PTP extension reference, <strong>corporate customers only</strong></td>
+<td><a href="https://support.d-imaging.sony.co.jp/app/sdk/en/">SDK portal</a>; <a href="https://support.d-imaging.sony.co.jp/app/cameraremotecommand/en/index.html">Command portal</a></td>
+</tr>
+</tbody>
+</table></div>
+<p>Two details of Sony's design shape everything downstream. First, the camera is <strong>mutually exclusive between phone and PC</strong>: "When the camera and a smartphone are connected, you cannot control the camera from a computer" (<a href="https://helpguide.sony.net/ilc/2230/v1/en/contents/TP0002927440.html">Sony a7R V Help Guide</a>), so a desktop app competes with, rather than coexists with, Creators' App. Second, the desktop Wi-Fi path has a documented reliability problem that is mostly a discovery problem: Sony's FAQ blames firewalls, the macOS 15 "Local Network" permission, VPNs and other camera vendors' background items (<a href="https://support.d-imaging.sony.co.jp/app/imagingedge/en/faqs/">Imaging Edge Desktop FAQ</a>), and users report Wi-Fi Direct working "pretty easily" on an a7 IV + MacBook while AP mode left the Mac unable to see a camera that was plainly on the router (<a href="https://alphashooters.com/community/threads/sony-a7-iv-wireless-tethering-with-imaging-edge-on-macbook-pro.4924">Alpha Shooters thread</a>). A January 2026 forum thread is titled "It's 2026 and wireless tether options still suck" (<a href="https://www.fredmiranda.com/forum/topic/1929812/">Fred Miranda topic 1929812</a>). That is the opening for a third-party app: not a new protocol, but a better bootstrap and better resilience.</p>
+<h2 id="what-mobile-can-do-that-desktop-cannot-and-the-reverse">What mobile can do that desktop cannot (and the reverse)</h2>
+<p>The gap is narrower than it looks and almost entirely about <strong>getting connected</strong>, not about what you can do once connected. Over Wi-Fi the PTP control surface available to a desktop is actually broader for stills than what Creators' App exposes: full-resolution RAW to disk, interval timer, and every device property, versus the phone's default of 2M-pixel copies and no video transfer (<a href="https://helpguide.sony.net/di-app/ca/v1/en/contents/CA_camera_screen.html">Creators' App: Cameras screen</a>; <a href="https://support.d-imaging.sony.co.jp/app/imagingedge/en/instruction/4_5_remote.php">Imaging Edge Desktop: Remote Shooting</a>). What the phone has and the desktop lacks is the BLE control plane and the cloud/firmware functions Sony chose to route only through the phone.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Creators' App (mobile)</th>
+<th>Imaging Edge Desktop / CrSDK (desktop)</th>
+<th>Can a third-party desktop app close it?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Zero-touch pairing (BLE 6-digit code, then "automatically connected to Wi-Fi via the Bluetooth function")</td>
+<td>Yes (<a href="https://helpguide.sony.net/di-app/ca/v1/en/contents/CA_connect_camera.html">First-time connection</a>)</td>
+<td>No; user reads SSID/password or types Access Authen. credentials and compares a fingerprint (<a href="https://support.d-imaging.sony.co.jp/app/imagingedge/en/instruction/4_1_connection.php">Connecting the camera</a>)</td>
+<td><strong>Partly.</strong> sarnau's desktop Python reads SSID/password over BLE from an a7R V after writing <code>01</code> to characteristic CC08 (<a href="https://github.com/sarnau/sony-camera-protocol">sarnau</a>); the EE00 pairing exchange itself is undocumented (<a href="https://gethypoxic.com/blogs/technical/sony-camera-ble-control-protocol-di-remote-control">Hypoxic BLE write-up</a>). QR webcam scan is the documented alternative.</td>
+</tr>
+<tr>
+<td>Wake camera from power off ("Cnct. while Power OFF")</td>
+<td>Yes, over BLE (<a href="https://helpguide.sony.net/ilc/2040/v1/en/contents/TP1000425295.html">a1 Help Guide</a>)</td>
+<td>SDK <code>CrControlCode_PowerOn</code> exists but needs the camera's network-standby over LAN/Wi-Fi, not BLE (<a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/index.html">API ref index</a>); Remote Camera Tool has Wake On LAN on wired bodies</td>
+<td><strong>Partly.</strong> BLE "power on" command is not publicly known; only the untested <code>03 08 13</code> power-off and the <code>WirelessPowerOnEnabled</code> advertising bit are documented. alphalink (macOS menubar) claims BLE wake (<a href="https://github.com/nulltrope/alphalink">nulltrope/alphalink</a>); alpha2go implements Wake-on-LAN (<a href="https://github.com/Knallli/alpha2go">alpha2go</a>).</td>
+</tr>
+<tr>
+<td>AP mode with automatic fallback to Wi-Fi Direct, and cloud upload without dropping the camera link</td>
+<td>Yes (<a href="https://helpguide.sony.net/di-app/ca/v1/en/contents/CA_ap_connect.html">AP connect</a>)</td>
+<td>No automatic fallback; Wi-Fi Direct "cannot be established automatically when the camera is started" (<a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/other/environment_setup.html">API ref: Environment Setup</a>)</td>
+<td><strong>Yes</strong>, as app logic: try AP, fall back to joining <code>DIRECT-xxxx</code>.</td>
+</tr>
+<tr>
+<td>Geotagging / time &amp; area sync from phone</td>
+<td>Yes, BLE DD00 service</td>
+<td>No</td>
+<td><strong>Yes.</strong> The 95-byte DD11 GPS payload is fully reverse-engineered (<a href="https://github.com/finfinack/alphaloc">finfinack/alphaloc</a>); SDK has GPS/ImageID linking and timezone APIs.</td>
+</tr>
+<tr>
+<td>Firmware update, LUT import, upgrade licence install, settings save/apply</td>
+<td>Yes (<a href="https://helpguide.sony.net/di-app/ca/v1/en/contents/CA_introduction.html">What you can do</a>)</td>
+<td>SDK: remote firmware update (confirmed for ILX-LR1), setting-file save/load, <code>GetLicenseInfoList</code>; alpha2go does LUT import and settings backup over raw PTP/IP (<a href="https://support.d-imaging.sony.co.jp/app/sdk/en/index.html">SDK portal</a>; <a href="https://github.com/Knallli/alpha2go">alpha2go</a>)</td>
+<td><strong>Mostly yes</strong>, with per-model caveats.</td>
+</tr>
+<tr>
+<td>Camera-direct Creators' Cloud / Ci upload, livestream setup</td>
+<td>Yes</td>
+<td>No (cloud is Sony-account bound)</td>
+<td><strong>No</strong> for Sony's cloud; FTP push to your own SFTP server is the open equivalent (<a href="https://helpguide.sony.net/di/ftp_2420/v1/en/contents/FTP_server_registration.html">Sony FTP Help Guide</a>).</td>
+</tr>
+<tr>
+<td>Video-monitoring scopes (waveform, false colour, focus map)</td>
+<td>Monitor &amp; Control (mobile, Mac)</td>
+<td>Not in Imaging Edge Desktop</td>
+<td><strong>Yes</strong>, client-side on the live-view JPEG stream; SonyCamViewer, ONAIR and CinemaHUD all do it (<a href="https://github.com/Scryptor/SonyCamViewer/blob/main/README.en.md">SonyCamViewer</a>).</td>
+</tr>
+<tr>
+<td>Full-res RAW to disk, interval timer, Pixel Shift, wired LAN, multi-cam</td>
+<td>Not on phone (2M copies, no video transfer)</td>
+<td><strong>Desktop-only</strong> advantages (<a href="https://support.d-imaging.sony.co.jp/app/imagingedge/en/instruction/4_5_remote.php">Remote Shooting</a>)</td>
+<td>Already yours.</td>
+</tr>
+</tbody>
+</table></div>
+<p>The practical conclusion is that a desktop app cannot promise Creators' App's literal zero-touch onboarding on day one, but it can offer a flow that is arguably better than Imaging Edge Desktop's: scan the QR code with the laptop camera, auto-join the camera's Wi-Fi, auto-discover via SSDP, show the SSH fingerprint for a one-tap confirmation, cache it, and auto-reconnect forever after. Sony's SDK team explicitly recommends turning the camera's Bluetooth <strong>off</strong> for SDK Wi-Fi use because BLE and 2.4 GHz Wi-Fi interfere (<a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/other/environment_setup.html">API ref: Environment Setup</a>), which is a further argument for making BLE an optional convenience rather than the backbone.</p>
+<h2 id="connection-methods-per-camera-generation-decide-what-is-even-possible">Connection methods per camera generation decide what is even possible</h2>
+<p>Sony never publishes a single dated matrix, so the table below is reconstructed from per-model help guides, the SDK compatibility page and open-source validation reports. The pivotal boundary is between bodies that have "PC Remote Cnct Method" / "Remote Shoot Function" with a Wi-Fi option (2019 onward) and those that do not. Sony's own PTP nomenclature ("Camera Control PTP 2" vs "PTP 3") maps onto libgphoto2's <code>sony_mode_ver</code> generation detection, and Sony warns that <strong>PTP 2 commands "may become unusable on some models from 2027"</strong>, so new code should target PTP 3 bodies (<a href="https://support.d-imaging.sony.co.jp/app/cameraremotecommand/en/index.html">Camera Remote Command portal</a>; <a href="https://github.com/gphoto/libgphoto2/blob/master/NEWS">libgphoto2 NEWS</a>).</p>
+<div class="table-wrap wide-table"><table>
+<thead>
+<tr>
+<th>Generation (approx. years)</th>
+<th>Representative bodies</th>
+<th>Imaging Edge Desktop remote</th>
+<th>Wireless auth model</th>
+<th>Camera Remote SDK</th>
+<th>Mobile app</th>
+<th>Legacy JSON API (ScalarWebAPI)</th>
+<th>BLE</th>
+<th>SDK-free wireless control proven by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Gen 1: PlayMemories era (2013-2017)</strong></td>
+<td>a6000, a7 II, a7S, a7R II, RX100 III-V, NEX</td>
+<td>USB only</td>
+<td>n/a (Wi-Fi used only by phone apps)</td>
+<td>Not supported</td>
+<td>Imaging Edge Mobile (QR = SSID/password)</td>
+<td><strong>Yes</strong>: SSDP <code>urn:schemas-sony-com:service:ScalarWebAPI:1</code>, <code>dd.xml</code> on :64321, JSON-RPC on :10000, live view :60152 (<a href="https://github.com/Streetblock/remote-camera-control-rs/blob/main/crates/rocc-discovery/src/ssdp.rs">rocc-discovery</a>)</td>
+<td>Mostly none</td>
+<td>pysony, rocc, SonnyLink, CinemaHUD (a6400 Wi-Fi), ImagingEdge4Linux (transfer)</td>
+</tr>
+<tr>
+<td><strong>Gen 2: a7 III era (2017-2019)</strong></td>
+<td>a7 III, a7R III, a9, a6400, a6100, a6600, RX100 VI/VII, ZV-1</td>
+<td><strong>USB only</strong> (<a href="https://helpguide.sony.net/ilc/1720/v1/en/contents/TP0001667702.html">a7 III Help Guide</a>)</td>
+<td>n/a</td>
+<td><strong>Not supported</strong> (<a href="https://eclipseclick-website.pages.dev/blog/supporting-sony-cameras-eclipseclick">eclipseClick blog</a>)</td>
+<td>Imaging Edge Mobile; cannot use Creators' App</td>
+<td>Partially present but features removed ("Sony has removed several remote control features from these cameras", <a href="https://www.sonyalpharumors.com/cascable-3-4-released-including-support-for-the-%ce%b17r-iii-%ce%b17-iii-%ce%b19-and-more/">sonyalpharumors on Cascable 3.4</a>)</td>
+<td>Remote (FF00) + location (DD00) services</td>
+<td>BLE shutter only (alpharemote, freemote on a7 III); a7R III "never opens the PTP/IP port" in Send-to-Smartphone (<a href="https://github.com/DangerBlack/sony-photo-transfer">DangerBlack</a>)</td>
+</tr>
+<tr>
+<td><strong>Gen 3: first Wi-Fi PC Remote (2019-2021)</strong></td>
+<td>a7R IV, a9 II, a7S III, a7C, ZV-E10, a1, a7 IV (fw 1.x)</td>
+<td>USB / <strong>Wi-Fi Direct</strong> / <strong>Wi-Fi AP</strong> with first-time <strong>Pairing</strong>; wired LAN on a9 II/a1 (<a href="https://helpguide.sony.net/ilc/1930/v1/en/contents/TP0002728092.html">a7R IV Help Guide</a>)</td>
+<td>PTP/IP GUID pairing: host name shown on camera, user presses OK, GUID remembered; or "Connect Without Pairing" (<a href="https://github.com/frank26080115/alpha-fairy/blob/main/doc/Camera-Reverse-Engineering.md">alpha-fairy RE notes</a>)</td>
+<td>a7R IV, a7R IVA, a7C: <strong>USB only</strong>; a9 II: USB + wired; a1, a7S III: USB + wired/Wi-Fi (<a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/other/compatibility.html">API ref: Compatibility</a>); original ZV-E10 not supported</td>
+<td>Imaging Edge Mobile, then Creators' App after firmware (a1 fw 2.00+)</td>
+<td>Removed</td>
+<td>Yes</td>
+<td>alpha-fairy (a1, a6600 via Connect Without Pairing); SonyCamViewer (ZV-E10 Wi-Fi Direct)</td>
+</tr>
+<tr>
+<td><strong>Gen 4: Access Authentication era (2022 onward)</strong></td>
+<td>a7 IV fw 2.00+, a7R V, a7CR, a7C II, a6700, ZV-E1, ZV-E10 II, a1 II, a9 III, a7 V, a7R VI, FX3 fw 2.00+/FX3A/FX30/FX2, ILX-LR1, RX1R III</td>
+<td>USB / Wi-Fi Direct / Wi-Fi AP with <strong>Access Authen.</strong> (username, password, fingerprint); Pairing only if Access Authen. Off; wired LAN on a1/a1 II/a9 III/FX3/FX30/ILX-LR1 via USB-C adapter (<a href="https://helpguide.sony.net/ilc/2230/v1/en/contents/TP0002927440.html">a7R V Help Guide</a>)</td>
+<td><strong>SSH tunnel to port 15740</strong> with keyboard-interactive password; fingerprint = SSH host key; Off = "without authentication or encryption" (<a href="https://helpguide.sony.net/ilc/2110/v1/en/contents/TP1000954812.html">a7 IV Help Guide: Access Authen.</a>); <strong>a7 V: SSH mandatory</strong> (<a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/other/compatibility.html">API ref: Compatibility</a>)</td>
+<td>USB + Wi-Fi (R/C/T) for all; ZV-E10 II lacks RemoteTransfer</td>
+<td><strong>Creators' App required</strong> (<a href="https://www.sony.co.th/electronics/support/articles/CCCA99009">CCCA99009</a>)</td>
+<td>Removed</td>
+<td>Yes, plus CC00 Wi-Fi handoff service</td>
+<td>alpha2go (a6700), sarnau (a7R V), jakkuh (FX30/a6700), RobertDamerius (FX3 fw 7), remote-camera-control-rs (a6700); CrSDK over Wi-Fi: RemoteCam (a7S III), ONAIR (FX30), sonshell (a6700)</td>
+</tr>
+<tr>
+<td><strong>Cinema / pro (LAN-first)</strong></td>
+<td>FX6, BURANO, PXW-Z200/Z300/Z380, HXR-NX800, FR7, BRC-AM7</td>
+<td>Not in Imaging Edge; use Monitor &amp; Control / SDK</td>
+<td><strong>SSH mandatory</strong>; one camera, multiple hosts</td>
+<td>Wired + Wi-Fi, RemoteControl only, <strong>no USB</strong> (<a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/other/compatibility.html">API ref: Compatibility</a>)</td>
+<td>Monitor &amp; Control</td>
+<td>n/a</td>
+<td>n/a</td>
+<td>Cyanview/Skaarhoj integrators (closed)</td>
+</tr>
+<tr>
+<td><strong>Compacts</strong></td>
+<td>ZV-1, ZV-1F, ZV-1 II, ZV-1A</td>
+<td><strong>USB only</strong> (<a href="https://support.d-imaging.sony.co.jp/app/imagingedge/en/instruction/4_1_connection.php">Connecting the camera</a>)</td>
+<td>n/a</td>
+<td>Not supported</td>
+<td>Creators' App (ZV-1F)</td>
+<td>n/a</td>
+<td>Yes (furble on ZV-1F)</td>
+<td>BLE shutter only</td>
+</tr>
+</tbody>
+</table></div>
+<p>Two anomalies deserve a flag. The a7R IV and a7C support Wi-Fi PC Remote in Imaging Edge Desktop but are <strong>USB-only in the SDK</strong>, and RemoteCam states outright they "won't work over Wi-Fi" (<a href="https://github.com/RemingtonWilcox/RemoteCam">RemoteCam README</a>); an SDK-free PTP/IP implementation could in principle reach them where the SDK cannot. Conversely, the SDK's Wi-Fi support is absent on its Linux ARM builds and on Windows-on-ARM entirely (<a href="https://support.d-imaging.sony.co.jp/app/sdk/en/index.html">Sony SDK portal</a>). Camera firmware also matters more than model: Sony requires the latest firmware for the SDK, warns that new firmware can break old SDK versions, and the 2.01.00 release notes required firmware updates on twelve bodies (<a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/release_notes/2_01_00.html">API ref 2.01.00 release notes</a>).</p>
+<h2 id="under-the-hood-ssdp-ptpip-on-15740-ssh-and-a-thin-ble-layer">Under the hood: SSDP, PTP/IP on 15740, SSH, and a thin BLE layer</h2>
+<p>Sony publishes no port numbers for its consumer apps, but three independent implementations plus Wireshark-derived notes converge on the same wire sequence, and Sony's SDK documentation inadvertently confirms it by listing the ports its own library opens: "Remote port UDP 1900, 32768-61000; TCP 80, 8080, 22, 64321, 15740" (<a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/other/environment_setup.html">API ref: Environment Setup</a>). UDP 1900 is SSDP, TCP 64321 serves the UPnP device description, TCP 22 is the SSH tunnel and TCP 15740 is ISO PTP/IP.</p>
+<p><strong>Discovery.</strong> The camera advertises via SSDP on 239.255.255.250:1900 and serves <code>http://&lt;ip&gt;:64321/dd.xml</code>, which links <code>DigitalImagingDesc.xml</code> containing <code>&lt;X_PTP_Information&gt;</code> with <code>X_PTP_Versions</code> (e.g. <code>3.00</code>), <code>X_PTP_PairingNecessity</code>, <code>X_PTP_RemoteControlSupport</code> and <code>&lt;X_SSH_Support&gt;</code> (<a href="https://github.com/Streetblock/remote-camera-control-rs/blob/main/crates/rocc-discovery/src/xml.rs">rocc-discovery xml.rs</a>). In Wi-Fi Direct the camera is almost always <strong>192.168.122.1</strong> (older bodies 10.0.0.1 or 192.168.0.1) (<a href="https://github.com/schorschii/ImagingEdge4Linux">schorschii/ImagingEdge4Linux</a>). No source found evidence of mDNS/Bonjour advertisement; discovery is UPnP/SSDP, ARP, or a port-15740 probe (alpha2go implements all three) (<a href="https://github.com/Knallli/alpha2go">alpha2go</a>). The SDK's <code>EnumCameraObjects()</code> finds cameras only on the same L2 segment and notes "about 30 seconds" for a wired camera to appear after IP setup; across subnets you build a camera object manually from IP and an arbitrary 6-byte identifier ("It is not always necessary to specify the MAC address of the camera body") (<a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/api_reference/camera_object.html">API ref: Camera Object</a>).</p>
+<p><strong>Authentication.</strong> With Access Authen. On, the client opens SSH to the camera and forwards a local port to <code>localhost:15740</code>; sony-alpha-python does it with literally <code>ssh -N -L &lt;local&gt;:localhost:15740 -o PreferredAuthentications=keyboard-interactive &lt;user&gt;@&lt;camera&gt;</code> and reports SSH "far more reliable" than the pairing path (<a href="https://github.com/jakkuh/sony-alpha-python">sony-alpha-python</a>). The fingerprint the camera displays is the SSH host key; the SDK's <code>GetFingerprint()</code> doc says comparing it "is the only way to avoid connecting to the wrong destination", and it is Base64, cacheable, and changes only on camera initialisation (<a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/api_reference/camera_object.html">API ref: Camera Object</a>). Two hazards: "Repeatedly entering the wrong SSH parameters will lock the camera" (power-cycle to clear) (<a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/api_reference/connection.html">API ref: Connection</a>), and the non-SSH <strong>GUID pairing</strong> path cannot be undone short of a factory reset, which is why alpha-fairy's author recommends "Connect Without Pairing" (<a href="https://github.com/frank26080115/alpha-fairy/blob/main/doc/Camera-Reverse-Engineering.md">alpha-fairy RE notes</a>). No open-source project has tested the pairing path on a Gen 4 body with Access Authen. turned off (<a href="https://github.com/Knallli/alpha2go/blob/main/docs/camera-setup.md">alpha2go camera-setup</a>).</p>
+<p><strong>Control.</strong> After the standard PTP/IP <code>Init_Command_Request</code> (16-byte GUID + UTF-16 host name) and <code>OpenSession</code>, Sony's "SDIO" vendor extension takes over: <code>SDIO_Connect 0x9201</code> with parameters 1, 2 and 3, <code>SDIO_GetExtDeviceInfo 0x9202</code>, then <code>SDIO_GetAllExtDevicePropInfo 0x9209</code> for the full property blob, <code>SDIO_SetExtDevicePropValue 0x9205</code> to write, <code>SDIO_ControlDevice 0x9207</code> for shutter/AF, and live view via <code>GetObject(0xFFFFC002)</code> (<a href="https://github.com/gphoto/libgphoto2/blob/master/camlibs/ptp2/ptp.h">libgphoto2 ptp.h</a>; <a href="https://github.com/jakkuh/sony-alpha-python/blob/main/sony_camera/protocol.py">sony-alpha-python protocol.py</a>). Events (property changed, object added) arrive on a second TCP connection. Measured on an a7R V over Wi-Fi: live view at <strong>25.7 fps</strong>, a 60 MP download at ~12 MB/s, RAW off the card at ~16 MB/s, 446 properties decoded of which 190 are writable (<a href="https://github.com/sarnau/sony-camera-protocol">sarnau</a>); alpha2go streams 1024x680 at ~30 fps with level/focus/face frames and the OSD as a PNG (<a href="https://github.com/Knallli/alpha2go">alpha2go</a>). The protocol is now officially documented by Sony: libgphoto2 2.5.31's notes say "Sony: Now officially documented by Sony" and the Camera Remote Command reference exists, but only for corporate customers (<a href="https://github.com/gphoto/libgphoto2/blob/master/NEWS">libgphoto2 NEWS</a>; <a href="https://support.d-imaging.sony.co.jp/app/cameraremotecommand/en/index.html">Camera Remote Command portal</a>).</p>
+<p><strong>BLE.</strong> Cameras advertise manufacturer data with Sony company ID 0x012D and status bits (PairingEnabled, WifiHandoverSupported, WirelessPowerOnEnabled), and expose four services: <code>8000CC00</code> Camera Control (Wi-Fi handoff: SSID in CC06, password in CC07), <code>8000DD00</code> Location, <code>8000EE00</code> Pairing and <code>8000FF00</code> Remote Control with 16-bit button codes written to FF01 (<a href="https://gethypoxic.com/blogs/technical/sony-camera-ble-control-protocol-di-remote-control">Hypoxic BLE write-up</a>; <a href="https://github.com/coral/freemote">coral/freemote</a>). The remote and GPS services are fully reverse-engineered and shipped; the Wi-Fi handoff is proven on a desktop by sarnau; the EE00 pairing exchange that produces Creators' App's six-digit code is not public. The Android α-Remote author is blunt that ISO/shutter/aperture are "not possible via Bluetooth" (<a href="https://github.com/Staacks/alpharemote">Staacks/alpharemote</a>); BLE's value is onboarding, wake detection, shutter and geotag, never control.</p>
+<p><strong>QR code.</strong> On Imaging Edge Mobile-era bodies the QR encodes the camera's <code>DIRECT-xxxx</code> SSID and password (<a href="https://helpguide.sony.net/ilc/2040/v1/en/contents/TP1000416941.html">Sony a1 Help Guide</a>); on Creators' App-era bodies the on-screen QR is just an app-store link and the connection is BLE (<a href="https://helpguide.sony.net/ilc/2540/v1/en/contents/221h_creators_app.html">Sony a7 V Help Guide</a>). No public source documents the literal payload grammar; this must be settled by scanning a real camera with a generic reader. Gen 4 bodies still show SSID/password under "Wi-Fi Direct Info", so a QR-less Wi-Fi Direct flow is always available.</p>
+<p><strong>Legacy JSON API.</strong> The 2013-2017 Camera Remote API (JSON-RPC at <code>http://&lt;cam&gt;:10000/sony/&lt;service&gt;</code>) was archived by Sony in 2020 in favour of the SDK, with the explicit note that its cameras "are not included in compatible cameras' line-up for Camera Remote SDK" (<a href="https://sony.mediaroom.com/2020-02-12-Sony-Electronics-Announces-New-Camera-Software-Development-Kit-for-Third-party-Developers-and-Integrators">Sony press release 2020-02-12</a>). It is irrelevant for any 2018+ body.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Capability over Wi-Fi from a desktop</th>
+<th>Without Sony SDK (open source)</th>
+<th>With CrSDK</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Discover camera on LAN / Wi-Fi Direct</td>
+<td>Yes (SSDP, ARP, port probe)</td>
+<td>Yes (<code>EnumCameraObjects</code>, same segment)</td>
+<td>Firewall and macOS Local Network permission are the main failure causes</td>
+</tr>
+<tr>
+<td>Connect with Access Authentication</td>
+<td>Yes (any SSH library; proven a6700/a7R V/FX30/FX3)</td>
+<td>Yes (<code>GetFingerprint</code> + <code>Connect(user,pw,fp)</code>)</td>
+<td>Fingerprint pinning is mandatory UX either way</td>
+</tr>
+<tr>
+<td>Connect via GUID pairing (Access Authen. Off)</td>
+<td>Proven only on Gen 3 (a1/a6600); untested on Gen 4</td>
+<td>Yes (camera "Pairing" menu + <code>Connect()</code>)</td>
+<td>Pairing cannot be undone without factory reset</td>
+</tr>
+<tr>
+<td>Property read/write, shutter, AF, REC, zoom</td>
+<td>Yes (alpha2go: every property with allowed values)</td>
+<td>Yes, with per-model gating (<code>PriorityKeySettings = PCRemote</code>)</td>
+<td>Older bodies step exposure ±1; direct writes fail (<a href="https://github.com/Scryptor/SonyCamViewer/blob/main/README.en.md">SonyCamViewer</a>)</td>
+</tr>
+<tr>
+<td>Live view JPEG 15-30 fps</td>
+<td>Yes (25-30 fps measured)</td>
+<td>Yes (polled <code>GetLiveViewImage</code>, optional HTTP)</td>
+<td>Both are JPEG polling, not a video stream</td>
+</tr>
+<tr>
+<td>Full-res / RAW download, card browsing</td>
+<td>Yes (resumable, ≥4 GiB in alpha2go)</td>
+<td>Yes (ContentsTransfer / RemoteTransfer modes)</td>
+<td>SDK hangs on stuck transfers are documented (<a href="https://github.com/crsdk/alpha-sdk-api/issues/41">alpha-sdk-api#41</a>)</td>
+</tr>
+<tr>
+<td>Settings backup/restore, LUT import, firmware update</td>
+<td>Partially (alpha2go: backup, LUT)</td>
+<td>Yes (setting files, firmware sequence; firmware confirmed on ILX-LR1)</td>
+<td>Per-model availability unverified</td>
+</tr>
+<tr>
+<td>FTP job control / server config</td>
+<td>Not enumerated publicly</td>
+<td>Yes</td>
+<td>Alternative: camera pushes to your SFTP server, zero RE</td>
+</tr>
+<tr>
+<td>BLE wake, GPS, shutter, SSID/password handoff</td>
+<td>GPS + shutter: yes; handoff: proven once; wake: command unknown</td>
+<td><strong>No BLE at all</strong></td>
+<td>SDK recommends camera Bluetooth Off</td>
+</tr>
+<tr>
+<td>OSD emulation, pan/tilt, monitoring stream, 300+ newest commands</td>
+<td>No</td>
+<td>Yes</td>
+<td>Only reason to need the SDK for features rather than support</td>
+</tr>
+<tr>
+<td>Vendor support, firmware-change insulation</td>
+<td>None</td>
+<td>Sony updates SDK per firmware</td>
+<td>SDK license forbids redistribution, allows embedding</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="the-official-sdk-free-c-wi-fi-since-2024-awkward-to-package">The official SDK: free, C++, Wi-Fi since 2024, awkward to package</h2>
+<p>The Camera Remote SDK is "a suite of C++ classes and binary libraries": headers plus <code>libCr_Core</code>, <code>libmonitor_protocol</code>, and a <code>CrAdapter/</code> plugin folder containing <code>Cr_PTP_IP</code>, <code>Cr_PTP_USB</code>, <code>libssh2</code> and <code>libusb-1.0</code> (<a href="https://github.com/kchinzei/CrSDKHelper">kchinzei/CrSDKHelper</a>; <a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/other/environment_setup.html">API ref: Environment Setup</a>). Those adapter names settle the protocol question: the SDK's network transport is PTP/IP with libssh2 for Access Authentication, the same stack the open-source projects rebuilt. Access is by region through pro.sony download or contact forms, and the licence (Sony Electronics Inc., US law, AAA arbitration) grants the right to "incorporate the SDK's binary library into your app in an inseparable way" and sell it, while forbidding separate distribution of the SDK, requiring you to tell end users that controlling the camera via your app voids Sony's warranty, and banning military ISR uses (<a href="https://support.d-imaging.sony.co.jp/app/sdk/licenseagreement/en-US.html">SDK licence</a>). Every open-source wrapper therefore ships without the SDK and makes users download it; a commercial app that bundles the dylibs inside its signed <code>.app</code> is squarely permitted. One commercial developer describes registration as "free" and keeps the SDK in a private vendor repo for CI (<a href="https://eclipseclick-website.pages.dev/blog/supporting-sony-cameras-eclipseclick">eclipseClick blog 2026-03-26</a>); Camera Remote Command, by contrast, is "only available for corporate customers" (<a href="https://support.d-imaging.sony.co.jp/app/cameraremotecommand/en/index.html">Camera Remote Command portal</a>).</p>
+<p>The connection API is small and maps directly onto the desired UX: <code>EnumCameraObjects()</code> to auto-discover; <code>CreateCameraObjectInfoEthernetConnection(model, ipv4, mac[6], sshSupport)</code> for a user-entered IP; <code>GetFingerprint()</code> to fetch the Base64 fingerprint for the confirmation screen; <code>Connect(..., userId, userPassword, fingerprint, size, pairingDisplayName)</code> with <code>openMode</code> Remote / ContentsTransfer / RemoteTransfer and auto-reconnect on by default (<a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/api_reference/connection.html">API ref: Connection</a>). The Linux tool sonshell shows the robust pattern: enumerate, prefer the discovered fingerprint, fall back to a cached one, and if <code>Connect</code> fails with 0x8202 retry once with the opposite <code>CrSSHsupport</code> flag because bodies can have Access Authen. toggled off (<a href="https://github.com/goudvuur/sonshell/blob/master/src/main.cpp">goudvuur/sonshell src/main.cpp</a>). The SDK then exposes hundreds of <code>CrDeviceProperty_*</code> with enable flags and candidate lists, control codes for every button and dial, polled JPEG live view, three content-transfer paths, FTP job control, settings files, remote firmware update, PTZ and multi-camera connect (<a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/index.html">API ref index</a>).</p>
+<p>The pain is operational, and it is well documented by people who shipped. On macOS, <code>libCr_Core</code> <strong>hard-codes plugin lookup to <code>Contents/Frameworks/CrAdapter</code></strong> with no fallback, the dylibs ship as separate arm64 and x86_64 slices, <code>ptpcamerad</code> races the SDK for USB sessions, and calling <code>Init()</code> after <code>Release()</code> in the same process segfaults, which is why eclipseClick exits and respawns its bridge process after every disconnect (<a href="https://eclipseclick-website.pages.dev/blog/sony-crsdk-macos-apple-silicon">eclipseClick blog 2026-04-28</a>). Sony requires stripping quarantine attributes from all seven dylibs after download, and nothing indicates they are notarized; a shipping app must re-sign them under its own Developer ID with hardened runtime (<a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/other/environment_setup.html">API ref: Environment Setup</a>). On Windows, USB requires Sony's libusbK driver that replaces the MTP driver, a frequent source of conflicts with Lightroom and Capture One (<a href="https://github.com/Kiriusss/Sony-Camera-Control">Kiriusss/Sony-Camera-Control</a>; <a href="https://community.adobe.com/t5/lightroom-classic-bugs/p-cannot-tether-sony-a7-iv-ilce-7m4-with-latest-3-01-firmware/idi-p/14630158">Adobe Community</a>), a problem a Wi-Fi-first app sidesteps entirely. The alpha-sdk-api issue tracker catalogues the runtime failure modes to design around: <code>ReleaseDevice()</code> hanging forever after a stuck transfer, RemoteTransfer downloads that "silently never complete", and <code>0x8208</code> timeouts misattributed to camera settings (<a href="https://github.com/crsdk/alpha-sdk-api/issues/41">alpha-sdk-api#41</a>; <a href="https://github.com/crsdk/alpha-sdk-api/issues/40">#40</a>; <a href="https://github.com/crsdk/alpha-sdk-api/issues/39">#39</a>). A Bitfocus contributor summarised the community mood: "the SDK is incredibly hard to work with and each camera is different" (<a href="https://github.com/bitfocus/companion-module-requests/issues/1936">bitfocus/companion-module-requests#1936</a>). None of this is disqualifying; all of it argues for isolating the SDK in its own process.</p>
+<h2 id="implementation-options-isolate-the-camera-layer-then-pick-a-shell">Implementation options: isolate the camera layer, then pick a shell</h2>
+<p>Two decisions are independent: which <strong>camera-layer route</strong> to take, and which <strong>UI shell</strong> to wrap it in. The research is unambiguous on one architectural point: both real-world CrSDK integrations found in the wild (eclipseClick's C++ bridge over JSON-RPC on stdio, and the <code>camera-remote-web-api</code> native binary with REST + WebSocket live view) chose to run the SDK <strong>out of process</strong>, because of the segfault-on-reinit, the hard-coded plugin path and the hangs (<a href="https://eclipseclick-website.pages.dev/blog/sony-crsdk-macos-apple-silicon">eclipseClick blog</a>; <a href="https://registry.npmjs.org/camera-remote-web-api">camera-remote-web-api on npm</a>). A sidecar also means one C++ codebase for the camera layer regardless of UI technology.</p>
+<h3 id="camera-layer-routes">Camera-layer routes</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Route</th>
+<th>Bodies reachable over Wi-Fi</th>
+<th>Auth</th>
+<th>Effort and risk</th>
+<th>Licensing</th>
+<th>Living exemplars</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A. CrSDK in a sidecar process</strong></td>
+<td>31 SDK bodies (all Gen 4 Alpha/ZV/FX, a1, a7S III, cinema line)</td>
+<td>Built in (libssh2, fingerprint API)</td>
+<td>Medium. Vendor-maintained protocol; you own packaging quirks, reconnect logic, process lifecycle</td>
+<td>Free; embed only; no OSS redistribution; EULA disclosures</td>
+<td>RemoteCam, eclipseClick, ONAIR, sonshell, CrSDKPy, alpha-sdk-api</td>
+</tr>
+<tr>
+<td><strong>B. SDK-free PTP/IP + SSH</strong></td>
+<td>Any body with Remote Shoot Function incl. ones the SDK dropped (ZV-E10, a7R IV, a7C over Wi-Fi), plus Gen 3 via pairing</td>
+<td>You implement SSH (libssh2, russh, Go x/crypto/ssh)</td>
+<td>Medium-high. Must decode property blobs per generation, handle pairing, per-model quirks; no vendor support; PTP 2 sunset 2027</td>
+<td>Fully open (Apache/MIT code to study)</td>
+<td>alpha2go, sarnau, alphawire, SonyCamViewer, remote-camera-control-rs, libgphoto2</td>
+</tr>
+<tr>
+<td><strong>C. Hybrid: A primary, B fallback</strong></td>
+<td>Union of A and B</td>
+<td>Both</td>
+<td>Highest: two protocol stacks to maintain</td>
+<td>Mixed</td>
+<td>eclipseClick (SDK + libgphoto2 fallback)</td>
+</tr>
+<tr>
+<td><strong>D. libgphoto2 <code>ptpip:</code></strong></td>
+<td>Generic PTP/IP model; no SSH in code; vendor init fixed March 2026</td>
+<td>None for Access Authen.</td>
+<td>Low to start, dead end for Gen 4 AP mode</td>
+<td>LGPL-2.1</td>
+<td>sony-pm-alt (legacy transfer)</td>
+</tr>
+<tr>
+<td><strong>E. Legacy ScalarWebAPI</strong></td>
+<td>Pre-2018 only</td>
+<td>None</td>
+<td>Low; ecosystem dead</td>
+<td>MIT libs</td>
+<td>pysony, rocc, CinemaHUD</td>
+</tr>
+<tr>
+<td><strong>F. FTP push (camera is client)</strong></td>
+<td>Every 2019+ body with FTP; images only, no control</td>
+<td>FTPES/SFTP, passive only</td>
+<td>Low; zero reverse engineering; embed an SFTP server</td>
+<td>n/a</td>
+<td>Sony Transfer &amp; Tagging pattern</td>
+</tr>
+<tr>
+<td><strong>G. BLE</strong></td>
+<td>Shutter, GPS, status; SSID/password handoff; wake detection</td>
+<td>Bond via OS</td>
+<td>Medium-high; pairing exchange undocumented; macOS hides MAC, cannot unpair programmatically</td>
+<td>Apache/MIT exemplars; alpharemote is GPL</td>
+<td>sarnau (desktop), alphalink (macOS), AlphaPro, freemote, alphaloc</td>
+</tr>
+</tbody>
+</table></div>
+<p>Route A is the right default for a product: Sony tracks firmware changes for you, the body list is official, and the Wi-Fi mode has shipped in two cross-platform apps. Route B is the right default for an open-source project (no EULA barrier for contributors) or for reaching the a7R IV/a7C/ZV-E10 over Wi-Fi, and it is the only route that lets a desktop app do the BLE credential handoff. Capture One's Sony wireless guide, which has users type the camera's Access Authen. credentials and disable them on some firmware, is consistent with either route (<a href="https://support.captureone.com/hc/en-us/articles/5473534946461-Sony-wireless-tethering-setup-guide">Capture One Sony wireless tethering guide</a>).</p>
+<h3 id="ui-shells">UI shells</h3>
+<p>The hard parts are identical across frameworks: marshalling SDK callbacks from SDK threads to the UI thread, moving 15-30 JPEG frames per second without JSON-encoding them, and bundling Sony's binaries into a signed, notarized package (<a href="https://v2.tauri.app/develop/calling-rust/">desktop_implementation notes synthesising Electron, Tauri, Flutter, .NET docs</a>). A 30 fps stream of 100-300 KB JPEGs is 3-9 MB/s, well within any IPC path; the risk is per-frame allocation on the UI thread.</p>
+<div class="table-wrap wide-table"><table>
+<thead>
+<tr>
+<th>Shell</th>
+<th>SDK integration</th>
+<th>Live view path</th>
+<th>QR scan</th>
+<th>BLE</th>
+<th>Programmatic Wi-Fi join</th>
+<th>Packaging and signing</th>
+<th>Bundle size</th>
+<th>Verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Tauri v2</strong> (Rust shell + webview) 2.12.5</td>
+<td>Sidecar via <code>bundle.externalBin</code> (target-triple naming); or in-process via <code>cxx</code>/bindgen</td>
+<td><code>tauri::ipc::Channel&lt;&amp;[u8]&gt;</code> (ordered binary stream) or localhost WebSocket/MJPEG (<a href="https://v2.tauri.app/develop/calling-rust/">Tauri docs</a>)</td>
+<td>Webview <code>getUserMedia</code> + <code>zxing-wasm</code> 3.1.6 (~1 MB) (<a href="https://github.com/Sec-ant/zxing-wasm">Sec-ant/zxing-wasm</a>)</td>
+<td><code>btleplug</code> 0.13.5 (CoreBluetooth/WinRT) (<a href="https://docs.rs/crate/btleplug/latest">docs.rs btleplug</a>)</td>
+<td>Needs <code>objc2</code>/<code>windows</code> crate glue; keep in GUI process</td>
+<td>Signing/notarization documented; sidecar + dylib hardened-runtime signing undocumented, must verify (<a href="https://v2.tauri.app/distribute/sign/macos/">Tauri macOS signing</a>); Tauri does not kill sidecars itself</td>
+<td>~8-22 MB</td>
+<td><strong>Recommended for a web-tech developer</strong>; dusklapse proves Tauri + camera Wi-Fi control (<a href="https://github.com/gr3enk/dusklapse">gr3enk/dusklapse</a>)</td>
+</tr>
+<tr>
+<td><strong>Electron</strong> 45</td>
+<td><code>child_process</code> sidecar; or Koffi FFI in-process (callbacks queued to main thread) (<a href="https://koffi.dev/callbacks">koffi callbacks</a>)</td>
+<td>Binary IPC <code>Buffer</code>, <code>ws</code>, or <code>createImageBitmap</code>; <code>sharedTexture</code> is experimental</td>
+<td>Same webview path; must grant <code>media</code> in <code>setPermissionRequestHandler</code> and add <code>NSCameraUsageDescription</code></td>
+<td>Built-in Web Bluetooth (<code>select-bluetooth-device</code>) (<a href="https://electronjs.org/docs/latest/tutorial/devices">Electron devices</a>)</td>
+<td>Native module needed</td>
+<td>Forge/<code>@electron/notarize</code>; Windows EV or Azure Artifact Signing (<a href="https://www.electronjs.org/docs/latest/tutorial/code-signing">Electron code signing</a>)</td>
+<td>~180-410 MB on macOS (<a href="https://dev.to/gethopp/tauri-vs-electron-performance-bundle-size-and-the-real-trade-offs-1el4">gethopp comparison</a>)</td>
+<td>Fastest prototype; <code>camera-remote-web-api</code> client targets Electron renderers</td>
+</tr>
+<tr>
+<td><strong>Native SwiftUI (macOS) + WinUI 3 / .NET 10 (Windows)</strong></td>
+<td>In-process (Objective-C++ bridge) or XPC helper on macOS; C++/WinRT or P/Invoke on Windows</td>
+<td><code>CGImage</code> / <code>WriteableBitmap</code> directly</td>
+<td>Vision <code>VNDetectBarcodesRequest</code> (macOS 10.13+); WinRT camera barcode scanner or ZXing.Net</td>
+<td>CoreBluetooth / WinRT natively</td>
+<td>CoreWLAN <code>associate(to:password:)</code> from GUI process; <code>WiFiAdapter.ConnectAsync</code> (<a href="https://developer.apple.com/tutorials/data/documentation/corewlan/cwinterface.json">Apple CWInterface</a>; <a href="https://learn.microsoft.com/en-us/uwp/api/windows.devices.wifi.wifiadapter.connectasync?view=winrt-26100">MS Learn WiFiAdapter</a>)</td>
+<td>Xcode handles bundle layout the SDK expects; two toolchains</td>
+<td>Small</td>
+<td><strong>Recommended for a native developer</strong>; best OS integration at ~1.6-1.8x UI effort; CinemaHUD, Tether, simple-camera-remote show the Swift pattern</td>
+</tr>
+<tr>
+<td><strong>Qt 6.12 LTS</strong></td>
+<td>In-process C++, no FFI; most natural for the SDK</td>
+<td><code>QImage</code></td>
+<td><code>QCamera</code> frames into zxing-cpp</td>
+<td>Qt Bluetooth</td>
+<td>Platform code</td>
+<td>LGPL dynamic-linking obligations or commercial licence (<a href="https://www.qt.io/licensing/open-source-lgpl-obligations">Qt LGPL</a>); heaviest toolchain</td>
+<td>Medium</td>
+<td>Viable; Kiriusss/Sony-Camera-Control uses Qt on Win/Linux</td>
+</tr>
+<tr>
+<td><strong>Flutter 3.47</strong></td>
+<td><code>dart:ffi</code> + <code>NativeCallable.listener</code> (any-thread callbacks) (<a href="https://api.flutter.dev/flutter/dart-ffi/NativeCallable/NativeCallable.listener.html">api.flutter.dev</a>)</td>
+<td>Zero-copy buffer to <code>Image.memory</code></td>
+<td><code>camera_desktop</code> BGRA frames</td>
+<td><code>flutter_blue_plus</code> / <code>universal_ble</code></td>
+<td>Platform channels</td>
+<td>No vendor-SDK precedent found</td>
+<td>Medium</td>
+<td>Possible; ImagingEdge-Next and Alpha-Import-Utility are Flutter desktop Sony tools (transfer only)</td>
+</tr>
+<tr>
+<td><strong>.NET 10 / Avalonia 12</strong></td>
+<td>P/Invoke + <code>[UnmanagedCallersOnly]</code></td>
+<td><code>WriteableBitmap</code></td>
+<td>ZXing.Net</td>
+<td>WinRT / CoreBluetooth bindings</td>
+<td>WinRT native; macOS needs Objective-C bridge</td>
+<td>Needs JIT entitlement and per-binary signing on macOS (<a href="https://docs.avaloniaui.net/docs/deployment/macOS">Avalonia macOS deployment</a>); .NET 8/9 EOL 2026-11-10</td>
+<td>Medium</td>
+<td>RemoteCam is C#/.NET + C++ bridge and ships Win + Mac, so this path is proven</td>
+</tr>
+</tbody>
+</table></div>
+<p>Three OS-level realities apply to every shell. <strong>Wi-Fi join</strong> is technically possible on both OSes but gated behind Location permission (macOS 14.4+, Windows since late 2024), and macOS Sequoia showed SSID-redaction regressions that broke <code>associate(withName:)</code> in non-GUI processes, so Wi-Fi join must live in the GUI process and ship with a manual "join <code>DIRECT-xxxx</code>" fallback (<a href="https://developer.apple.com/forums/thread/769950">Apple forums 769950</a>; <a href="https://learn.microsoft.com/en-us/windows/win32/nativewifi/wi-fi-access-location-changes">MS Learn Wi-Fi location changes</a>). <strong>BLE</strong> on macOS never exposes the peripheral MAC and cannot unpair programmatically (<a href="https://docs.simpleble.org/simpleble/platform_notes">SimpleBLE platform notes</a>). <strong>Mac App Store sandboxing</strong> conflicts with CoreWLAN network changes, so plan on direct Developer ID distribution.</p>
+<h2 id="open-source-repositories-compared-fork-remotecam-study-alpha2go">Open-source repositories compared: fork RemoteCam, study alpha2go</h2>
+<p>About sixty repositories touch Sony remote control; roughly twenty matter for a desktop wireless app. They fall into five families. Metadata (stars, last default-branch commit) was collected from the GitHub API on 2026-11-10; four of the most relevant desktop projects were created in the six weeks before that date, so star counts understate quality, and several disclose heavy AI-assisted authorship and single-body testing (<a href="https://github.com/RemingtonWilcox/RemoteCam">github_repos_catalogue method note</a>). Status: Alive = commits within six months; Stalled = 6-24 months; Dead = older or archived.</p>
+
+<div class="filterbar" id="repo-filter">
+  <label for="repo-search" class="eyebrow">Filter all repository tables</label>
+  <div class="filterrow">
+    <input id="repo-search" type="search" placeholder="Search repo, stack, camera, feature…" autocomplete="off">
+    <div class="chips" role="group" aria-label="Filter by status">
+      <button type="button" class="chipbtn is-on" data-f="all" id="f-all">All</button>
+      <button type="button" class="chipbtn" data-f="alive" id="f-alive">Alive</button>
+      <button type="button" class="chipbtn" data-f="stalled" id="f-stalled">Stalled</button>
+      <button type="button" class="chipbtn" data-f="dead" id="f-dead">Dead</button>
+      <button type="button" class="chipbtn" data-f="fork" id="f-fork">Fork candidates</button>
+      <button type="button" class="chipbtn" data-f="study" id="f-study">Worth studying</button>
+    </div>
+  </div>
+  <p class="filternote" id="filter-count"></p>
+</div>
+<h3 id="a-apps-and-wrappers-built-on-sonys-camera-remote-sdk">A. Apps and wrappers built on Sony's Camera Remote SDK</h3>
+<div class="table-wrap repo-table"><table>
+<thead>
+<tr><th>Repo</th><th>Status / verdict</th><th>Stack</th><th>Platform</th><th>Connection</th><th>Cameras (claimed)</th><th>Key features</th><th>Own touches</th><th>License</th><th>Stars</th><th>Last commit</th></tr>
+</thead>
+<tbody>
+<tr data-status="alive" data-verdict="fork"><td><a href="https://github.com/RemingtonWilcox/RemoteCam">RemingtonWilcox/RemoteCam</a></td><td><span class="chip chip-alive">Alive</span> Fork candidate</strong>: closest to the goal, Win + Mac, releases with installer</td><td>C#/.NET app + native C++ <code>CamBridge</code> over CrSDK</td><td>Windows 11; macOS 14.1+ (Apple silicon + Intel); iOS TestFlight</td><td><strong>Wi-Fi via CrSDK with Access Authentication</strong>; HDMI capture optional</td><td>A7S III fw 5.01 tested; lists all SDK Wi-Fi bodies; A9 II user-reported; states A7R IV/A7C/RX0 II won't work over Wi-Fi</td><td>Live view ~8 fps / 0.2 s, click-to-focus/track, peaking, zebras, histogram, REC, single/burst/timer/bracket, S&amp;Q to 240 fps, interval, bulb to 8 min, save PC/card/both, dual-slot status</td><td>Auto-reconnect; C1-C4 setups; ND long-exposure suggestion; on-device AI auto-record; phone browser + Tailscale; iPhone-hotspot relay; hides unsupported settings; AGENTS.md</td><td>MIT (SDK under Sony EULA)</td><td>34</td><td>2026-11-08 (v1.0.13)</td></tr>
+<tr data-verdict="ref"><td><a href="https://github.com/jambyylf/onair-camera-control">jambyylf/onair-camera-control</a></td><td>Single drop. <strong>Reference</strong> for multi-cam over Wi-Fi</td><td>C++ engine + WebView2 UI + local web server :8080</td><td>Windows 10/11</td><td>Wi-Fi via CrSDK 2.02.00 (user-supplied)</td><td>FX30 tested (FX3, a7 IV "should")</td><td>Up to 3 cameras, auto-connect, HD/Smooth live view, per-camera + MASTER REC, ISO/iris/shutter/WB/PP, focus, audio, battery/card</td><td>MATCH look across cameras, presets, phone panel, OBS Browser Source feed, EN/KK/RU</td><td>NOASSERTION</td><td>0</td><td>2026-09-11</td></tr>
+<tr data-status="stalled" data-verdict="ref"><td><a href="https://github.com/Kiriusss/Sony-Camera-Control">Kiriusss/Sony-Camera-Control</a></td><td><span class="chip chip-stalled">Stalled</span> <strong>Reference</strong> for packaging</td><td>Qt/C++/Python (Win/Linux) + SwiftUI (macOS) over CrSDK 2.02</td><td>Windows, Linux, macOS arm64</td><td>USB and camera network methods with authentication</td><td>ILX-LR1 validated</td><td>Live view, exposure, direct-to-PC capture, burst, MF stepping, live-view recording to MJPEG/H.264</td><td>Releases bundle SDK runtime; Windows <code>srcameradriver.inf</code> notes; ad-hoc signed on Mac</td><td>Not stated</td><td>1</td><td>2026-09-22</td></tr>
+<tr data-status="stalled" data-verdict="ref"><td><a href="https://github.com/danielhelloworld/Sony-Camera-Control">danielhelloworld/Sony-Camera-Control</a></td><td><span class="chip chip-stalled">Stalled</span> Reference</td><td>C++ service + browser UI</td><td>Windows</td><td>CrSDK 2.02; USB and IP/Wi-Fi discovery</td><td>Unnamed</td><td>Live view ~15 fps, capture + auto-download, gallery, REC, click-to-focus, card browsing</td><td>Multi-cam pool, LAN access tokens, WebGL Rec.709/S-Log3/HLG + .cube, OpenAPI/MJPEG plug-in API, tray</td><td>Not stated</td><td>2</td><td>2026-08-12 (v0.2.0)</td></tr>
+<tr data-status="stalled" data-verdict="study"><td><a href="https://github.com/goudvuur/sonshell">goudvuur/sonshell</a></td><td><span class="chip chip-stalled">Stalled</span> <strong>Study</strong>: best documented SDK Wi-Fi connect logic</td><td>C++ CLI/REPL over CrSDK 2.00</td><td>Linux</td><td>Wi-Fi/Ethernet; <code>--username</code> Access Auth; fingerprint cache; manual <code>--host/--mac/--model</code></td><td>a6700 fw 2.00</td><td>Auto-download of captures, exposure/focus/REC, OpenCV live view, gamepad/pedal mapping, keepalive reconnect</td><td>Flip-<code>sshSupport</code> retry on 0x8202; a7C II USB fails 0x8219 (<a href="https://github.com/goudvuur/sonshell/issues/2">issue #2</a>)</td><td>Apache-2.0</td><td>257</td><td>2026-04-23</td></tr>
+<tr data-status="stalled" data-verdict="ref"><td><a href="https://github.com/SpaceDLFactory/TetherMoon">SpaceDLFactory/TetherMoon</a></td><td><span class="chip chip-stalled">Stalled</span> Reference (Rust FFI)</td><td>Rust FFI over CrSDK + web UI</td><td>macOS Apple silicon DMG; Windows portable</td><td><strong>USB only</strong></td><td>a7C</td><td>MJPEG live view, exposure/focus/capture, long exposure, timelapse</td><td>Browser UI from any device; KO/JA docs; Windows driver notes</td><td>NOASSERTION</td><td>17</td><td>2026-07-13 (v1.0.0)</td></tr>
+<tr data-status="stalled" data-verdict="ref"><td><a href="https://github.com/talayolabs/sonycam">talayolabs/sonycam</a></td><td><span class="chip chip-stalled">Stalled</span> <strong>Reference</strong> daemon pattern</td><td>C++ CLI + <code>sonycamd</code> daemon over CrSDK</td><td>macOS</td><td>USB (implied)</td><td>a7C II</td><td>Props, AF/MF nudge, touch-AF, REC, power zoom, interval capture, file pull, custom WB, web UI :3000</td><td>Daemon holds session to skip multi-second reconnect; <code>--json</code> for agents; whole-camera presets</td><td>Not stated</td><td>3</td><td>2026-09-01 (v0.4.0)</td></tr>
+<tr data-status="stalled" data-verdict="ref"><td><a href="https://github.com/crsdk/alpha-sdk-api">crsdk/alpha-sdk-api</a></td><td><span class="chip chip-stalled">Stalled</span> ~15 issues. <strong>Reference</strong>: issue tracker catalogues SDK failure modes</td><td>C++ REST/SSE/WebSocket server + OpenAPI + MCP; TS/Python clients</td><td>SDK platforms</td><td>USB/Wi-Fi per SDK</td><td>Not stated</td><td>REST control of SDK features; MCP for AI control</td><td>OpenAPI as source of truth; <code>@alpha-sdk/api</code> npm</td><td>MIT</td><td>3</td><td>2026-08-13</td></tr>
+<tr data-status="stalled" data-verdict="ref"><td><a href="https://github.com/PICKLERICK2005/CrSDKPy">PICKLERICK2005/CrSDKPy</a></td><td><span class="chip chip-stalled">Stalled</span> Reference host-process pattern</td><td>Python + user-built C++ <code>crsdkpy_host</code> + simulator</td><td>SDK platforms (Windows-tested)</td><td>CrSDK, USB validated</td><td>FX3A fw 2.02</td><td>Discovery, sessions, props, events, capture, content, live view</td><td>Simulator backend; FEATURE_MATRIX</td><td>MIT</td><td>5</td><td>2026-08-27 (0.1.0b3)</td></tr>
+<tr data-status="stalled" data-verdict="study"><td><a href="https://github.com/luizribeiro/sony-crsdk-rust">luizribeiro/sony-crsdk-rust</a></td><td><span class="chip chip-stalled">Stalled</span> <strong>Study</strong> for Rust-to-CrSDK FFI (Tauri)</td><td>Rust bindgen <code>crsdk-sys</code> + safe wrapper + <code>sonyctl</code> TUI</td><td>macOS 12.1+, Linux</td><td>Network (<code>--ip --mac</code>, SSH env vars) or USB</td><td>SDK bodies listed</td><td>Props, capture, REC, event monitor, TUI discovery</td><td>Build script fixes dylib install names</td><td>None</td><td>1</td><td>2025-12-11</td></tr>
+<tr data-verdict="ref"><td><a href="https://github.com/rathlinus/sony-lan-shutter">rathlinus/sony-lan-shutter</a></td><td>Reference</td><td>Python/FastAPI + C++ helper</td><td>Home Assistant add-on (Linux x86_64)</td><td>CrSDK Wi-Fi/LAN with user/password/fingerprint</td><td>a6700</td><td>Shoot and download JPEG/RAW</td><td>HA integration</td><td>AGPL-3.0</td><td>n/a</td><td>single commit</td></tr>
+<tr data-verdict="ref"><td><a href="https://github.com/isky-zh-l/Sony-CrSDK-Camera-Plugin-for-NINA">isky-zh-l/Sony-CrSDK-Camera-Plugin-for-NINA</a></td><td>Reference for C# interop</td><td>C# N.I.N.A. plugin</td><td>Windows x64</td><td>CrSDK 2.02</td><td>a7 V verified</td><td>Exposure, software bulb, ISO/shutter, live view, ARW Bayer decode</td><td>Three-layer native/managed/NINA</td><td>MIT</td><td>n/a</td><td>2026-10-26 (v0.5.6)</td></tr>
+<tr data-verdict="study"><td><a href="https://github.com/nulltrope/alphalink">nulltrope/alphalink</a></td><td><strong>Study</strong> for BLE wake on Mac</td><td>macOS menubar</td><td>macOS</td><td><strong>BLE wake</strong> + CrSDK Wi-Fi power-off</td><td>Not stated</td><td>Wake / power-off hotkeys</td><td>Only desktop BLE-wake claim found</td><td>MIT</td><td>n/a</td><td>2026-04-21</td></tr>
+<tr data-verdict="ref"><td><a href="https://registry.npmjs.org/camera-remote-web-api">camera-remote-web-api</a> (npm)</td><td>Reference for sidecar API shape</td><td>TS/JS + prebuilt native binary over CrSDK 2.01</td><td>macOS arm64, Linux, Windows x64</td><td>Per SDK; <code>connectionMode</code> remote/remote-transfer/contents</td><td>Not stated</td><td>REST + WebSocket live view + SSE, auto-reconnect</td><td>Ships prebuilt native binary (no source; licence questionable); Electron renderer client</td><td>MIT</td><td>n/a</td><td>2026-04-28 (1.3.7)</td></tr>
+<tr data-status="dead"><td><a href="https://github.com/thewhaleking/sonyalphapy">thewhaleking/sonyalphapy</a></td><td><span class="chip chip-dead">Dead</span> Avoid</td><td>Python bindings for SDK v1</td><td>macOS</td><td>USB</td><td>a7 IV</td><td>Fragile by own admission</td><td>Commits Sony headers (licence risk)</td><td>MIT</td><td>5</td><td>2026-03-03</td></tr>
+<tr data-status="new" data-verdict="ref"><td><a href="https://github.com/davidg-h/scp">davidg-h/scp</a></td><td><span class="chip chip-new">New</span> Reference</td><td>nanobind Python</td><td>Windows 10/11 x64</td><td>CrSDK USB</td><td>a7R V</td><td>Discover/connect/capture/download</td><td>—</td><td>MIT</td><td>1</td><td>2026-11-03</td></tr>
+<tr data-verdict="ref"><td><a href="https://github.com/kchinzei/CrSDKHelper">kchinzei/CrSDKHelper</a></td><td>Utility</td><td>CMake <code>FindCrSDK.cmake</code></td><td>macOS, Raspberry Pi</td><td>—</td><td>—</td><td>Build helpers</td><td>Warns v1 wrappers are incompatible with v2</td><td>MIT</td><td>2</td><td>2025-02-13</td></tr>
+<tr data-verdict="ref"><td><a href="https://github.com/amarburg/sony_remote_camera_sdk">amarburg/sony_remote_camera_sdk</a>, <a href="https://github.com/Johnnybyzhang/CrSDK-API-Reference">Johnnybyzhang/CrSDK-API-Reference</a></td><td><strong>Read first</strong>; the SDK zip is otherwise gated</td><td>Mirrors of Sony's API Reference 2.01.00 / 2.00.0</td><td>Docs</td><td>—</td><td>—</td><td>Full API reference HTML</td><td>—</td><td>Sony copyright</td><td>n/a</td><td>2026-03-13</td></tr>
+<tr data-verdict="ref"><td><a href="https://github.com/Jeffxcao/sony-camera-remote-sdk-console-mac">Jeffxcao/sony-camera-remote-sdk-console-mac</a>, <a href="https://github.com/sohtamei/CrSDK.IP">sohtamei/CrSDK.IP</a></td><td>Reference</td><td>Sony sample builds</td><td>macOS / misc</td><td>Wi-Fi / IP</td><td>—</td><td>RemoteCli builds</td><td>Directory listings reveal <code>CrAdapter</code> contents</td><td>—</td><td>0</td><td>2025-10-23</td></tr>
+<tr data-status="dead"><td><a href="https://github.com/Iktwo/Brqtt">Iktwo/Brqtt</a></td><td><span class="chip chip-dead">Dead</span> </td><td>Qt focus bracketing over CrSDK v1</td><td>Desktop</td><td>USB</td><td>—</td><td>Bracketing</td><td>—</td><td>GPL-3.0</td><td>5</td><td>2020-03-18</td></tr>
+<tr data-verdict="ref"><td>Also: <a href="https://github.com/bcharleson/sonycam">bcharleson/sonycam</a> (Python CLI over alpha-sdk-api, a1 II USB, MIT, 2026-07-23), <a href="https://github.com/Tomonobu3110/CrSDK_MCP">Tomonobu3110/CrSDK_MCP</a> (MCP, 2026-06-09), <a href="https://github.com/RadGoose/sony-remote">RadGoose/sony-remote</a> (Linux GUI, 2026-04-08), <a href="https://github.com/whoosh75/Sony-PI-Camera-Control">whoosh75/Sony-PI-Camera-Control</a> (BURANO, 2026-05-26), <a href="https://github.com/nimahmoodi1/sony-rx0m2-ros2">nimahmoodi1/sony-rx0m2-ros2</a> (ROS 2, 2026-09-15), <a href="https://github.com/ejurquet/CrSDK-4-TD">ejurquet/CrSDK-4-TD</a> (TouchDesigner, 2024), <a href="https://github.com/bgrigsby8/sony-remote">bgrigsby8/sony-remote</a> (Viam, USB)</td><td>Minor references</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table></div>
+<h3 id="b-sdk-free-ptpip-control-of-modern-bodies-plus-the-usb-only-modern-protocol-cousins">B. SDK-free PTP/IP control of modern bodies (plus the USB-only modern-protocol cousins)</h3>
+<div class="table-wrap repo-table"><table>
+<thead>
+<tr><th>Repo</th><th>Status / verdict</th><th>Stack</th><th>Platform</th><th>Connection</th><th>Cameras (claimed)</th><th>Key features</th><th>Own touches</th><th>License</th><th>Stars</th><th>Last commit</th></tr>
+</thead>
+<tbody>
+<tr data-status="alive" data-verdict="fork"><td><a href="https://github.com/Knallli/alpha2go">Knallli/alpha2go</a></td><td><span class="chip chip-alive">Alive</span> Fork or study</strong>: most complete SDK-free implementation</td><td>Pure Go library + <code>ptpprobe</code> CLI (no cgo)</td><td>Any Go target</td><td><strong>PTP/IP + Sony vendor ops; Access Authentication via SSH tunnel with host-key fingerprint check before password; discovery by ARP/SSDP/port scan; Wake-on-LAN</strong></td><td>a6700 fw 2.00 (full matrix in docs/a6700.md)</td><td>Read/write every property with allowed values and display strings, events, capture with/without AF, movie, AF-area/touch-track, press any button/dial, receive shots, live view 1024x680 ~30 fps with frames + OSD PNG, card listing, resumable ≥4 GiB downloads, thumbnails, delete, settings backup/restore, clock/TZ, .cube LUT import</td><td>Fingerprint-first SSH; WoL; camera UI stays usable; docs/protocol.md</td><td>Apache-2.0</td><td>2</td><td>2026-10-11</td></tr>
+<tr data-status="alive" data-verdict="study"><td><a href="https://github.com/Knallli/alpha2web">Knallli/alpha2web</a></td><td><span class="chip chip-alive">Alive</span> Study UX patterns</td><td>Go web UI on alpha2go; Docker</td><td>Browser</td><td>Via alpha2go</td><td>a6700</td><td>MJPEG live view, shutter/movie, every-property settings page, gallery/offline catalog, pull originals</td><td>Connect-on-demand with idle disconnect, Caution/Danger gating, Immich export with RAW+JPEG stacking, metrics</td><td>Apache-2.0</td><td>0</td><td>2026-10-13</td></tr>
+<tr data-verdict="study"><td><a href="https://github.com/sarnau/sony-camera-protocol">sarnau/sony-camera-protocol</a></td><td>Single drop. <strong>Must-study</strong> for QR-less onboarding</td><td>Python (stdlib + bleak) + long protocol write-up</td><td>Desktop (macOS/Linux)</td><td><strong>BLE scan → write <code>01</code> to CC08 → read SSID/password from CC06/CC07 → join AP → PTP/IP 15740 → SDIO_Connect</strong>; also RMT-P1BT BLE remote</td><td>a7R V fw 310</td><td>Shutter S1/S2, AF gated on FocusIndication, 60 MP download ~12 MB/s, RAW ~16 MB/s, live view 25.7 fps, 446 props / 190 writable, card listing, BLE shutter/zoom/focus</td><td>Zero-config desktop onboarding; documents that Creators' App never fires the shutter over BLE</td><td>None stated</td><td>1</td><td>2026-08-09</td></tr>
+<tr data-status="alive" data-verdict="study"><td><a href="https://github.com/watsonmw/alphawire">watsonmw/alphawire</a></td><td><span class="chip chip-alive">Alive</span> Study</strong> (add SSH to make it Gen 4 AP-ready)</td><td>C library + Python API + ImGui GUI (CMake/meson)</td><td>Windows (WIA/libusbK), macOS (IOKit), Linux (libusb); TCP/IP everywhere</td><td>USB PTP + PTP/IP direct, no SDK; <strong>no SSH/SSL on PTP/IP</strong></td><td>"pre-2020 and post-2020 Alpha"</td><td>Full property control, tethered capture, fast download, live view, settings save/load, protocol inspector</td><td>Minimal-dependency C; covers bodies the SDK dropped; only OSS desktop GUI found</td><td>MIT</td><td>8</td><td>2026-11-08</td></tr>
+<tr data-status="alive" data-verdict="study"><td><a href="https://github.com/Scryptor/SonyCamViewer">Scryptor/SonyCamViewer</a></td><td><span class="chip chip-alive">Alive</span> Study</strong>: only desktop Wi-Fi Direct claim on a modern body</td><td>Kotlin (Android tablet + macOS DMG)</td><td>Android, macOS</td><td><strong>USB-C or Wi-Fi (router or Wi-Fi Direct)</strong> in PC Remote mode, direct "PTP 3", no drivers/SDK</td><td>ZV-E10 fw 2.00; 2020+ expected; pre-2020 exposure writes fail</td><td>Live view to 25 fps, Fn overlay, all settings, REC/photo with AF, up to 4 cameras in linked groups, presets, waveform/parade/vectorscope, zebra/false colour/peaking, LUT preview, 8x zoom, touch focus, power zoom, focus A/B pull</td><td>Linked multi-cam, reference-frame overlay, weak-signal survival; UI in Russian</td><td>None stated</td><td>2</td><td>2026-10-31 (v0.9.2)</td></tr>
+<tr data-status="stalled" data-verdict="ref"><td><a href="https://github.com/Streetblock/remote-camera-control-rs">Streetblock/remote-camera-control-rs</a></td><td><span class="chip chip-stalled">Stalled</span> <strong>Architecture reference</strong> (Rust, fits Tauri)</td><td>Rust library + <code>rocc-cli</code> (port of Swift rocc)</td><td>Cross-platform</td><td>SSDP + <code>dd.xml</code>/<code>DigitalImagingDesc.xml</code> routing; ScalarWebAPI; PTP/IP SDIO handshake; <code>0x9209</code></td><td>a7 III (API); a6700 (PTP/IP ISO/aperture/shutter/EV/WB writes)</td><td>Discovery, get/set, live view (API only), events</td><td>"Available" vs "supported" lists; legacy/modern backend routing</td><td>Apache-2.0 / MIT</td><td>1</td><td>2026-04-12</td></tr>
+<tr data-status="stalled" data-verdict="ref"><td><a href="https://github.com/jakkuh/sony-alpha-python">jakkuh/sony-alpha-python</a></td><td><span class="chip chip-stalled">Stalled</span> Minimal reference</td><td>Python</td><td>Raspberry Pi / any</td><td>PTP/IP via <code>sshpass</code> SSH tunnel (not pairing)</td><td>FX30, a6700</td><td>Connect, zoom in/out</td><td>SSH recipe; ships Sony "Camera Control PTP 3 Reference.pdf" in docs/</td><td>None</td><td>8</td><td>2026-02-09</td></tr>
+<tr data-status="stalled" data-verdict="ref"><td><a href="https://github.com/RobertDamerius/SonyRemoteCameraControl">RobertDamerius/SonyRemoteCameraControl</a></td><td><span class="chip chip-stalled">Stalled</span> Minimal reference</td><td>C++, no deps</td><td>Linux, Windows (MinGW)</td><td>PTP/IP direct</td><td>FX3 fw 7.00</td><td>Connect, shutter/F/ISO, live view, capture, fetch; PTPIP.md</td><td>Dependency-free teaching example</td><td>MIT</td><td>1</td><td>2025-12-29</td></tr>
+<tr data-status="stalled" data-verdict="study"><td><a href="https://github.com/frank26080115/alpha-fairy">frank26080115/alpha-fairy</a></td><td><span class="chip chip-stalled">Stalled</span> ; A7C II disconnect issue (<a href="https://github.com/frank26080115/alpha-fairy/issues/39">#39</a>). <strong>Study the RE doc</strong></td><td>C/C++ Arduino on ESP32</td><td>Handheld</td><td>PTP/IP (sniffed from Imaging Edge Remote) + legacy HTTP + IR; GUID pairing or "Connect Without Pairing"</td><td>A1, A6600, A6000, RX100M4, RX0M2</td><td>Shutter/timer, focus stack, 9-point focus, intervalometer, astro/bulb, dual shutter, sensor triggers</td><td>Camera-Reverse-Engineering.md; 2.4 GHz only</td><td>MIT</td><td>223</td><td>2023-05-25 on main</td></tr>
+<tr data-status="dead" data-verdict="ref"><td><a href="https://github.com/simonmitchell/rocc">simonmitchell/rocc</a></td><td><span class="chip chip-dead">Dead</span> Architecture reference for Swift</td><td>Swift framework</td><td>iOS/macOS</td><td>Legacy API (a7 II) + PTP/IP (a9 II)</td><td>a7 II, a9 II, RX0</td><td>SSDP discovery restarting on Wi-Fi change, events, transfer; powers Camrote</td><td>Manufacturer-generic design</td><td>MIT</td><td>148</td><td>2021-05-19</td></tr>
+<tr data-status="alive" data-verdict="ref"><td><a href="https://github.com/gphoto/libgphoto2">gphoto/libgphoto2</a></td><td><span class="chip chip-alive">Alive</span> <strong>Reference</strong> for opcodes; USB-centric</td><td>C</td><td>Linux/macOS/Windows</td><td>USB PTP + <code>ptpip:</code>; Sony SDIO; vendor init/deinit merged 2026-03 (<a href="https://github.com/gphoto/libgphoto2/pull/1220">PR #1220</a>); no SSH</td><td>Broad; IDs through a1 II/a9 III</td><td>Capture, live view, config, download</td><td>Reference Sony opcodes (<code>ptp.h</code>), gen 2/3 property unpacking</td><td>LGPL-2.1</td><td>1,420</td><td>2026-11-09</td></tr>
+<tr data-status="alive" data-verdict="study"><td><a href="https://github.com/shivvyas2/Sony-Alpha-A6400-Cinema-Monitor">shivvyas2/Sony-Alpha-A6400-Cinema-Monitor</a> (CinemaHUD)</td><td><span class="chip chip-alive">Alive</span> <strong>Study</strong> macOS Swift + notarization</td><td>Swift</td><td>macOS (notarized DMG), iOS/iPadOS</td><td>USB IOUSBHost or Wi-Fi via legacy API (192.168.122.1)</td><td>a6400</td><td>Live view + cinema HUD, click-to-focus, scopes, LUT, false colour</td><td>MetalFX upscaling, frame interpolation, auto-reconnect, releases Image Capture, CI-notarized</td><td>None stated</td><td>5</td><td>2026-10-27 (v2.4.1)</td></tr>
+<tr data-status="alive" data-verdict="study"><td><a href="https://github.com/Sankew/Tether">Sankew/Tether</a></td><td><span class="chip chip-alive">Alive</span> Study</td><td>Swift (swiftc)</td><td>macOS 26 Apple silicon</td><td><strong>USB</strong> via ImageCaptureCore <code>requestSendPTPCommand</code></td><td>a6700</td><td>Live view ~30 fps, histogram, settings, shutter/movie, auto-download, interval</td><td>Tests against simulated camera before install</td><td>GPL-3.0</td><td>1</td><td>2026-11-02</td></tr>
+<tr data-status="alive" data-verdict="study"><td><a href="https://github.com/MarecekW/simple-camera-remote">MarecekW/simple-camera-remote</a></td><td><span class="chip chip-alive">Alive</span> Study</td><td>Swift/SwiftUI</td><td>macOS 14+ Apple silicon</td><td><strong>USB</strong> via ImageCaptureCore with SDIO ops (bypasses <code>ptpcamerad</code>)</td><td>a6700 fw 2.00</td><td>Live view 1024x680 ~30 fps, click-to-focus, magnifier, MF steps, power zoom presets, RAW+JPEG</td><td>Research-dataset workflow, JSON sidecars, presets ⌘1-9</td><td>MIT</td><td>0</td><td>2026-11-07 (v0.2.0)</td></tr>
+<tr data-status="alive" data-verdict="study"><td><a href="https://github.com/artembaechka/sony-alpha-webcam">artembaechka/sony-alpha-webcam</a></td><td><span class="chip chip-alive">Alive</span> Study Windows USB without libusbK</td><td>Rust (egui)</td><td>Windows 11</td><td><strong>USB</strong> PTP via Windows Portable Devices, no driver swap</td><td>a6300 fw 2.0</td><td>Live view ~30 fps, exposure, AF, virtual webcam</td><td>Auto-reconnect; WPD trick</td><td>Apache-2.0</td><td>0</td><td>2026-11-08</td></tr>
+<tr data-status="new"><td><a href="https://github.com/Oliviagu/sony-log-monitor">Oliviagu/sony-log-monitor</a></td><td><span class="chip chip-new">New</span> </td><td>Swift + Metal</td><td>macOS 13+ Apple silicon</td><td>USB via libgphoto2</td><td>ZV-E10</td><td>S-Log to Rec.709, zebras, false colour, timed REC</td><td>Phone view via QR; stops <code>ptpcamerad</code></td><td>MIT</td><td>0</td><td>2026-10-30</td></tr>
+<tr data-verdict="ref"><td><a href="https://github.com/olkham/pysonycam">olkham/pysonycam</a></td><td>Reference</td><td>Python USB PTP with SDIO v2/v3</td><td>—</td><td>USB</td><td>—</td><td>Live view, zoom/focus, movie</td><td>—</td><td>—</td><td>12</td><td>2026-10-04</td></tr>
+<tr data-verdict="ref"><td><a href="https://github.com/petabyt/libpict">petabyt/libpict</a></td><td>Reference</td><td>C PTP client (USB + IP)</td><td>—</td><td>—</td><td>Sony coverage unverified</td><td>—</td><td>—</td><td>Apache-2.0</td><td>n/a</td><td>2026-11-05</td></tr>
+<tr data-status="dead"><td><a href="https://github.com/pixeltris/SonyAlphaUSB">pixeltris/SonyAlphaUSB</a></td><td><span class="chip chip-dead">Dead</span> </td><td>C# (WIA)</td><td>Windows</td><td>USB</td><td>A7 III</td><td>Shutter, video, ~30 props</td><td>Early opcode map</td><td>None</td><td>60</td><td>2019-04-14</td></tr>
+</tbody>
+</table></div>
+<h3 id="c-bluetooth-le-remote-geotag-and-credential-handoff">C. Bluetooth LE remote, geotag and credential handoff</h3>
+<div class="table-wrap repo-table"><table>
+<thead>
+<tr><th>Repo</th><th>Status / verdict</th><th>Stack</th><th>Platform</th><th>Connection</th><th>Cameras (claimed)</th><th>Key features</th><th>Own touches</th><th>License</th><th>Stars</th><th>Last commit</th></tr>
+</thead>
+<tbody>
+<tr data-status="alive" data-verdict="study"><td><a href="https://github.com/Staacks/alpharemote">Staacks/alpharemote</a></td><td><span class="chip chip-alive">Alive</span> Protocol study only (GPL)</td><td>Kotlin Android (F-Droid + Play)</td><td>Android</td><td>BLE via Companion Device Manager</td><td>a6100/6400/6600/6700, a7 III/IV/C II, a7R III/IV/V, a9, ZV-E10 confirmed</td><td>Shutter/focus/REC/zoom in notification shade</td><td>Zero-resource companion model</td><td><strong>GPL-3.0</strong></td><td>150</td><td>2026-11-01 (v1.4)</td></tr>
+<tr data-status="alive" data-verdict="study"><td><a href="https://github.com/coral/freemote">coral/freemote</a></td><td><span class="chip chip-alive">Alive</span> <strong>Study</strong> BLE codes</td><td>C++ PlatformIO on nRF52840</td><td>Embedded</td><td>BLE remote (0xFF01/0xFF02), manufacturer-data pairing flags</td><td>A7 III</td><td>Pair, auto-reconnect, shutter</td><td>Readable protocol write-up</td><td>Apache-2.0</td><td>178</td><td>2026-09-19</td></tr>
+<tr data-status="alive"><td><a href="https://github.com/gkoh/furble">gkoh/furble</a></td><td><span class="chip chip-alive">Alive</span> </td><td>C ESP32/M5Stack, web installer</td><td>Embedded</td><td>BLE multi-brand</td><td>ZV-1F (+ Fuji/Canon/Nikon)</td><td>Scan/pair/shutter/focus/GPS</td><td>Multi-vendor abstraction</td><td>MIT</td><td>258</td><td>2026-09-14 (v3.9.1)</td></tr>
+<tr data-status="alive" data-verdict="study"><td><a href="https://github.com/NevermindZZT/AlphaPro">NevermindZZT/AlphaPro</a></td><td><span class="chip chip-alive">Alive</span> <strong>Study</strong> BLE→Wi-Fi handoff</td><td>Kotlin Android (+ Wear)</td><td>Android</td><td>BLE GPS heartbeat, CDM wake, <strong>Wi-Fi credentials over BLE → in-app <code>WifiNetworkSpecifier</code> join</strong></td><td>A7M4, A7R5, A6700, A7C2, A7CR, ZV-E1, A1, A9M3, FX3</td><td>Photo browsing, HEIF export, BLE two-stage shutter, REC, bulb, timelapse</td><td>Fixes Creators' App GPS drop</td><td>Apache-2.0</td><td>3</td><td>2026-11-02</td></tr>
+<tr data-status="alive" data-verdict="ref"><td><a href="https://github.com/finfinack/alphaloc">finfinack/alphaloc</a></td><td><span class="chip chip-alive">Alive</span> Reference for geotag</td><td>ESP32 BLE GPS pusher</td><td>Embedded</td><td>BLE DD11 95-byte payload</td><td>"Sony Alpha" (A7 prefix)</td><td>Geotag</td><td>Byte-level GPS format</td><td>Apache-2.0</td><td>n/a</td><td>2026-10-10</td></tr>
+<tr data-status="stalled" data-verdict="study"><td><a href="https://github.com/smazurov/sony_remote_ble">smazurov/sony_remote_ble</a></td><td><span class="chip chip-stalled">Stalled</span> Study</td><td>Go BLE TUI</td><td><strong>Linux, macOS</strong></td><td>BLE</td><td>—</td><td>Focus/shutter/zoom/REC/C1</td><td>Only desktop BLE remote found</td><td>MIT</td><td>n/a</td><td>2025-09-18</td></tr>
+<tr data-verdict="ref"><td><a href="https://github.com/Congee/alfa">Congee/alfa</a></td><td>Reference</td><td>iOS BLE geotag + remote</td><td>iOS</td><td>BLE</td><td>a7R V fw 4.0</td><td>Geotag, remote</td><td>"Good BLE citizen" to stop standby drain</td><td>MIT</td><td>n/a</td><td>2026-08-18</td></tr>
+<tr data-status="dead"><td><a href="https://github.com/perillamint/blue-alpha-lib">perillamint/blue-alpha-lib</a></td><td><span class="chip chip-dead">Dead</span> </td><td>Rust BLE GNSS</td><td>—</td><td>BLE</td><td>—</td><td>GPS only</td><td>—</td><td>—</td><td>n/a</td><td>2023-04-26</td></tr>
+</tbody>
+</table></div>
+<h3 id="d-wireless-image-transfer-only">D. Wireless image transfer only</h3>
+<div class="table-wrap repo-table"><table>
+<thead>
+<tr><th>Repo</th><th>Status / verdict</th><th>Stack</th><th>Platform</th><th>Connection</th><th>Cameras (claimed)</th><th>Key features</th><th>Own touches</th><th>License</th><th>Stars</th><th>Last commit</th></tr>
+</thead>
+<tbody>
+<tr data-status="alive" data-verdict="study"><td><a href="https://github.com/schorschii/ImagingEdge4Linux">schorschii/ImagingEdge4Linux</a></td><td><span class="chip chip-alive">Alive</span> Study transfer UX</td><td>Python (GTK notifications)</td><td>Linux</td><td>"Send to Smartphone" SOAP/UPnP at 192.168.122.1:64321</td><td>a77 II, a7S, a6000/6400/6600, HX90V/HX99, RX100 III/VI/VII</td><td>Download all, skip existing; <strong>JPEG only</strong></td><td><code>--daemon</code>, <code>autoconnect.sh</code> Wi-Fi switching</td><td>GPL-3.0</td><td>68</td><td>2026-10-18</td></tr>
+<tr data-status="stalled" data-verdict="study"><td><a href="https://github.com/kalicyh/ImagingEdge-Next">kalicyh/ImagingEdge-Next</a></td><td><span class="chip chip-stalled">Stalled</span> <strong>Study</strong> QR join</td><td>Flutter/Dart</td><td>macOS, Windows, Linux, Android</td><td>Same SOAP path</td><td>Inherits above</td><td>Thumbnail browser, batch download</td><td><strong>QR-code scan to join camera Wi-Fi</strong>; macOS DMG script</td><td>MIT</td><td>5</td><td>2025-10-03 (v1.1.3)</td></tr>
+<tr data-status="alive"><td><a href="https://github.com/dykomenko/camera-wifi-transfer">dykomenko/camera-wifi-transfer</a></td><td><span class="chip chip-alive">Alive</span> </td><td>Python GUI</td><td>Windows</td><td>PTP/IP "Send to Computer" (airMTP), SOAP direct-AP, USB <code>PMHOME</code> pairing</td><td>a6500 end-to-end; many listed untested</td><td>Original JPEG/HEIF/RAW/video, manual IP, 12 languages</td><td>Discovery on real adapter despite VMs, <code>.part</code> atomic downloads</td><td>GPL-3.0</td><td>1</td><td>2026-10-14</td></tr>
+<tr data-status="alive"><td><a href="https://github.com/aspidovss/spmag-sony-pm-alt-gui">aspidovss/spmag-sony-pm-alt-gui</a></td><td><span class="chip chip-alive">Alive</span> </td><td>Go single binary / AppImage / Docker</td><td>Windows, Linux, Docker</td><td>PTP/IP "Send to Computer" + USB pairing</td><td>a77 II fw 2.0</td><td>Auto-detect, date folders, reconcile Received/Missing/Failed, tells camera to power off, tray, browser UI</td><td>Allowed-camera list; README states all code AI-generated</td><td>MIT</td><td>0</td><td>2026-11-09 (v0.4.4)</td></tr>
+<tr data-status="dead"><td><a href="https://github.com/falk0069/sony-pm-alt">falk0069/sony-pm-alt</a></td><td><span class="chip chip-dead">Dead</span> ; A7C fails (<a href="https://github.com/falk0069/sony-pm-alt/issues">#32</a>)</td><td>C + Python + gphoto2</td><td>Linux</td><td>"Send to Computer" SSDP + PTP/IP via gphoto2; GUID setter</td><td>ILCE-5000</td><td>Wireless download</td><td>Reverse-engineered "Sending..." packets</td><td>None</td><td>320</td><td>2021-12-01</td></tr>
+<tr data-verdict="ref"><td><a href="https://github.com/DangerBlack/sony-photo-transfer">DangerBlack/sony-photo-transfer</a></td><td>Reference</td><td>Android DLNA</td><td>Android</td><td>DLNA from camera AP; PTP/IP module present but "this body never opens the port"</td><td>a7R III</td><td>JPEG transfer</td><td>Documents Gen 2 limits</td><td>MIT</td><td>n/a</td><td>2026-09-10</td></tr>
+<tr data-status="alive"><td><a href="https://github.com/tsukumijima/Alpha-Import-Utility">tsukumijima/Alpha-Import-Utility</a></td><td><span class="chip chip-alive">Alive</span> </td><td>Flutter/Dart</td><td>Windows, macOS</td><td>USB/SD card (not wireless)</td><td>a6700</td><td>Incremental import</td><td>EOS-Utility-style ingest</td><td>MIT</td><td>23</td><td>2026-03-18</td></tr>
+</tbody>
+</table></div>
+<h3 id="e-legacy-camera-remote-api-mobile-only-and-miscellaneous-references">E. Legacy Camera Remote API, mobile-only and miscellaneous references</h3>
+<div class="table-wrap repo-table"><table>
+<thead>
+<tr><th>Repo</th><th>Status / verdict</th><th>Stack</th><th>Platform</th><th>Connection</th><th>Cameras (claimed)</th><th>Key features</th><th>Own touches</th><th>License</th><th>Stars</th><th>Last commit</th></tr>
+</thead>
+<tbody>
+<tr data-status="dead"><td><a href="https://github.com/Bloodevil/sony_camera_api">Bloodevil/sony_camera_api</a> (pysony)</td><td><span class="chip chip-dead">Dead</span> </td><td>Python</td><td>Any</td><td>Legacy JSON API over camera Wi-Fi</td><td>Pre-2020</td><td>Live view, timer, capability dump</td><td>De-facto reference client</td><td>MIT</td><td>288</td><td>2021-04-03</td></tr>
+<tr data-status="dead"><td><a href="https://github.com/petabite/libsonyapi">petabite/libsonyapi</a></td><td><span class="chip chip-dead">Dead</span> </td><td>Python</td><td>Any</td><td>Legacy API (SSDP + JSON)</td><td>Pre-2020</td><td>Minimal wrapper</td><td>—</td><td>MIT</td><td>79</td><td>2020-08-22</td></tr>
+<tr data-status="dead"><td><a href="https://github.com/kazyx/kz-remote-api">kazyx/kz-remote-api</a> / <a href="https://github.com/locana/locana">locana/locana</a></td><td><span class="chip chip-dead">Dead</span> </td><td>C# UWP</td><td>Windows 10</td><td>Legacy API v2.3.0 + SSDP</td><td>Pre-2020</td><td>Full wrapper; Locana remote app</td><td>Only Windows legacy desktop client</td><td>MIT</td><td>46 / 31</td><td>2019-10-04 / 2017-11-15</td></tr>
+<tr data-status="stalled"><td><a href="https://github.com/ThibaudM/timelapse-sony">ThibaudM/timelapse-sony</a></td><td><span class="chip chip-stalled">Stalled</span> </td><td>Java Android</td><td>Android</td><td>Legacy API</td><td>RX100 II era</td><td>Wi-Fi intervalometer</td><td>NFC connect</td><td>GPL-3.0</td><td>140</td><td>2025-03-28</td></tr>
+<tr data-status="alive"><td><a href="https://github.com/XiaoQAQ10086/SonnyLink">XiaoQAQ10086/SonnyLink</a></td><td><span class="chip chip-alive">Alive</span> </td><td>Kotlin/Compose, OpenGL ES</td><td>Android 10+</td><td>Legacy API + DLNA</td><td>a6300</td><td>Live view 15-20 fps, shutter, DLNA download</td><td>GPU upscale, 2.55 MB APK</td><td>MIT</td><td>10</td><td>2026-10-09 (v1.1.4)</td></tr>
+<tr data-status="stalled"><td><a href="https://github.com/jongan69/expo-sony-camera">jongan69/expo-sony-camera</a></td><td><span class="chip chip-stalled">Stalled</span> </td><td>Kotlin + Swift Expo module</td><td>Android, iOS</td><td>USB PTP2, ScalarWebAPI Wi-Fi Direct; "PTP3" roadmap</td><td>A7 III, a6700</td><td>Detect, live view, capture</td><td>Capability-driven model</td><td>MIT</td><td>15</td><td>2026-08-14</td></tr>
+<tr data-verdict="ref"><td><a href="https://github.com/peiyuanix/zv-e10-creators-app-patcher">peiyuanix/zv-e10-creators-app-patcher</a></td><td><strong>Reference</strong>: what Creators' App checks on connect</td><td>Smali patches to Creators' App 3.5.0</td><td>Android</td><td>Documents PC Remote (USB/Wi-Fi Direct/AP) vs Smartphone Connect services</td><td>ZV-E10 fw 2.03</td><td>Enables Creators' App on original ZV-E10</td><td>Enumerates why Creators' App rejects a body</td><td>MIT</td><td>34</td><td>2026-09-17</td></tr>
+<tr data-status="alive" data-verdict="study"><td><a href="https://github.com/gr3enk/dusklapse">gr3enk/dusklapse</a></td><td><span class="chip chip-alive">Alive</span> <strong>Study</strong> Tauri structure</td><td>Rust/<strong>Tauri</strong></td><td>Desktop</td><td>Wi-Fi for Canon/Nikon/Sony; mock camera</td><td>—</td><td>Holy-grail timelapse ramping</td><td>Tauri + camera Wi-Fi precedent</td><td>Apache-2.0</td><td>n/a</td><td>2026-10-26 (v0.4.3)</td></tr>
+<tr data-status="dead"><td><a href="https://github.com/farhi/matlab-sonyalpha">farhi/matlab-sonyalpha</a></td><td><span class="chip chip-dead">Dead</span> </td><td>MATLAB</td><td>—</td><td>Legacy API via curl/ffmpeg/gphoto2</td><td>—</td><td>Live view ~2 s</td><td>—</td><td>GPL</td><td>n/a</td><td>2022-08-28</td></tr>
+<tr data-verdict="ref"><td><a href="https://github.com/dukus/digiCamControl">dukus/digiCamControl</a></td><td>Not a Sony Wi-Fi reference</td><td>C#</td><td>Windows</td><td>USB</td><td>Sony support unconfirmed (README silent)</td><td>Tethering</td><td>—</td><td>—</td><td>737</td><td>2026-11-05</td></tr>
+<tr data-verdict="ref"><td><a href="https://github.com/Parrot-Developers/sequoia-ptpy">Parrot-Developers/sequoia-ptpy</a>, <a href="https://github.com/malc0mn/ptp-ip">malc0mn/ptp-ip</a>, <a href="https://github.com/tmandys/mtp-tools">tmandys/mtp-tools</a></td><td>Tooling references</td><td>Python PTP (Sony extension file), Go PTP/IP (Fuji), Wireshark Lua dissector</td><td>—</td><td>PTP / PTP/IP</td><td>—</td><td>Protocol tooling</td><td>Dissector generates Sony codes from libgphoto2 <code>ptp.h</code></td><td>BSD-3 / MIT / mixed</td><td>n/a</td><td>2019 / 2025-04-28 / —</td></tr>
+<tr data-status="dead"><td><a href="https://github.com/alech/alphamote">alech/alphamote</a>, <a href="https://github.com/kmgallahan/AllSystemsGo.SonyCameraRemoteSDK_SGT">kmgallahan/AllSystemsGo.SonyCameraRemoteSDK_SGT</a>, <a href="https://github.com/dup2X/crsdk">dup2X/crsdk</a>, Nailik/sony_alpha_control</td><td><span class="chip chip-dead">Dead</span> </td><td>Misc</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>0</td><td>2009-2021</td></tr>
+</tbody>
+</table></div>
+<p>Read across the five tables, the decision collapses to a handful of verdicts. <strong>RemoteCam</strong> is the only complete, cross-platform, MIT-licensed, actively released desktop app that does precisely what the user wants (Wi-Fi + Access Authentication + live view + capture on Win and Mac); its weaknesses are a single tested body, ~8 fps live view versus 25-30 fps in the direct-PTP/IP projects, a .NET + C++ stack the user may or may not want, and heavy AI-assisted authorship (<a href="https://github.com/RemingtonWilcox/RemoteCam">RemoteCam README</a>). <strong>alpha2go</strong> is the most complete SDK-free implementation and the best protocol documentation in the open, but it is Go and one body (<a href="https://github.com/Knallli/alpha2go">alpha2go</a>). <strong>sarnau/sony-camera-protocol</strong> is the single most valuable study for the onboarding problem because it is the only desktop code that replaces both QR and IP entry with a BLE handshake (<a href="https://github.com/sarnau/sony-camera-protocol">sarnau</a>). <strong>alphawire</strong> is the only open-source desktop GUI and the only C library spanning pre- and post-2020 bodies, but lacks SSH. <strong>sonshell</strong> has the most defensively written SDK Wi-Fi connection code. The features multiple independent authors re-implemented because Sony's desktop app lacks them, and therefore the lowest-risk differentiators, are presets, auto-reconnect, scopes and LUT monitoring, a phone or browser second screen, and an automation API (REST, MCP, <code>--json</code>).</p>
+<h2 id="recommended-architecture-crsdk-sidecar-behind-a-thin-shell-ptpip-in-reserve">Recommended architecture: CrSDK sidecar behind a thin shell, PTP/IP in reserve</h2>
+<p>The recommendation is a <strong>three-layer design with the camera protocol in its own process</strong>. Layer one is a C++ "camera bridge" sidecar that links the Camera Remote SDK, exposes a local control channel (JSON-RPC over stdio or a localhost WebSocket) and a binary live-view channel (WebSocket frames or MJPEG), owns reconnect and fingerprint caching, and is designed to be killed and respawned after every disconnect because of the <code>Init()</code>-after-<code>Release()</code> crash (<a href="https://eclipseclick-website.pages.dev/blog/sony-crsdk-macos-apple-silicon">eclipseClick blog</a>). Layer two is the connection manager, in the <strong>GUI process</strong> because CoreWLAN and location permissions misbehave in helpers: webcam QR decode (<code>zxing-wasm</code> or Vision), programmatic Wi-Fi join with a manual fallback, SSDP M-SEARCH plus <code>DigitalImagingDesc.xml</code> parsing to learn <code>X_SSH_Support</code> and <code>X_PTP_PairingNecessity</code>, a default-gateway shortcut for Wi-Fi Direct (the camera is the gateway at 192.168.122.1), optional BLE scan for the <code>0x012D</code> advertisement to show "camera nearby, pairing enabled" and, later, the CC06/CC07 credential read, and a first-connect fingerprint confirmation screen whose result is cached per camera serial. Layer three is the UI: <strong>Tauri v2</strong> if the developer is web-stack-first (8-22 MB bundles, <code>Channel&lt;&amp;[u8]&gt;</code> for frames, <code>btleplug</code> for BLE, <code>externalBin</code> for the sidecar), or <strong>SwiftUI on macOS followed by WinUI 3 / .NET 10 on Windows</strong> sharing the same C++ bridge if native integration (Vision, CoreWLAN, CoreBluetooth) matters more than a single UI codebase. Electron is the fastest prototype but costs 10-20x the download for no protocol advantage.</p>
+<p>Phase the work by risk. Phase 1 is the bridge plus manual IP entry plus Access Authentication plus live view plus capture-to-disk over a shared router on one Gen 4 body, which is exactly the surface RemoteCam and sonshell already cover and the biggest debugging sink (SDK threading, <code>CrAdapter</code> layout, re-signing seven dylibs under hardened runtime, the Windows firewall exception). Phase 2 is onboarding: SSDP discovery, QR scan, Wi-Fi join, fingerprint UX, auto-reconnect, Wi-Fi Direct fallback. Phase 3 is the differentiators the community keeps rebuilding: presets, scopes and LUT preview on the JPEG stream, a browser second screen, interval and bracketing, a REST or <code>--json</code> automation surface, and an SFTP receiver so the camera can push files when control is not needed. Phase 4, optional, is the SDK-free PTP/IP path (port alpha2go's Go or wrap <code>remote-camera-control-rs</code>) for bodies the SDK excludes over Wi-Fi (a7R IV, a7C, ZV-E10) and for BLE credential handoff; and BLE wake, only if the power-on command can be sniffed.</p>
+<p>The recommendation rests on <strong>explicit assumptions</strong> the user should confirm or overturn. First, the target bodies are Gen 4 (Access Authentication era, 2022 onward) plus the a1/a7S III/a7 IV; if the user's own camera is an a7 III, a6400 or a6600, nothing here delivers wireless control and the honest options are USB (alphawire, libgphoto2, ImageCaptureCore) or the BLE shutter. Second, the user is willing to register for and accept Sony's SDK EULA, to distribute a signed binary rather than a pure source tree, and to surface the warranty-void and "Arms" disclosures (<a href="https://support.d-imaging.sony.co.jp/app/sdk/licenseagreement/en-US.html">SDK licence</a>); if the project must be fully open source with contributors building from source, the SDK-free route becomes primary. Third, the primary topology is camera and laptop on the same router with Access Authentication On, Wi-Fi Direct as fallback; the SDK's Wi-Fi Direct behaviour is documented ("only this camera will be detected") but no CrSDK-based repo demonstrates it, whereas SonyCamViewer demonstrates it SDK-free (<a href="https://github.com/amarburg/sony_remote_camera_sdk/blob/main/other/environment_setup.html">API ref: Environment Setup</a>). Fourth, the developer will hold an Apple Developer ID (notarization is mandatory; free accounts cannot notarize) and a Windows signing path (EV certificate or Azure Artifact Signing) (<a href="https://www.electronjs.org/docs/latest/tutorial/code-signing">Electron code signing</a>). Fifth, polled JPEG live view at 15-30 fps is acceptable; neither route offers an H.264 stream. Sixth, a solo or very small team, which is why the sidecar's single C++ codebase and a single UI shell are weighted so heavily.</p>
+<p><strong>Open questions for the user to decide</strong>, in rough order of consequence: (1) Which exact bodies and firmware versions must work on day one, and is an a7 III-class body among them? (2) Open source with user-supplied SDK, source-available with a signed binary, or closed commercial? This picks Route A or B. (3) Web-stack (Tauri/Electron) or native (Swift + WinUI) comfort? (4) Is Wi-Fi Direct (laptop leaves the internet) or shared-router AP mode the primary UX? (5) Is BLE onboarding worth reverse-engineering the EE00 pairing exchange, or is QR-plus-SSDP enough? (6) Mac App Store (sandbox blocks CoreWLAN network changes) or direct DMG? (7) Are multi-camera linking and video scopes (Monitor &amp; Control territory) in scope, or stills tethering first? (8) Should captures land in a hot folder for Lightroom or Capture One, which no surveyed repo does?</p>
+<p><strong>Open questions the research could not close</strong>, which should be settled by experiment before committing: the literal QR payload grammar (scan a real camera); whether Sony's dylibs load under hardened runtime without <code>disable-library-validation</code> entitlements and whether they are themselves signed (<code>codesign -dv</code>); whether CrSDK Wi-Fi works in Wi-Fi Direct topology on macOS and Windows; the per-interface support of the a7R VI in SDK 2.02.00; the camera's SSH server configuration beyond port 22 and the <code>aes128-ctr</code> cipher one author forces; the BLE power-on command; and the Gen 4 non-SSH pairing path, which no open project has exercised. Each is a one-afternoon test with a camera in hand, and each materially changes the onboarding design.</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>The research reframes the question. "Sony only lets the desktop use a USB cable" is a 2019 fact about the a7 III generation that has hardened into folklore; since 2019 every new Alpha has shipped a Wi-Fi PTP/IP remote server, since 2022 it has been protected by ordinary SSH with on-screen credentials, and since 2024 Sony's free SDK has spoken to it. What Sony has actually withheld from the desktop is the Bluetooth bootstrap and the cloud, not control. A third-party app's leverage therefore lies in the ten seconds between opening the laptop and seeing live view: QR or BLE instead of typed SSIDs, SSDP instead of "click Refresh", a cached fingerprint instead of a re-typed password, and reconnection that survives a sleep cycle. Those are solved problems in software, not protocol problems.</p>
+<p>The second shift is in the ecosystem's centre of gravity. The 2013-2021 generation of Sony tooling (pysony, rocc, sony-pm-alt) is dead because its protocol is dead; the 2025-2026 wave (alpha2go, sarnau, RemoteCam, alphawire, SonyCamViewer) is tiny, single-body and often AI-assisted, but it is converging on one correct architecture and has, between it, already measured the throughput ceiling (25-30 fps live view, 12-16 MB/s RAW) that a new app can promise. The sensible move is not to pick one repo but to compose: RemoteCam's product shape and SDK bridge, sonshell's connection defensiveness, alpha2go's protocol documentation as the escape hatch when the SDK says no, and sarnau's BLE handshake as the eventual answer to "why can't my laptop do what my phone does."</p>
+
+</div>
+
+<section id="decisions" class="col">
+  <h2>Decisions for you</h2>
+  <p>The recommended architecture above rests on assumptions. These are the choices only you can make, ordered by how much they change the design. We can go through them one at a time.</p>
+  <ol class="decisions"><li>Which exact bodies and firmware versions must work on day one, and is an a7 III-class body among them?</li><li>Open source with user-supplied SDK, source-available with a signed binary, or closed commercial? This picks Route A or B.</li><li>Web-stack (Tauri/Electron) or native (Swift + WinUI) comfort?</li><li>Is Wi-Fi Direct (laptop leaves the internet) or shared-router AP mode the primary UX?</li><li>Is BLE onboarding worth reverse-engineering the EE00 pairing exchange, or is QR-plus-SSDP enough?</li><li>Mac App Store (sandbox blocks CoreWLAN network changes) or direct DMG?</li><li>Are multi-camera linking and video scopes (Monitor &amp; Control territory) in scope, or stills tethering first?</li><li>Should captures land in a hot folder for Lightroom or Capture One, which no surveyed repo does?</li></ol>
+  <div class="callout">Several facts could not be verified without a camera in hand: the exact QR payload, whether Sony's macOS libraries load under hardened runtime, SDK behaviour in Wi-Fi Direct mode, and the Bluetooth power-on command. Each is a short experiment once you tell me which body you own.</div>
+</section>
+
+<footer class="col">
+  Generated 2026-11-10 from five research notes and one synthesis report.<br>
+  Report source: <code>reports/Sony camera wireless desktop control.md</code> · Notes: <code>research_notes/Sony camera wireless desktop control/</code><br>
+  Star counts and commit dates are GitHub API snapshots from 2026-11-10. Several Sony regional support pages returned HTTP 403, so a few facts come from search snippets and are marked as such in the notes.
+</footer>
+</main>
+</div>
+<script>
+(function(){
+  // repo table filter
+  var input=document.getElementById('repo-search');
+  var btns=document.querySelectorAll('.chipbtn');
+  var note=document.getElementById('filter-count');
+  var rows=document.querySelectorAll('.repo-table tbody tr');
+  var mode='all';
+  function apply(){
+    var q=(input.value||'').toLowerCase().trim();
+    var shown=0;
+    rows.forEach(function(tr){
+      var ok=true;
+      if(mode==='alive'||mode==='stalled'||mode==='dead'){ ok = tr.dataset.status===mode || (mode==='alive' && tr.dataset.status==='new'); }
+      else if(mode==='fork'){ ok = tr.dataset.verdict==='fork'; }
+      else if(mode==='study'){ ok = tr.dataset.verdict==='study' || tr.dataset.verdict==='fork'; }
+      if(ok && q){ ok = tr.textContent.toLowerCase().indexOf(q)!==-1; }
+      tr.classList.toggle('hide',!ok);
+      if(ok) shown++;
+    });
+    note.textContent = shown+' of '+rows.length+' repositories shown'+(q?' for “'+input.value+'”':'')+(mode!=='all'?' · '+mode:'');
+    // hide whole table group if empty
+    document.querySelectorAll('.repo-table').forEach(function(w){
+      var any=w.querySelectorAll('tbody tr:not(.hide)').length>0;
+      w.style.display=any?'':'none';
+      var h=w.previousElementSibling; while(h && h.tagName!=='H3') h=h.previousElementSibling;
+      if(h) h.style.display=any?'':'none';
+    });
+  }
+  if(input){
+    input.addEventListener('input',apply);
+    btns.forEach(function(b){ b.addEventListener('click',function(){ btns.forEach(function(x){x.classList.remove('is-on')}); b.classList.add('is-on'); mode=b.dataset.f; apply(); }); });
+    apply();
+  }
+  // scrollspy
+  var links=document.querySelectorAll('.rail a[href^="#"]');
+  var map={}; links.forEach(function(a){ map[a.getAttribute('href').slice(1)]=a; });
+  var targets=Object.keys(map).map(function(id){return document.getElementById(id)}).filter(Boolean);
+  if('IntersectionObserver' in window){
+    var current=null;
+    var io=new IntersectionObserver(function(entries){
+      entries.forEach(function(e){ if(e.isIntersecting){ current=e.target.id; } });
+      if(current){ links.forEach(function(a){a.classList.remove('active')}); map[current].classList.add('active'); }
+    },{rootMargin:'-10% 0px -70% 0px'});
+    targets.forEach(function(t){io.observe(t)});
+  }
+})();
+</script>
+</body>
+</html>
