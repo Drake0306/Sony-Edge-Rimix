@@ -203,6 +203,7 @@ export function presetsControl(store: AppStore, actions: Actions): { el: HTMLEle
       s.more.hidden = !preset || !usable;
       s.more.disabled = !preset || !usable;
     }
+    for (const i of items) i.disabled = presetBusy !== null;
     // A form or menu whose slot changed under it no longer makes sense.
     if (target) {
       const now = presetFor(settings, camera?.model, target.slot) ?? null;

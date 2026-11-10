@@ -92,6 +92,39 @@ describe('Cameras', () => {
   });
 });
 
+describe('Cameras with a shared address', () => {
+  const zv: RecentCamera = { ip: '192.168.122.1:15740', model: 'ZV-E10', lastUsed: 2, ssid: 'DIRECT-abc1:ZV-E10' };
+  const a7: RecentCamera = { ip: '192.168.122.1:15740', model: 'ILCE-7M4', lastUsed: 1, ssid: 'DIRECT-zz99:ILCE-7M4' };
+  const rows = (root: HTMLElement) =>
+    [...root.querySelectorAll('[aria-label="Cameras"] .k')].map((k) => k.textContent);
+  function mountWith(recent: RecentCamera[], lastIp: string, model: string) {
+    const camera = { ...(cameraState as unknown as CameraState), model, connected: true };
+    const store = createStore<AppState>({
+      ...initialState(),
+      screen: 'main',
+      camera,
+      settings: { ...settings, recentCameras: recent, lastIp },
+    });
+    const actions = { connectRecent: vi.fn(), disconnect: vi.fn() } as unknown as Actions;
+    const root = document.createElement('div');
+    const unmount = mount(root, store, actions);
+    return { root, unmount };
+  }
+
+  test('a second Wi-Fi Direct camera at the same address still shows while connected to the first', () => {
+    const { root, unmount } = mountWith([zv, a7], zv.ip, 'ZV-E10');
+    expect(rows(root)).toEqual(['ZV-E10', 'ILCE-7M4', 'Disconnect']);
+    unmount();
+  });
+
+  test('a Phase 1 entry without a port is the same camera as one with :15740', () => {
+    const old: RecentCamera = { ip: '10.0.0.5', model: 'A7 IV', lastUsed: 1, ssid: null };
+    const { root, unmount } = mountWith([{ ...old, ip: '192.168.122.1' }, old], '192.168.122.1:15740', 'A7 IV');
+    expect(rows(root)).toEqual(['A7 IV', 'A7 IV', 'Disconnect']);
+    unmount();
+  });
+});
+
 describe('Scopes and timer', () => {
   test('the Interval timer row is live and opens its popover', () => {
     const camera = { ...(cameraState as unknown as CameraState), connected: true };

@@ -36,7 +36,7 @@ jobs:
             value="${!name}"
             if [ -n "$value" ]; then
               delim="END_$(uuidgen)"
-              { echo "$name<<$delim"; echo "$value"; echo "$delim"; } >> "$GITHUB_ENV"
+              { printf '%s\n' "$name<<$delim" "$value" "$delim"; } >> "$GITHUB_ENV"
               echo "$name is set"
             fi
           done

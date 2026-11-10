@@ -109,6 +109,19 @@ describe('presets control', () => {
     expect(slots()[0].classList.contains('busy')).toBe(false);
   });
 
+  test('the menu items are disabled while a preset is being applied', () => {
+    const { store, actions } = setup();
+    document.querySelector<HTMLButtonElement>('[aria-label="Options for C1"]')!.click();
+    const items = () => [...menu()!.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+    expect(items().every((b) => !b.disabled)).toBe(true);
+    store.set({ presetBusy: 1 });
+    expect(items().every((b) => b.disabled)).toBe(true);
+    items()[2].click();
+    expect(actions.deletePreset).not.toHaveBeenCalled();
+    store.set({ presetBusy: null });
+    expect(items().every((b) => !b.disabled)).toBe(true);
+  });
+
   test('the options menu renames, replaces and deletes', () => {
     const { actions } = setup();
     const more = document.querySelector<HTMLButtonElement>('[aria-label="Options for C1"]')!;

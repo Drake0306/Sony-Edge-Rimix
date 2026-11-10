@@ -118,6 +118,12 @@ fn default_destination_base() -> PathBuf {
     base.join("Rimix")
 }
 
+/// Two camera addresses are the same when they differ only by the PTP/IP port.
+fn same_address(a: &str, b: &str) -> bool {
+    let bare = |s: &str| s.strip_suffix(":15740").unwrap_or(s).to_string();
+    bare(a) == bare(b)
+}
+
 impl AppSettings {
     /// Where shots from the camera are saved.
     pub fn destination(&self) -> Destination {
@@ -150,7 +156,7 @@ impl AppSettings {
     ) {
         let older = self.recent_cameras.iter().position(|c| match ssid {
             Some(ssid) => c.ssid.as_deref() == Some(ssid),
-            None => c.ip == ip && (c.ssid.is_none() || c.model == model),
+            None => same_address(&c.ip, ip) && (c.ssid.is_none() || c.model == model),
         });
         let kept_ssid = match (ssid, older) {
             (Some(ssid), _) => Some(ssid.to_string()),
@@ -346,6 +352,16 @@ mod tests {
         s.remember_camera("10.0.0.9", "ZV-E10", Some("DIRECT-abc1:ZV-E10"), None, 3); // same network, router ip
         assert_eq!(s.recent_cameras.len(), 1);
         assert_eq!(s.recent_cameras[0].ip, "10.0.0.9");
+    }
+
+    #[test]
+    fn an_address_with_and_without_the_port_is_one_camera() {
+        let mut s = AppSettings::default();
+        s.remember_camera(WD, "ZV-E10", None, None, 1);
+        s.remember_camera("192.168.122.1:15740", "ZV-E10", None, None, 2);
+        assert_eq!(s.recent_cameras.len(), 1);
+        assert_eq!(s.recent_cameras[0].ip, "192.168.122.1:15740");
+        assert_eq!(s.recent_cameras[0].last_used, 2);
     }
 
     #[test]

@@ -139,6 +139,9 @@ function scopes(store: AppStore, actions: Actions): { el: HTMLElement; destroy: 
   return { el: sect('Scopes and timer', g), destroy };
 }
 
+/** Phase 1 stored the bare address, later versions add the PTP/IP port. */
+const sameAddress = (a: string, b: string) => a.replace(/:15740$/, '') === b.replace(/:15740$/, '');
+
 function cameras(store: AppStore, actions: Actions): { el: HTMLElement; destroy: () => void } {
   const g = group('list', 'Cameras');
   const key = (s: AppState) =>
@@ -151,18 +154,20 @@ function cameras(store: AppStore, actions: Actions): { el: HTMLElement; destroy:
     ]);
   const destroy = watch(store, key, (_, { camera, settings, reconnecting }) => {
     const rows: HTMLElement[] = [];
+    // The connected camera is the newest remembered one at the last address;
+    // other cameras that share that address (Wi-Fi Direct) keep their rows.
+    const current = settings?.lastIp ? settings.recentCameras.find((c) => sameAddress(c.ip, settings.lastIp!)) : undefined;
     if (camera) {
       const r = rowButton(camera.model, 'this', 'check');
       const b = r.querySelector('button')!;
       b.prepend(el('i', camera.connected ? 'dot' : 'dot off'));
       // Once the link is lost for good (a refused login, say), the row
       // connects to the camera again; not while it is still reconnecting.
-      const current = settings?.recentCameras.find((c) => c.ip === settings.lastIp);
       if (!camera.connected && reconnecting === null && current) b.addEventListener('click', () => void actions.connectRecent(current));
       rows.push(r);
     }
     for (const rc of settings?.recentCameras ?? []) {
-      if (camera && rc.ip === settings?.lastIp) continue;
+      if (camera && rc === current) continue;
       const r = rowButton(rc.model, rc.ssid ?? rc.ip);
       const b = r.querySelector('button')!;
       b.prepend(el('i', 'dot off'));
