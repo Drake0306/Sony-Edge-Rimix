@@ -49,6 +49,26 @@ This tells us whether the QR code on the camera leads to the same network the co
 
    This checks whether the camera answers on the port Rimix uses. "succeeded" or "open" means yes. "refused" or a timeout means no. If it says no, put the camera on the PC Remote screen (step 1) and try once more.
 
+### If Rimix says it can't see the network
+
+Rimix may say "This Mac can't see DIRECT-xxxx yet". Then:
+
+1. Check the camera is on its Wi-Fi Direct Info screen (Menu, Network, PC Remote Function, Wi-Fi Direct Info) and stay on it.
+2. Wait ten seconds and try again.
+3. If it still fails, run this in Terminal (it asks for nothing):
+
+   ```
+   rimix wifi join "DIRECT-xxxx"
+   ```
+
+   Only if the Mac has never joined that network, give the password too:
+
+   ```
+   printf '%s\n' 'the password' | rimix wifi join "DIRECT-xxxx" --password-stdin
+   ```
+
+Send back the output of that command (exit code 3 means the network was not visible, 4 means some other failure) and the newest file in `~/Library/Application Support/Rimix/logs`.
+
 **What to send back:** the text the phone decoded (blank the password if you prefer, but say whether it matched the Wi-Fi Direct Info screen), what Rimix's status line said, whether the Mac joined the DIRECT-xxxx network by itself, and the output of `nc -vz 192.168.122.1 15740`. Say plainly: "the port answered" or "the port did not answer".
 
 ## 3. Pairing (Changes the plan)
@@ -117,12 +137,20 @@ This saves 30 live view frames as JPEG files.
 
 **What to send back:** a screenshot of the app with live view, and for each of connect, live view, shoot, ISO and record, one word: worked, did not work, or odd (with a sentence on what you saw). Paste any error text the app showed.
 
+## 8. If your camera uses Access Authentication
+
+Your ZV-E10 does not, so skip this step. It is for newer bodies (a7 IV, a7R V, a6700, a7C II, ZV-E1, FX3, FX30). The camera shows its username, password and fingerprint under "Access Authen. Info". In Rimix, open "This camera uses Access Authentication" on the connect screen and type the Username and Password. Rimix then shows the camera's fingerprint; compare it with the camera's screen and press "It matches, connect". A lock appears in the top bar once connected.
+
+**What to send back:** whether the fingerprint on screen matched, whether the lock appeared, and the newest file in `~/Library/Application Support/Rimix/logs`. Never send the password.
+
 ## If something goes wrong
+
+- **Always send the newest log.** Rimix keeps daily logs in `~/Library/Application Support/Rimix/logs`. In App settings, press Show log folder on the Logs row, and attach the newest file to every report.
 
 - **The camera is frozen or stops answering.** Turn it off and on. If that does nothing, take the battery out for a few seconds. Then start again from step 1.
 - **"Camera refused" (exit code 4).** Check that "Ctrl w/ Smartphone" is Off and that no phone is connected to the camera. Also check that PC Remote is On and the camera is on the PC Remote screen.
 - **Connection timeout (exit code 3).** Check that the Mac is joined to the DIRECT-xxxx network (and not your home Wi-Fi). Then run `ping 192.168.122.1`. If ping gets no reply, the Mac is not on the camera's network.
-- **The app keeps saying "Reconnecting".** If the camera's Wi-Fi drops, macOS falls back to your home Wi-Fi and Rimix does not rejoin the camera's network by itself. Join the DIRECT-xxxx network again from the Wi-Fi menu, or press Disconnect and connect again.
+- **The app keeps saying "Reconnecting".** Rimix tries to rejoin the camera's Wi-Fi by itself from the second attempt. From attempt 5 the top bar says to rejoin it from the Wi-Fi menu: join the DIRECT-xxxx network again there, or press Disconnect and connect again.
 - **Other exit codes.** 2 means a typing mistake in the command; 5 means a problem saving a file on the Mac (check the `--out` folder).
 - **Rimix's saved files.** Rimix keeps its settings and the computer identity it shows to the camera in `~/Library/Application Support/Rimix/` (the `guid` file is the identity, `settings.json` is the app settings). The command line tool and the app share the same identity so the camera sees one computer.
   - Do not delete the `guid` file unless asked. If you do, the camera will see a new computer and ask to pair again, and the old pairing stays on the camera until you reset it.

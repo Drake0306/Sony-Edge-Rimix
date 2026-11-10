@@ -10,7 +10,7 @@ Phase 1 works against a simulated camera: the protocol library, a command line t
 
 - `crates/sony-ptpip` is the protocol library that talks to the camera over Wi-Fi (PTP/IP).
 - `crates/sony-ptpip-sim` is a simulated camera (`sony-ptpip-sim`) for trying things without hardware.
-- `crates/rimix-cli` is the command line tool (`rimix`): discover, connect, props, set, step, shoot, record, liveview, watch.
+- `crates/rimix-cli` is the command line tool (`rimix`): discover, connect, props, set, step, shoot, record, liveview, watch, wifi.
 - `apps/desktop` is the desktop app, built with Tauri.
 - `docs/` holds the design and the real-camera test guide.
 
@@ -30,7 +30,7 @@ cargo build --release
 cargo test --workspace
 ```
 
-The CI workflow runs these checks on every push: formatting, Clippy, the Rust tests and the front-end tests on macOS, and Clippy plus the Rust tests on Windows.
+The CI workflow runs these checks on every push: formatting, Clippy, the Rust tests and the front-end tests on macOS, and Clippy plus the Rust tests on Windows. It runs on two runners, `macos-latest` and `windows-latest`.
 
 Run the simulated camera, then connect to it from the command line tool (in a second terminal):
 
@@ -78,7 +78,43 @@ The connect screen has three ways in:
 
 "Advanced: connect by address" holds the old IP address field. Rimix remembers cameras you have used. In App settings, the Connection section lets you choose whether Wi-Fi joins happen automatically or ask first, pick the webcam, and forget remembered cameras.
 
-If the camera's Wi-Fi drops while you work, macOS falls back to your home Wi-Fi and Rimix keeps saying "Reconnecting". Rimix does not rejoin the camera's network by itself: join it again from the Wi-Fi menu, or press Disconnect and connect again.
+If the camera's Wi-Fi drops while you work, Rimix tries to rejoin it by itself from the second reconnect attempt. If that does not work, join the camera's network again from the Wi-Fi menu, or press Disconnect and connect again.
+
+## Features
+
+- Live view, shooting, recording and the main exposure settings from the desktop.
+- Wi-Fi joining by QR code, by typed name and password, or from the nearby list. If the network is not visible yet, Rimix says "This Mac can't see <name> yet" and tells you to open Wi-Fi Direct Info on the camera and try again.
+- Reconnecting: from the second attempt Rimix rejoins the camera's Wi-Fi by itself. From attempt 5 the top bar says "Reconnecting… if the camera's Wi-Fi dropped, rejoin it from the Wi-Fi menu".
+- Per-model settings: Rimix handles older and newer camera generations differently. Hover the firmware in the top bar to see the generation.
+- Interval timer: in the Scopes and timer panel, open the Interval timer row. Set Every (seconds, at least 2) and Shots (leave empty for no limit), then press Start. The dock shows, for example, "Interval 3 of 20, next in 4 s". Shots skipped because the camera was busy are counted as missed. A dropped link does not stop the run; Disconnect and Stop do.
+
+## Logs
+
+Rimix writes a log to `~/Library/Application Support/Rimix/logs/`, one file per day (`rimix.log.YYYY-MM-DD`), and keeps the last 7. In App settings, the Logs row has a Show log folder button. Wi-Fi passwords are kept out of the log. Set `RIMIX_LOG` to change the level, for example `RIMIX_LOG=debug`. Attach the newest log file to bug reports.
+
+## Command line Wi-Fi
+
+```
+rimix wifi status
+rimix wifi join "DIRECT-xxxx"
+printf '%s\n' 'the password' | rimix wifi join "DIRECT-xxxx" --password-stdin
+```
+
+`status` prints the Wi-Fi device, the network it is on and its address. `join` exits with 3 when the network is not visible and 4 for any other failure.
+
+## Access Authentication
+
+Bodies from 2022 on (a7 IV, a7R V, a6700, a7C II, ZV-E1, FX3, FX30) can require a username and password before they accept a connection. The ZV-E10 does not. For these cameras, open "This camera uses Access Authentication" on the connect screen and enter the Username and Password shown on the camera. The first time, Rimix shows "This camera's fingerprint is <sha256>. Check it against Access Authen. Info on the camera." Compare it with the camera's screen and press "It matches, connect". A lock in the top bar shows the connection is authenticated.
+
+Rimix stores the username and the fingerprint with the remembered camera, never the password. If the camera refuses the login, Rimix stops reconnecting, because a camera may refuse all connections after repeated bad attempts. Fix the details and connect again.
+
+On the command line:
+
+```
+printf '%s\n' 'the password' | rimix connect 192.168.122.1 --ssh-user USER --ssh-password-stdin --fingerprint FINGERPRINT
+```
+
+Without `--fingerprint`, the tool prints the fingerprint and asks you to confirm it on the camera and pass it.
 
 ## Release a version
 
@@ -91,7 +127,7 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-The Release workflow builds a universal Mac app and creates a draft release with the DMG attached, then builds the Windows installer (`Rimix_<version>_x64-setup.exe`) and adds it to the same draft. Review the draft, then publish it.
+The Release workflow builds a DMG (universal Mac app) and an NSIS installer for Windows into one draft release. In detail: it creates the draft with the DMG attached, then builds the Windows installer (`Rimix_<version>_x64-setup.exe`) and adds it to the same draft. Review the draft, then publish it.
 
 For a signed and notarized build, add these repository secrets (Settings, Secrets and variables, Actions): `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`. Without them the workflow still runs and the DMG is unsigned.
 
@@ -101,13 +137,22 @@ On recent macOS (seen on macOS 27), run `cargo build --release -p rimix-desktop 
 
 ## Develop without a camera
 
-Two environment variables let you run the whole app against the simulated camera. `RIMIX_WIFI=fake` makes Wi-Fi joins succeed instantly, and `RIMIX_CAMERA_ADDR=127.0.0.1:15740` says where the "camera" is after joining.
+Environment variables let you run the whole app against the simulated camera. `RIMIX_WIFI=fake` makes Wi-Fi joins succeed instantly, and `RIMIX_CAMERA_ADDR=127.0.0.1:15740` says where the "camera" is after joining. To try Access Authentication, start the simulator with `--ssh cam:12345678` and set `RIMIX_SSH_PORT` to the SSH port the simulator prints.
 
 ```
 cargo run -p sony-ptpip-sim -- --port 15740
 cd apps/desktop
 RIMIX_WIFI=fake RIMIX_CAMERA_ADDR=127.0.0.1:15740 pnpm tauri dev
 ```
+
+With Access Authentication:
+
+```
+cargo run -p sony-ptpip-sim -- --port 15740 --ssh cam:12345678
+RIMIX_WIFI=fake RIMIX_CAMERA_ADDR=127.0.0.1:15740 RIMIX_SSH_PORT=<port> pnpm tauri dev
+```
+
+On the command line tool, the matching flag is `--ssh-port`.
 
 ## Testing with a real camera
 
