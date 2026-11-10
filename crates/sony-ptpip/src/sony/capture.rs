@@ -118,7 +118,7 @@ pub async fn captured_ready(conn: &mut PtpIpConnection) -> Result<u16, Error> {
 
 /// Fetches the oldest waiting shot into `dest`.
 ///
-/// The shot is written to `.rimix-<filename>.part` and renamed once complete,
+/// The shot is written to `.rimix-<filename>.<n>.part` and renamed once complete,
 /// so watchers such as Lightroom never see a partial file. A name already in
 /// use gets a `-1`, `-2`, ... suffix. On any error the partial file is removed.
 ///
@@ -171,11 +171,20 @@ pub async fn receive_one(
     }
 }
 
-/// Writes `data` to `dir/.rimix-<name>.part`, then renames it to a free
+/// Held while a free name is picked and taken, so cameras in one process
+/// saving the same name into the same folder never pick the same one.
+static NAMING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Tells apart the partial files of saves running at the same time.
+static PART_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Writes `data` to `dir/.rimix-<name>.<n>.part`, then renames it to a free
 /// name; returns the path and name. The partial file is removed on error.
 fn save(dir: &Path, name: &str, data: &[u8]) -> std::io::Result<(PathBuf, String)> {
-    let part = dir.join(format!(".rimix-{name}.part"));
+    let seq = PART_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let part = dir.join(format!(".rimix-{name}.{}-{seq}.part", std::process::id()));
     let result = std::fs::write(&part, data).and_then(|()| {
+        let _naming = NAMING.lock().unwrap_or_else(|e| e.into_inner());
         let (path, filename) = free_name(dir, name)?;
         std::fs::rename(&part, &path)?;
         Ok((path, filename))
@@ -284,6 +293,48 @@ mod tests {
         }
         let err = free_name(tmp.path(), "A.JPG").unwrap_err();
         assert_eq!(err.kind(), ErrorKind::AlreadyExists, "{err:?}");
+    }
+
+    /// Two cameras in one app can save shots with the same name into the
+    /// same folder at the same moment: each keeps its own file and bytes.
+    #[test]
+    fn concurrent_saves_of_one_name_keep_every_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
+        for round in 0..20 {
+            let name = format!("DSC{round:05}.JPG");
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(4));
+            let saves: Vec<_> = (0..4u8)
+                .map(|i| {
+                    let (dir, name, barrier) = (dir.clone(), name.clone(), barrier.clone());
+                    std::thread::spawn(move || {
+                        let data = vec![i; 64 * 1024];
+                        barrier.wait();
+                        let (path, _) = save(&dir, &name, &data).unwrap();
+                        (path, i)
+                    })
+                })
+                .collect();
+            let mut paths = Vec::new();
+            for s in saves {
+                let (path, i) = s.join().unwrap();
+                assert_eq!(
+                    std::fs::read(&path).unwrap(),
+                    vec![i; 64 * 1024],
+                    "{path:?}"
+                );
+                paths.push(path);
+            }
+            paths.sort();
+            paths.dedup();
+            assert_eq!(paths.len(), 4, "{paths:?}");
+        }
+        let left: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".part"))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
     }
 
     #[test]
