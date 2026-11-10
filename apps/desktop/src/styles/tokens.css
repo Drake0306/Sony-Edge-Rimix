@@ -2,7 +2,7 @@
    Dark is the default on :root; the light theme below redefines the same
    names, so every component works in both. */
 :root{
-  --font:"Inter",-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
+  --font:"Inter Variable","Inter",-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
   --scheme:dark;
   --bg:#0C0E12;
   --ink:#FFFFFF;

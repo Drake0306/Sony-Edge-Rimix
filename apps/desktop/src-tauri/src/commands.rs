@@ -111,9 +111,18 @@ pub async fn save_settings(
 
 /// A saved JPEG's bytes for the filmstrip (an ArrayBuffer in the webview).
 #[tauri::command]
-pub async fn read_thumbnail(path: String) -> Result<Response, String> {
+pub async fn read_thumbnail(state: State<'_, AppState>, path: String) -> Result<Response, String> {
     let path = std::path::PathBuf::from(path);
-    tauri::async_runtime::spawn_blocking(move || state::read_thumbnail(&path))
+    let allowed = vec![
+        state
+            .settings
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .destination_base
+            .clone(),
+        sony_ptpip::capture::default_recovery_dir(),
+    ];
+    tauri::async_runtime::spawn_blocking(move || state::read_thumbnail(&path, &allowed))
         .await
         .map_err(|e| e.to_string())?
         .map(Response::new)

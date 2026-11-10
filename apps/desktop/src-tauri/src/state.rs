@@ -330,9 +330,35 @@ pub const MAX_THUMBNAIL_BYTES: u64 = 25 * 1024 * 1024;
 pub const NOT_A_JPEG: &str = "Only JPEG files have a thumbnail";
 pub const TOO_LARGE: &str = "The file is too large for a thumbnail";
 
-/// The bytes of a saved JPEG for the filmstrip. RAW and other files, and
-/// files over [`MAX_THUMBNAIL_BYTES`], are refused (the UI shows a tile).
-pub fn read_thumbnail(path: &Path) -> Result<Vec<u8>, String> {
+pub const NOT_A_CAPTURE: &str = "Only files Rimix saved can be shown";
+
+/// Removes `.` components; `..` is kept, never resolved through the disk.
+fn normalise(path: &Path) -> PathBuf {
+    path.components()
+        .filter(|c| !matches!(c, std::path::Component::CurDir))
+        .collect()
+}
+
+/// True when `path` sits inside (or is) one of the `allowed` folders. The
+/// file's parent is resolved through the disk; a folder that does not exist
+/// yet is compared by its normalised path.
+fn in_allowed_folder(path: &Path, allowed: &[PathBuf]) -> bool {
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    let Ok(parent) = std::fs::canonicalize(parent) else {
+        return false;
+    };
+    allowed.iter().any(|folder| {
+        let folder = std::fs::canonicalize(folder).unwrap_or_else(|_| normalise(folder));
+        parent.starts_with(folder)
+    })
+}
+
+/// The bytes of a saved JPEG for the filmstrip. Only files inside one of the
+/// `allowed` capture folders are read; RAW and other files, and files over
+/// [`MAX_THUMBNAIL_BYTES`], are refused (the UI shows a tile).
+pub fn read_thumbnail(path: &Path, allowed: &[PathBuf]) -> Result<Vec<u8>, String> {
     let is_jpeg = path
         .extension()
         .and_then(|e| e.to_str())
@@ -341,6 +367,13 @@ pub fn read_thumbnail(path: &Path) -> Result<Vec<u8>, String> {
         return Err(NOT_A_JPEG.into());
     }
     let cannot = |e: std::io::Error| format!("Cannot read {}: {e}", path.display());
+    if !in_allowed_folder(path, allowed) {
+        // A missing file in a missing folder reads as "cannot read".
+        return match std::fs::metadata(path) {
+            Err(e) => Err(cannot(e)),
+            Ok(_) => Err(NOT_A_CAPTURE.into()),
+        };
+    }
     let len = std::fs::metadata(path).map_err(cannot)?.len();
     if len > MAX_THUMBNAIL_BYTES {
         return Err(TOO_LARGE.into());
@@ -616,26 +649,55 @@ mod tests {
     #[test]
     fn read_thumbnail_returns_small_jpegs_only() {
         let tmp = tempfile::tempdir().unwrap();
+        let allowed = vec![tmp.path().to_path_buf()];
         let jpg = tmp.path().join("DSC00001.JPG");
         std::fs::write(&jpg, [0xFF, 0xD8, 0xFF, 0xD9]).unwrap();
-        assert_eq!(read_thumbnail(&jpg).unwrap(), vec![0xFF, 0xD8, 0xFF, 0xD9]);
+        assert_eq!(
+            read_thumbnail(&jpg, &allowed).unwrap(),
+            vec![0xFF, 0xD8, 0xFF, 0xD9]
+        );
         let lower = tmp.path().join("b.jpeg");
         std::fs::write(&lower, [1, 2]).unwrap();
-        assert_eq!(read_thumbnail(&lower).unwrap(), vec![1, 2]);
+        assert_eq!(read_thumbnail(&lower, &allowed).unwrap(), vec![1, 2]);
 
         let raw = tmp.path().join("DSC00002.ARW");
         std::fs::write(&raw, [1, 2, 3]).unwrap();
-        assert_eq!(read_thumbnail(&raw).unwrap_err(), NOT_A_JPEG);
+        assert_eq!(read_thumbnail(&raw, &allowed).unwrap_err(), NOT_A_JPEG);
 
         let big = tmp.path().join("big.jpg");
         std::fs::File::create(&big)
             .unwrap()
             .set_len(MAX_THUMBNAIL_BYTES + 1)
             .unwrap();
-        assert_eq!(read_thumbnail(&big).unwrap_err(), TOO_LARGE);
+        assert_eq!(read_thumbnail(&big, &allowed).unwrap_err(), TOO_LARGE);
 
-        let missing = read_thumbnail(&tmp.path().join("gone.jpg")).unwrap_err();
+        let missing = read_thumbnail(&tmp.path().join("gone.jpg"), &allowed).unwrap_err();
         assert!(missing.starts_with("Cannot read"), "{missing}");
+    }
+
+    #[test]
+    fn read_thumbnail_refuses_files_outside_the_capture_folders() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shots = tmp.path().join("shots");
+        let elsewhere = tmp.path().join("elsewhere");
+        std::fs::create_dir_all(&shots).unwrap();
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let allowed = vec![shots.clone(), tmp.path().join("not-created-yet")];
+        let inside = shots.join("a.jpg");
+        let outside = elsewhere.join("a.jpg");
+        std::fs::write(&inside, [0xFF, 0xD8]).unwrap();
+        std::fs::write(&outside, [0xFF, 0xD8]).unwrap();
+        assert_eq!(read_thumbnail(&inside, &allowed).unwrap(), vec![0xFF, 0xD8]);
+        assert_eq!(
+            read_thumbnail(&outside, &allowed).unwrap_err(),
+            NOT_A_CAPTURE
+        );
+        // A `..` path that lands outside is refused too.
+        let sneaky = shots.join("..").join("elsewhere").join("a.jpg");
+        assert_eq!(
+            read_thumbnail(&sneaky, &allowed).unwrap_err(),
+            NOT_A_CAPTURE
+        );
     }
 
     /// Pins the JSON the webview receives for a state change. The same

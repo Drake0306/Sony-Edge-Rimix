@@ -420,6 +420,32 @@ async fn connect_survives_a_live_view_refusal_and_frames_arrive_later() {
 }
 
 #[tokio::test]
+async fn live_view_keeps_polling_through_repeated_refusals() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (sim, camera) = start(
+        SimConfig {
+            live_view_info_denied: 12,
+            ..SimConfig::default()
+        },
+        tmp.path(),
+    )
+    .await;
+    let mut rx = camera.subscribe();
+    // The backoff slows polling but never stops it.
+    let got = timeout(Duration::from_secs(20), async {
+        loop {
+            if matches!(rx.recv().await, Ok(CameraEvent::Frame)) {
+                return;
+            }
+        }
+    })
+    .await;
+    assert!(got.is_ok(), "no frame within 20 s");
+    assert!(camera.latest_frame().is_some());
+    stop(sim, camera).await;
+}
+
+#[tokio::test]
 async fn unwritable_destination_reports_one_failure() {
     let tmp = tempfile::tempdir().unwrap();
     let not_a_dir = tmp.path().join("not-a-dir");

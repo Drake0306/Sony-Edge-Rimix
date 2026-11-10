@@ -22,6 +22,16 @@ use crate::{PtpEvent, PtpIpConnection};
 const PROP_REFRESH: Duration = Duration::from_millis(100);
 /// Wait before asking for another live view frame when none was ready.
 const NO_FRAME_WAIT: Duration = Duration::from_millis(15);
+/// Wait before the next live view request after `consecutive_failures`
+/// results in a row with no frame: short at first, then slower so a camera
+/// that keeps refusing is not hammered.
+pub(super) fn live_view_wait(consecutive_failures: u32) -> Duration {
+    match consecutive_failures {
+        0..=4 => NO_FRAME_WAIT,
+        5..=9 => Duration::from_secs(1),
+        _ => Duration::from_secs(3),
+    }
+}
 /// Window the live view frame rate is measured over.
 const FPS_WINDOW: Duration = Duration::from_secs(1);
 /// How often the capture loop asks whether shots are waiting.
@@ -142,6 +152,7 @@ async fn event_loop(inner: Arc<Inner>, mut events: broadcast::Receiver<PtpEvent>
 async fn live_view_loop(inner: Arc<Inner>) -> String {
     let mut window_start = Instant::now();
     let mut frames = 0u32;
+    let mut consecutive_failures = 0u32;
     loop {
         let frame = {
             let mut guard = inner.conn.lock().await;
@@ -159,11 +170,15 @@ async fn live_view_loop(inner: Arc<Inner>) -> String {
         };
         match frame {
             Some(frame) => {
+                consecutive_failures = 0;
                 *lock(&inner.frame) = Some(Arc::new(frame));
                 frames += 1;
                 inner.emit(CameraEvent::Frame);
             }
-            None => sleep(NO_FRAME_WAIT).await,
+            None => {
+                consecutive_failures = consecutive_failures.saturating_add(1);
+                sleep(live_view_wait(consecutive_failures)).await;
+            }
         }
         let elapsed = window_start.elapsed();
         if elapsed >= FPS_WINDOW {
@@ -339,6 +354,15 @@ mod tests {
         assert!(same_contents(&a, &b));
         assert!(!same_contents(&a, &c));
         assert!(!same_contents(&tmp.path().join("missing"), &b));
+    }
+
+    #[test]
+    fn live_view_wait_backs_off_after_repeated_failures() {
+        assert_eq!(live_view_wait(0), NO_FRAME_WAIT);
+        assert_eq!(live_view_wait(4), NO_FRAME_WAIT);
+        assert_eq!(live_view_wait(5), Duration::from_secs(1));
+        assert_eq!(live_view_wait(10), Duration::from_secs(3));
+        assert_eq!(live_view_wait(500), Duration::from_secs(3));
     }
 
     #[test]
