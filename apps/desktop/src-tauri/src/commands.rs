@@ -4,6 +4,7 @@ use sony_ptpip::{CameraState, DiscoveredCamera};
 use tauri::ipc::Response;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 
 use crate::settings::{AppSettings, PresetValue};
 use crate::state::{self, AppState, ApplyOutcome};
@@ -159,4 +160,15 @@ pub async fn current_network(state: State<'_, AppState>) -> Result<Option<String
 #[tauri::command]
 pub async fn wait_for_camera(timeout_ms: u64) -> Result<DiscoveredCamera, String> {
     state::wait_for_camera(std::time::Duration::from_millis(timeout_ms)).await
+}
+
+/// Opens the logs folder in Finder (or the system's file manager).
+#[tauri::command]
+pub async fn open_logs(app: AppHandle) -> Result<(), String> {
+    let config = crate::settings::config_dir().ok_or("Cannot find the config folder")?;
+    let dir = crate::logging::log_dir(&config);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    app.opener()
+        .open_path(dir.display().to_string(), None::<&str>)
+        .map_err(|e| e.to_string())
 }

@@ -3,9 +3,11 @@
 use std::fmt;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use rimix_wifi::{SystemRunner, Wifi, WifiError};
 use sony_ptpip::capture::{Destination, DestinationMode};
 use sony_ptpip::ptp::PtpValue;
 use sony_ptpip::{
@@ -360,4 +362,85 @@ pub async fn watch(target: &Target, out: &Path, exit_after: Option<Duration>) ->
     }
     camera.disconnect().await;
     Ok(())
+}
+
+/// The Wi-Fi under `RIMIX_WIFI=fake` or the real one.
+fn wifi() -> Wifi {
+    Wifi::from_env(Arc::new(SystemRunner))
+}
+
+/// How a network name reads: macOS often hides it even while joined.
+fn network_text(name: Option<&str>, address: Option<&str>) -> String {
+    match (name, address) {
+        (Some(name), _) => name.to_string(),
+        (None, Some(_)) => "hidden by macOS".to_string(),
+        (None, None) => "none".to_string(),
+    }
+}
+
+/// `rimix wifi status`: the device, the network and the address.
+pub async fn wifi_status() -> Result<()> {
+    let wifi = wifi();
+    let (device, network, address) = tokio::task::spawn_blocking(move || {
+        Ok::<_, WifiError>((wifi.device()?, wifi.current_network()?, wifi.address()?))
+    })
+    .await??;
+    println!("device: {device}");
+    println!(
+        "network: {}",
+        network_text(network.as_deref(), address.as_deref())
+    );
+    println!("address: {}", address.as_deref().unwrap_or("none"));
+    Ok(())
+}
+
+/// The first line of stdin without its line ending; `None` when empty.
+fn read_password(input: impl std::io::BufRead) -> Result<Option<String>> {
+    let mut line = String::new();
+    let mut input = input;
+    input
+        .read_line(&mut line)
+        .map_err(|e| CliError::Io(format!("Cannot read the password from stdin: {e}")))?;
+    let password = line.trim_end_matches(['\r', '\n']).to_string();
+    Ok((!password.is_empty()).then_some(password))
+}
+
+/// `rimix wifi join`: joins and prints what happened.
+pub async fn wifi_join(ssid: String, password_stdin: bool) -> Result<()> {
+    let password = if password_stdin {
+        read_password(std::io::stdin().lock())?
+    } else {
+        None
+    };
+    let wifi = wifi();
+    let report =
+        tokio::task::spawn_blocking(move || wifi.join_report(&ssid, password.as_deref())).await??;
+    println!("attempts: {}", report.attempts);
+    println!(
+        "network: {}",
+        network_text(report.seen_ssid.as_deref(), report.address.as_deref())
+    );
+    println!("address: {}", report.address.as_deref().unwrap_or("none"));
+    Ok(())
+}
+
+#[cfg(test)]
+mod wifi_tests {
+    use super::*;
+
+    #[test]
+    fn the_password_is_the_first_line_without_its_ending() {
+        let read = |s: &str| read_password(std::io::Cursor::new(s.as_bytes())).unwrap();
+        assert_eq!(read("12345678\r\nmore\n").as_deref(), Some("12345678"));
+        assert_eq!(read("pass word\n").as_deref(), Some("pass word"));
+        assert_eq!(read(""), None);
+        assert_eq!(read("\n"), None);
+    }
+
+    #[test]
+    fn a_hidden_name_with_an_address_says_so() {
+        assert_eq!(network_text(Some("Home"), None), "Home");
+        assert_eq!(network_text(None, Some("192.168.1.2")), "hidden by macOS");
+        assert_eq!(network_text(None, None), "none");
+    }
 }

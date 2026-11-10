@@ -185,6 +185,8 @@ export const joinNetwork = (ssid: string, password: string | null) =>
   invoke<void>('join_network', { ssid, password });
 /** The Wi-Fi network this computer is on, or null. */
 export const currentNetwork = () => invoke<string | null>('current_network');
+/** Opens the folder that holds `rimix.log`. */
+export const openLogs = () => invoke<void>('open_logs');
 /** Waits up to `timeoutMs` for a camera to answer on the network. */
 export const waitForCamera = (timeoutMs: number) =>
   invoke<DiscoveredCamera>('wait_for_camera', { timeoutMs });

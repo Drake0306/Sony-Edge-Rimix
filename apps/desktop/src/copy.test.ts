@@ -84,6 +84,12 @@ describe('Wi-Fi connect copy', () => {
     );
   });
 
+  test('a network the Mac cannot see yet points at the Wi-Fi Direct Info screen', () => {
+    expect(wifiErrorMessage('join', ssid, "This computer can't see the network DIRECT-abc1:ZV-E10 yet")).toBe(
+      "This Mac can't see DIRECT-abc1:ZV-E10 yet. On the camera, open Menu, Network, PC Remote Function, Wi-Fi Direct Info and stay on that screen, then try again.",
+    );
+  });
+
   test('no Wi-Fi at all suggests Nearby', () => {
     expect(wifiErrorMessage('join', ssid, 'This computer has no Wi-Fi')).toBe(
       'This computer has no Wi-Fi. Put the camera and this computer on the same router and use Nearby.',

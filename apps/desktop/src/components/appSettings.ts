@@ -4,7 +4,7 @@
 
 import type { Actions } from '../actions';
 import { button, el, icon } from '../dom';
-import type { AppSettings, Appearance, Layout, RecentCamera, WifiJoin } from '../ipc';
+import { openLogs, type AppSettings, type Appearance, type Layout, type RecentCamera, type WifiJoin } from '../ipc';
 import { listWebcams } from '../qr/scanner';
 import { defaultSettings, watch, type AppStore } from '../state';
 import { applyAppearance, applyLayout } from '../theme';
@@ -131,12 +131,21 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       }),
     );
   };
+  const logsGroup = el('div', 'group');
+  logsGroup.setAttribute('role', 'list');
+  const logsRow = el('div', 'r');
+  logsRow.setAttribute('role', 'listitem');
+  const showLogs = button('pathbtn', 'Show log folder');
+  showLogs.addEventListener('click', () => void openLogs().catch(() => {}));
+  logsRow.append(el('span', 'k', 'Logs'), showLogs);
+  logsGroup.append(logsRow);
+
   const saveTo = saveToSection(store, actions);
   const hint = el('div', 'hint');
   hint.innerHTML = KEYBOARD_GLYPH;
   hint.append(shortcutHint());
   pop.append(el('div', 'ttl', 'App settings'), sect('Appearance', theme.el), sect('Layout', layout.el),
-    sect('Connection', wifi.el, webcamGroup, el('div', 'sub', 'Remembered cameras'), remembered),
+    sect('Connection', wifi.el, webcamGroup, logsGroup, el('div', 'sub', 'Remembered cameras'), remembered),
     saveTo.el, hint);
   pop.hidden = arrow.hidden = true;
 

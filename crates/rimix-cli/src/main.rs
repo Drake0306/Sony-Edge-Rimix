@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use commands::{CliError, Target};
+use rimix_wifi::WifiError;
 use sony_ptpip::error::Error;
 
 #[derive(Parser)]
@@ -104,6 +105,24 @@ enum Cmd {
         #[arg(long, hide = true, value_name = "SECS")]
         exit_after: Option<u64>,
     },
+    /// Show or join this computer's Wi-Fi network (add -v to see each command).
+    Wifi {
+        #[command(subcommand)]
+        action: WifiCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum WifiCmd {
+    /// Print the Wi-Fi device, the network it is on and its address.
+    Status,
+    /// Join a network and print how it went.
+    Join {
+        ssid: String,
+        /// Read the password from the first line of stdin.
+        #[arg(long)]
+        password_stdin: bool,
+    },
 }
 
 /// `ip` or `ip:port`; the port defaults to 15740.
@@ -126,8 +145,15 @@ fn parse_code(text: &str) -> Result<u16, String> {
 }
 
 /// 3 when the camera cannot be reached, 4 when it refuses, 5 for local I/O
-/// and capture failures, 2 for arguments clap cannot check, else 1.
+/// and capture failures, 2 for arguments clap cannot check, else 1. For
+/// Wi-Fi: 3 when the network is not visible, 4 for any other failure.
 fn exit_code(err: &anyhow::Error) -> i32 {
+    if let Some(wifi) = err.downcast_ref::<WifiError>() {
+        return match wifi {
+            WifiError::NotVisible(_) => 3,
+            WifiError::NoWifi | WifiError::Unsupported | WifiError::Failed(_) => 4,
+        };
+    }
     if let Some(cli) = err.downcast_ref::<CliError>() {
         return match cli {
             CliError::Usage(_) => 2,
@@ -179,6 +205,13 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             out,
             exit_after,
         } => commands::watch(&target(ip), &out, exit_after.map(Duration::from_secs)).await,
+        Cmd::Wifi { action } => match action {
+            WifiCmd::Status => commands::wifi_status().await,
+            WifiCmd::Join {
+                ssid,
+                password_stdin,
+            } => commands::wifi_join(ssid, password_stdin).await,
+        },
     }
 }
 
@@ -210,5 +243,14 @@ mod tests {
         for e in [Error::Timeout, Error::PairingTimeout, Error::Disconnected] {
             assert_eq!(exit_code(&anyhow::Error::new(e)), 3);
         }
+    }
+
+    #[test]
+    fn wifi_not_visible_exits_3_and_other_failures_4() {
+        let code = |e| exit_code(&anyhow::Error::new(e));
+        assert_eq!(code(WifiError::NotVisible("X".into())), 3);
+        assert_eq!(code(WifiError::Failed("X did not come up".into())), 4);
+        assert_eq!(code(WifiError::NoWifi), 4);
+        assert_eq!(code(WifiError::Unsupported), 4);
     }
 }

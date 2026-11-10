@@ -119,6 +119,18 @@ describe('app settings', () => {
     press(',', { metaKey: true });
   });
 
+  test('a Logs row under Connection opens the log folder', () => {
+    const { root } = setup();
+    const connection = [...root.querySelectorAll('.apppop .sect')].find(
+      (s) => s.querySelector('.h span')?.textContent === 'Connection',
+    )!;
+    const row = [...connection.querySelectorAll('.r')].find((r) => r.querySelector('.k')?.textContent === 'Logs')!;
+    const show = row.querySelector<HTMLButtonElement>('button')!;
+    expect(show.textContent).toBe('Show log folder');
+    show.click();
+    expect(invoke).toHaveBeenLastCalledWith('open_logs');
+  });
+
   test('offers Automatic and Ask me for Wi-Fi join and saves the choice', () => {
     const { root } = setup();
     const join = radios(root, 'Wi-Fi join');

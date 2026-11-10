@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 sony-ptpip = { path = "../sony-ptpip" }
+rimix-wifi = { path = "../rimix-wifi" }
 clap = { version = "4", features = ["derive"] }
 tokio = { workspace = true }
 anyhow = { workspace = true }

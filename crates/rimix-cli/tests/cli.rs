@@ -295,3 +295,32 @@ async fn props_all_lists_more_rows_than_the_default() {
     assert!(all > default, "{all} rows vs {default}");
     env.finish().await;
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn wifi_status_prints_the_device() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut cmd = rimix(&tmp.path().join("guid"));
+    cmd.env_remove("RIMIX_WIFI").args(["wifi", "status"]);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("device:"));
+}
+
+#[test]
+fn wifi_join_in_fake_mode_prints_the_report() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut cmd = rimix(&tmp.path().join("guid"));
+    cmd.env("RIMIX_WIFI", "fake")
+        .args(["wifi", "join", "DIRECT-abc1:ZV-E10", "--password-stdin"])
+        .write_stdin("12345678\n");
+    let out = cmd.output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = stdout(&out);
+    assert!(text.contains("attempts: 1"), "{text}");
+    assert!(!text.contains("12345678"), "{text}");
+}

@@ -9,12 +9,43 @@ use std::time::{Duration, Instant};
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-use macos::{system_current_network, system_device};
+use macos::{system_address, system_current_network, system_device};
 
 /// How long to wait for a joined network to come up.
 pub const JOIN_WAIT: Duration = Duration::from_secs(20);
 /// How often to check whether it has.
 pub const JOIN_POLL: Duration = Duration::from_secs(1);
+/// How many times to ask to join while macOS cannot see the network yet.
+pub const FIND_RETRIES: u32 = 3;
+/// How long to wait between those tries: the scan cache refreshes within a
+/// few seconds.
+pub const FIND_RETRY_WAIT: Duration = Duration::from_secs(4);
+
+/// What a join did, for diagnosis.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JoinReport {
+    /// How many times the join command ran.
+    pub attempts: u32,
+    /// The network name read back, when macOS shows it.
+    pub seen_ssid: Option<String>,
+    /// The IPv4 address that counted as joined, when it was the address.
+    pub address: Option<String>,
+}
+
+/// A command line for the log, with `[password]` at each secret position.
+pub fn redact(args: &[&str], secret_positions: &[usize]) -> String {
+    args.iter()
+        .enumerate()
+        .map(|(i, a)| {
+            if secret_positions.contains(&i) {
+                "[password]"
+            } else {
+                a
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 
 /// What a finished command printed.
 pub struct Output {
@@ -46,6 +77,7 @@ impl Runner for SystemRunner {
 pub enum WifiError {
     NoWifi,
     Unsupported,
+    NotVisible(String),
     Failed(String),
 }
 
@@ -57,6 +89,9 @@ impl fmt::Display for WifiError {
                 f.write_str("Joining Wi-Fi networks is not supported on this system yet")
             }
             WifiError::Failed(text) => f.write_str(text),
+            WifiError::NotVisible(name) => {
+                write!(f, "This computer can't see the network {name} yet")
+            }
         }
     }
 }
@@ -131,12 +166,29 @@ impl Wifi {
         }
     }
 
+    /// The Wi-Fi interface's IPv4 address, if it has one.
+    pub fn address(&self) -> Result<Option<String>, WifiError> {
+        match &*self.mode {
+            Mode::Fake(_) => Ok(None),
+            Mode::System(runner) => system_address(runner.as_ref()),
+        }
+    }
+
     /// Joins `ssid` and waits until it is up.
     pub fn join(&self, ssid: &str, password: Option<&str>) -> Result<(), WifiError> {
+        self.join_report(ssid, password).map(|_| ())
+    }
+
+    /// Joins `ssid`, waits until it is up, and says how it went.
+    pub fn join_report(&self, ssid: &str, password: Option<&str>) -> Result<JoinReport, WifiError> {
         match &*self.mode {
             Mode::Fake(name) => {
                 *name.lock().unwrap_or_else(|e| e.into_inner()) = Some(ssid.to_string());
-                Ok(())
+                Ok(JoinReport {
+                    attempts: 1,
+                    seen_ssid: Some(ssid.to_string()),
+                    address: None,
+                })
             }
             Mode::System(runner) => self.system_join(runner.as_ref(), ssid, password),
         }
@@ -145,7 +197,12 @@ impl Wifi {
 
 #[cfg(not(target_os = "macos"))]
 impl Wifi {
-    fn system_join(&self, _: &dyn Runner, _: &str, _: Option<&str>) -> Result<(), WifiError> {
+    fn system_join(
+        &self,
+        _: &dyn Runner,
+        _: &str,
+        _: Option<&str>,
+    ) -> Result<JoinReport, WifiError> {
         let _ = (&self.sleep, &self.now);
         Err(WifiError::Unsupported)
     }
@@ -158,6 +215,11 @@ fn system_device(_: &dyn Runner) -> Result<String, WifiError> {
 
 #[cfg(not(target_os = "macos"))]
 fn system_current_network(_: &dyn Runner) -> Result<Option<String>, WifiError> {
+    Ok(None)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_address(_: &dyn Runner) -> Result<Option<String>, WifiError> {
     Ok(None)
 }
 
@@ -432,6 +494,100 @@ mod tests {
         for pair in calls[3..].chunks(2) {
             assert_eq!(pair, [argv(GET), argv(ADDR)]);
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn not_found() -> Output {
+        out(&format!("Could not find network {SSID}.\n"))
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn join_retries_when_the_network_is_not_visible_yet() {
+        let runner = FakeRunner::scripted([
+            ports(),
+            off(),
+            not_found(),
+            not_found(),
+            out(""),
+            off(),
+            out("192.168.122.5\n"),
+        ]);
+        let wifi = wifi_with_fake_clock(runner.clone());
+        let report = wifi.join_report(SSID, Some("pw")).unwrap();
+        assert_eq!(report.attempts, 3);
+        assert_eq!(report.address.as_deref(), Some("192.168.122.5"));
+        assert_eq!(
+            runner
+                .calls()
+                .iter()
+                .filter(|c| c.contains(&"-setairportnetwork".to_string()))
+                .count(),
+            3
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn join_gives_not_visible_after_the_last_retry() {
+        let mut script = vec![ports(), off()];
+        script.extend((0..FIND_RETRIES).map(|_| not_found()));
+        let runner = FakeRunner::scripted(script);
+        let slept = Arc::new(Mutex::new(Vec::new()));
+        let record = slept.clone();
+        let wifi = Wifi::new(runner.clone())
+            .with_clock(Instant::now, move |d| record.lock().unwrap().push(d));
+        let err = wifi.join(SSID, Some("pw")).unwrap_err();
+        assert_eq!(
+            *slept.lock().unwrap(),
+            vec![FIND_RETRY_WAIT; FIND_RETRIES as usize - 1]
+        );
+        assert!(matches!(err, WifiError::NotVisible(ref n) if n == "DIRECT-abc1:ZV-E10"));
+        assert_eq!(
+            err.to_string(),
+            "This computer can't see the network DIRECT-abc1:ZV-E10 yet"
+        );
+        assert_eq!(runner.calls().len(), 2 + FIND_RETRIES as usize);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn an_address_on_a_different_named_network_does_not_count_as_joined() {
+        // The Mac still reads back its old network: its address is not the camera's.
+        let polls = JOIN_WAIT.as_secs() as usize + 1;
+        let mut script = vec![ports(), off(), out("")];
+        script.extend((0..polls).map(|_| on("Home")));
+        let runner = FakeRunner::scripted(script);
+        let wifi = wifi_with_fake_clock(runner.clone());
+        assert!(matches!(
+            wifi.join(SSID, None),
+            Err(WifiError::Failed(ref t)) if *t == format!("{SSID} did not come up")
+        ));
+        assert!(!runner.calls().contains(&argv(ADDR)));
+    }
+
+    #[test]
+    fn redact_hides_the_password_position() {
+        assert_eq!(
+            redact(
+                &["networksetup", "-setairportnetwork", "en0", "X", "secret"],
+                &[4]
+            ),
+            "networksetup -setairportnetwork en0 X [password]"
+        );
+        assert_eq!(
+            redact(&["ipconfig", "getifaddr", "en0"], &[]),
+            "ipconfig getifaddr en0"
+        );
+    }
+
+    #[test]
+    fn fake_mode_reports_one_attempt() {
+        let report = Wifi::fake()
+            .join_report("DIRECT-abc1:ZV-E10", None)
+            .unwrap();
+        assert_eq!(report.attempts, 1);
+        assert_eq!(report.seen_ssid.as_deref(), Some("DIRECT-abc1:ZV-E10"));
     }
 
     #[cfg(target_os = "macos")]
