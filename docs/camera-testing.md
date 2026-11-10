@@ -160,11 +160,19 @@ This tells us whether the ZV-E10 lists its card while Rimix controls it in PC Re
    rimix card get 192.168.122.1 <handle or name from the list> --out ~/Desktop/rimix-test
    ```
 
-**What to send back:** what the Browse card panel showed, whether Download worked for a photo and a video (and the file sizes), what the camera's screen showed, the output of both `card` commands, and the newest file in `~/Library/Application Support/Rimix/logs`.
+6. Run the listing once more with logging on, so a listing that stops at the card's top folders or comes back empty can be told apart from a camera that refuses card operations:
+
+   ```
+   rimix -v card list 192.168.122.1 2>&1
+   ```
+
+**What to send back:** what the Browse card panel showed, whether Download worked for a photo and a video (and the file sizes), what the camera's screen showed, the output of both `card` commands, the whole output of `rimix -v card list 2>&1`, and the newest file in `~/Library/Application Support/Rimix/logs`.
 
 ## 10. Receive from camera (SFTP)
 
 This tests the camera sending files to Rimix with its own FTP Transfer function. For this one the camera and the Mac must be on the same router (your home Wi-Fi), not the camera's Wi-Fi Direct network.
+
+If your camera's Network menu has no FTP Transfer Func., note that and skip to step 11; `rimix sftp serve` can still be checked from another computer with `sftp -P 2222 rimix@<address>`.
 
 1. Join the Mac to your home Wi-Fi.
 2. In the Rimix app, open App settings and turn on "Receive from camera". The section shows an Address, a Username, a Password and a Fingerprint.

@@ -234,6 +234,13 @@ impl CardWalk {
                         }
                         Err(e) => return Err(e),
                     };
+                    tracing::info!(
+                        storage = format!("{:#x}", self.storage),
+                        folder = format!("{parent:#x}"),
+                        depth,
+                        objects = handles.len(),
+                        "listed a card folder"
+                    );
                     // Popped from the end, so push in reverse to keep the
                     // camera's order.
                     for &handle in handles.iter().rev() {
