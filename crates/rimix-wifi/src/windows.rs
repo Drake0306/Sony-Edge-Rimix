@@ -3,10 +3,13 @@
 //! profile file, which is deleted as soon as `netsh` has read it and is
 //! never logged; no command line carries it.
 
+use std::sync::atomic::AtomicBool;
+
 use crate::run::{run_kv_logged, run_with_log};
 use crate::{
-    parse_interfaces, parse_ipconfig_address, profile_xml, with_profile_file, Interface,
-    JoinReport, Runner, Wifi, WifiError, FIND_RETRIES, FIND_RETRY_WAIT, JOIN_POLL, JOIN_WAIT,
+    needs_location_permission, parse_interfaces, parse_ipconfig_address, profile_xml,
+    with_profile_file, Interface, JoinReport, Runner, Wifi, WifiError, FIND_RETRIES,
+    FIND_RETRY_WAIT, JOIN_POLL, JOIN_WAIT, LOCATION_NEEDED,
 };
 
 /// What `netsh wlan connect` prints when Windows cannot see the network yet
@@ -31,6 +34,7 @@ impl Wifi {
         runner: &dyn Runner,
         ssid: &str,
         password: Option<&str>,
+        cancel: &AtomicBool,
     ) -> Result<JoinReport, WifiError> {
         let wifi = first_interface(runner)?.ok_or(WifiError::NoWifi)?;
         if wifi.is_connected() && wifi.ssid.as_deref() == Some(ssid) {
@@ -57,7 +61,7 @@ impl Wifi {
                 if attempts >= FIND_RETRIES {
                     return Err(WifiError::NotVisible(ssid.to_string()));
                 }
-                (self.sleep)(FIND_RETRY_WAIT);
+                self.pause(FIND_RETRY_WAIT, cancel)?;
                 continue;
             }
             if !out.success {
@@ -94,7 +98,7 @@ impl Wifi {
             if (self.now)() >= deadline {
                 return Err(WifiError::Failed(format!("{ssid} did not come up")));
             }
-            (self.sleep)(JOIN_POLL);
+            self.pause(JOIN_POLL, cancel)?;
         }
     }
 }
@@ -120,6 +124,10 @@ fn add_profile(runner: &dyn Runner, ssid: &str, password: &str) -> Result<(), Wi
 
 fn interfaces(runner: &dyn Runner) -> Result<Vec<Interface>, WifiError> {
     let out = run_with_log(runner, SHOW_INTERFACES, &[], true)?;
+    if needs_location_permission(&format!("{}{}", out.stdout, out.stderr)) {
+        tracing::info!("Windows withheld the Wi-Fi interfaces: Location is off for desktop apps");
+        return Err(WifiError::Failed(LOCATION_NEEDED.to_string()));
+    }
     Ok(parse_interfaces(&out.stdout))
 }
 
@@ -420,6 +428,40 @@ mod tests {
         assert_eq!(err, WifiError::Failed(format!("{SSID} did not come up")));
         assert!(!runner.calls().contains(&argv(&["ipconfig"])));
         assert_eq!(runner.calls().len(), 2 + polls);
+    }
+
+    #[test]
+    fn missing_location_permission_says_what_to_turn_on() {
+        let wifi = Wifi::new(FakeRunner::scripted([failed(
+            "Network shell commands need location permission to access WLAN information.\r\n",
+        )]));
+        assert_eq!(
+            wifi.join(SSID, Some("pw")),
+            Err(WifiError::Failed(LOCATION_NEEDED.to_string()))
+        );
+    }
+
+    #[test]
+    fn a_cancel_during_the_retry_wait_stops_the_join() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let runner = FakeRunner::scripted([off(), not_visible()]);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let set = cancel.clone();
+        let wifi = Wifi::new(runner.clone())
+            .with_clock(Instant::now, move |_| set.store(true, Ordering::SeqCst));
+        let err = wifi.join_with_cancel(SSID, None, &cancel).unwrap_err();
+        assert_eq!(err, WifiError::Failed(crate::CANCELLED.to_string()));
+        assert_eq!(runner.calls(), vec![argv(SHOW_INTERFACES), connect_argv()]);
+    }
+
+    #[test]
+    fn current_address_reads_ipconfig() {
+        let runner = FakeRunner::scripted([on(SSID), ipconfig("192.168.122.10")]);
+        let wifi = Wifi::new(runner);
+        assert_eq!(
+            wifi.current_address().unwrap(),
+            Some(std::net::Ipv4Addr::new(192, 168, 122, 10))
+        );
     }
 
     #[test]

@@ -5,6 +5,8 @@
 //! once), never stored by Rimix and never logged.
 
 use std::fmt;
+use std::net::Ipv4Addr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -28,6 +30,61 @@ pub const FIND_RETRIES: u32 = 3;
 /// How long to wait between those tries: the scan cache refreshes within a
 /// few seconds.
 pub const FIND_RETRY_WAIT: Duration = Duration::from_secs(4);
+
+/// The error text a cancelled join returns.
+pub const CANCELLED: &str = "cancelled";
+
+/// What Windows prints instead of the interface list when desktop apps may
+/// not use Location, which it requires before showing or joining networks.
+pub const LOCATION_NEEDED: &str = "Windows needs Location access for desktop apps before it will join Wi-Fi: Settings, Privacy & security, Location, then allow desktop apps";
+
+/// Whether `netsh wlan show interfaces` output says Windows withheld the
+/// answer for want of Location permission.
+pub fn needs_location_permission(output: &str) -> bool {
+    output.to_ascii_lowercase().contains("location permission")
+}
+
+/// A runner that refuses to start any command once `cancel` is set.
+struct Cancellable<'a> {
+    inner: &'a dyn Runner,
+    cancel: &'a AtomicBool,
+}
+
+impl Cancellable<'_> {
+    fn check(&self) -> std::io::Result<()> {
+        if self.cancel.load(Ordering::SeqCst) {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                CANCELLED,
+            ))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Runner for Cancellable<'_> {
+    fn run(&self, program: &str, args: &[&str]) -> std::io::Result<Output> {
+        self.check()?;
+        self.inner.run(program, args)
+    }
+
+    fn run_kv(
+        &self,
+        program: &str,
+        args: &[&str],
+        pairs: &[(&str, &str)],
+    ) -> std::io::Result<Output> {
+        self.check()?;
+        self.inner.run_kv(program, args, pairs)
+    }
+}
+
+/// Whether an I/O error is a [`Cancellable`] refusal.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub(crate) fn is_cancel(e: &std::io::Error) -> bool {
+    e.kind() == std::io::ErrorKind::Interrupted && e.to_string() == CANCELLED
+}
 
 /// What a join did, for diagnosis.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -242,6 +299,12 @@ impl Wifi {
         }
     }
 
+    /// Like [`Wifi::address`], parsed: the Wi-Fi interface's IPv4 address
+    /// right now, if it has one. Always `None` in fake mode.
+    pub fn current_address(&self) -> Result<Option<Ipv4Addr>, WifiError> {
+        Ok(self.address()?.and_then(|a| a.trim().parse().ok()))
+    }
+
     /// Joins `ssid` and waits until it is up.
     pub fn join(&self, ssid: &str, password: Option<&str>) -> Result<(), WifiError> {
         self.join_report(ssid, password).map(|_| ())
@@ -249,6 +312,20 @@ impl Wifi {
 
     /// Joins `ssid`, waits until it is up, and says how it went.
     pub fn join_report(&self, ssid: &str, password: Option<&str>) -> Result<JoinReport, WifiError> {
+        self.join_with_cancel(ssid, password, &AtomicBool::new(false))
+    }
+
+    /// Like [`Wifi::join_report`], but stops with `Failed("cancelled")`
+    /// before the next command or wait once `cancel` is set.
+    pub fn join_with_cancel(
+        &self,
+        ssid: &str,
+        password: Option<&str>,
+        cancel: &AtomicBool,
+    ) -> Result<JoinReport, WifiError> {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(WifiError::Failed(CANCELLED.to_string()));
+        }
         match &*self.mode {
             Mode::Fake(name) => {
                 *name.lock().unwrap_or_else(|e| e.into_inner()) = Some(ssid.to_string());
@@ -258,8 +335,29 @@ impl Wifi {
                     address: None,
                 })
             }
-            Mode::System(runner) => self.system_join(runner.as_ref(), ssid, password),
+            Mode::System(runner) => {
+                let runner = Cancellable {
+                    inner: runner.as_ref(),
+                    cancel,
+                };
+                self.system_join(&runner, ssid, password, cancel)
+            }
         }
+    }
+
+    /// Waits `d` unless `cancel` is set before or after.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    pub(crate) fn pause(&self, d: Duration, cancel: &AtomicBool) -> Result<(), WifiError> {
+        let check = || {
+            if cancel.load(Ordering::SeqCst) {
+                Err(WifiError::Failed(CANCELLED.to_string()))
+            } else {
+                Ok(())
+            }
+        };
+        check()?;
+        (self.sleep)(d);
+        check()
     }
 }
 
@@ -270,6 +368,7 @@ impl Wifi {
         _: &dyn Runner,
         _: &str,
         _: Option<&str>,
+        _: &AtomicBool,
     ) -> Result<JoinReport, WifiError> {
         let _ = (&self.sleep, &self.now);
         Err(WifiError::Unsupported)
@@ -793,6 +892,90 @@ pub(crate) mod tests {
             Err(WifiError::Failed(ref t)) if *t == format!("{SSID} did not come up")
         ));
         assert!(!runner.calls().contains(&argv(ADDR)));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_cancel_during_the_retry_wait_stops_the_join() {
+        let runner = FakeRunner::scripted([ports(), off(), not_found()]);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let set = cancel.clone();
+        let wifi = Wifi::new(runner.clone())
+            .with_clock(Instant::now, move |_| set.store(true, Ordering::SeqCst));
+        let err = wifi
+            .join_with_cancel(SSID, Some("pw"), &cancel)
+            .unwrap_err();
+        assert_eq!(err, WifiError::Failed(CANCELLED.to_string()));
+        let joins = runner
+            .calls()
+            .iter()
+            .filter(|c| c.contains(&"-setairportnetwork".to_string()))
+            .count();
+        assert_eq!(joins, 1, "no join command after the cancel");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_cancel_while_waiting_for_the_network_stops_polling() {
+        let runner = FakeRunner::scripted([ports(), off(), out(""), on("Home")]);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let set = cancel.clone();
+        let wifi = Wifi::new(runner.clone())
+            .with_clock(Instant::now, move |_| set.store(true, Ordering::SeqCst));
+        let err = wifi.join_with_cancel(SSID, None, &cancel).unwrap_err();
+        assert_eq!(err, WifiError::Failed(CANCELLED.to_string()));
+        assert_eq!(runner.calls().len(), 4);
+    }
+
+    #[test]
+    fn an_already_cancelled_join_runs_nothing() {
+        let runner = FakeRunner::scripted([]);
+        let wifi = Wifi::new(runner);
+        let err = wifi
+            .join_with_cancel("DIRECT-abc1:ZV-E10", Some("pw"), &AtomicBool::new(true))
+            .unwrap_err();
+        assert_eq!(err, WifiError::Failed(CANCELLED.to_string()));
+    }
+
+    #[test]
+    fn a_cancelled_runner_refuses_commands() {
+        let runner = FakeRunner::scripted([]);
+        let cancel = AtomicBool::new(true);
+        let wrapped = Cancellable {
+            inner: runner.as_ref(),
+            cancel: &cancel,
+        };
+        assert!(wrapped.run("networksetup", &[]).is_err());
+        assert!(wrapped.run_kv("netsh", &[], &[("a", "b")]).is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn current_address_parses_ipconfig_getifaddr() {
+        let runner = FakeRunner::scripted([ports(), address(), ports(), no_address()]);
+        let wifi = Wifi::new(runner.clone());
+        assert_eq!(
+            wifi.current_address().unwrap(),
+            Some(Ipv4Addr::new(192, 168, 122, 10))
+        );
+        assert_eq!(wifi.current_address().unwrap(), None);
+        assert_eq!(runner.calls()[1], argv(ADDR));
+    }
+
+    #[test]
+    fn fake_mode_has_no_current_address() {
+        assert_eq!(Wifi::fake().current_address().unwrap(), None);
+    }
+
+    #[test]
+    fn location_permission_text_is_recognised() {
+        assert!(needs_location_permission(
+            "Network shell commands need location permission to access WLAN information. Turn on Location services on the Location page in Privacy & security settings.\r\n"
+        ));
+        assert!(needs_location_permission("... LOCATION PERMISSION ..."));
+        assert!(!needs_location_permission(
+            "There is 1 interface on the system:\r\n    Name : Wi-Fi\r\n"
+        ));
     }
 
     #[test]

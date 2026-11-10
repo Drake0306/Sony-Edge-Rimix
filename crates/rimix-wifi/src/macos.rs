@@ -1,6 +1,8 @@
 //! The macOS command sequences: `networksetup` and `ipconfig`. Every command
 //! is logged with its output; the password never is.
 
+use std::sync::atomic::AtomicBool;
+
 use crate::run::{run_logged, run_with_log};
 use crate::{
     parse_current_network, parse_wifi_device, JoinReport, Runner, Wifi, WifiError, FIND_RETRIES,
@@ -21,6 +23,7 @@ impl Wifi {
         runner: &dyn Runner,
         ssid: &str,
         password: Option<&str>,
+        cancel: &AtomicBool,
     ) -> Result<JoinReport, WifiError> {
         let device = system_device(runner)?;
         if network_on(runner, &device)?.as_deref() == Some(ssid) {
@@ -44,7 +47,7 @@ impl Wifi {
                 if attempts >= FIND_RETRIES {
                     return Err(WifiError::NotVisible(ssid.to_string()));
                 }
-                (self.sleep)(FIND_RETRY_WAIT);
+                self.pause(FIND_RETRY_WAIT, cancel)?;
                 continue;
             }
             if !out.success || out.stdout.contains("Failed") || out.stdout.contains("Could not") {
@@ -78,7 +81,7 @@ impl Wifi {
             if (self.now)() >= deadline {
                 return Err(WifiError::Failed(format!("{ssid} did not come up")));
             }
-            (self.sleep)(JOIN_POLL);
+            self.pause(JOIN_POLL, cancel)?;
         }
     }
 }

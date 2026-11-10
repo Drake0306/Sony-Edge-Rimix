@@ -1,7 +1,7 @@
 //! Running a command with its command line and output in the log. Secret
 //! argument positions are replaced before anything is logged.
 
-use crate::{redact, Output, Runner, WifiError};
+use crate::{is_cancel, redact, Output, Runner, WifiError, CANCELLED};
 
 /// Runs `args[0]` with the rest, logging the command line (secrets replaced)
 /// and its trimmed output at `info`.
@@ -63,6 +63,10 @@ fn log_result(
                 tracing::info!(cmd = %cmd, output = %text.trim(), "{program}");
             }
             Ok(out)
+        }
+        Err(e) if is_cancel(&e) => {
+            tracing::info!(cmd = %cmd, "Wi-Fi join cancelled");
+            Err(WifiError::Failed(CANCELLED.to_string()))
         }
         Err(e) => {
             tracing::warn!(cmd = %cmd, error = %e, "{program}");

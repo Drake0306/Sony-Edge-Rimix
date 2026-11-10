@@ -1,8 +1,9 @@
 //! What the commands do, as plain async functions over [`AppState`] so they
 //! can be tested without a window. `commands.rs` wraps each one.
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -160,19 +161,83 @@ where
     }
 }
 
+/// Whether two IPv4 addresses share their first three octets, as the
+/// camera and a computer on its Wi-Fi Direct network do.
+fn same_slash_24(a: Ipv4Addr, b: Ipv4Addr) -> bool {
+    a.octets()[..3] == b.octets()[..3]
+}
+
+/// What one rejoin before a reconnect attempt did.
+#[derive(Debug, PartialEq, Eq)]
+enum Rejoin {
+    /// The Wi-Fi already had an address on the camera's network.
+    Skipped,
+    Joined,
+    Failed(String),
+}
+
+/// Rejoins `ssid` unless the Wi-Fi already has an address in the camera's
+/// /24, stopping early once `cancel` is set. Blocks: run it off the async
+/// runtime.
+fn rejoin_blocking(
+    wifi: &Wifi,
+    ssid: &str,
+    camera: Option<Ipv4Addr>,
+    cancel: &AtomicBool,
+) -> Rejoin {
+    if let Some(camera) = camera {
+        match wifi.current_address() {
+            Ok(Some(ours)) if same_slash_24(ours, camera) => {
+                tracing::info!(%ours, %camera, "wifi link looks fine, skipping rejoin");
+                return Rejoin::Skipped;
+            }
+            Ok(_) => {}
+            Err(e) => tracing::debug!(error = %e, "cannot read the Wi-Fi address"),
+        }
+    }
+    match wifi.join_with_cancel(ssid, None, cancel) {
+        Ok(_) => Rejoin::Joined,
+        Err(e) => Rejoin::Failed(e.to_string()),
+    }
+}
+
+/// Sets its flag when dropped, so an aborted future cancels the blocking
+/// work it started.
+struct CancelOnDrop(Arc<AtomicBool>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
 /// A hook that rejoins the camera's Wi-Fi network `ssid` (already known to
-/// the system, so without a password) before a reconnect attempt. Failures
+/// the system, so without a password) before a reconnect attempt, unless
+/// the Wi-Fi still has an address on the camera's network. Aborting the
+/// reconnect (as disconnecting does) cancels a join in progress. Failures
 /// are only logged; the reconnect reports its own.
-fn rejoin_hook(wifi: Wifi, ssid: String) -> ReconnectHook {
+fn rejoin_hook(wifi: Wifi, ssid: String, camera: SocketAddr) -> ReconnectHook {
+    let camera = match camera.ip() {
+        IpAddr::V4(ip) => Some(ip),
+        IpAddr::V6(_) => None,
+    };
     Arc::new(move |attempt| {
         let wifi = wifi.clone();
         let ssid = ssid.clone();
         Box::pin(async move {
             tracing::info!(attempt, %ssid, "rejoining the camera's Wi-Fi before reconnecting");
+            let cancel = Arc::new(AtomicBool::new(false));
+            let _guard = CancelOnDrop(cancel.clone());
             let name = ssid.clone();
-            match tokio::task::spawn_blocking(move || wifi.join(&name, None)).await {
-                Ok(Ok(())) => tracing::info!(%ssid, "rejoined the camera's Wi-Fi"),
-                Ok(Err(e)) => tracing::warn!(%ssid, error = %e, "cannot rejoin the camera's Wi-Fi"),
+            let outcome =
+                tokio::task::spawn_blocking(move || rejoin_blocking(&wifi, &name, camera, &cancel))
+                    .await;
+            match outcome {
+                Ok(Rejoin::Skipped) => {}
+                Ok(Rejoin::Joined) => tracing::info!(%ssid, "rejoined the camera's Wi-Fi"),
+                Ok(Rejoin::Failed(e)) => {
+                    tracing::warn!(%ssid, error = %e, "cannot rejoin the camera's Wi-Fi")
+                }
                 Err(e) => tracing::warn!(%ssid, error = %e, "Wi-Fi rejoin task failed"),
             }
         })
@@ -193,6 +258,10 @@ pub struct SshLogin {
 /// How the `connect` error starts when the camera's fingerprint needs
 /// confirming: `HOSTKEY <sha256> <md5>`, parsed by the front end.
 pub const HOSTKEY_PREFIX: &str = "HOSTKEY ";
+
+/// How the `connect` error starts when the camera's fingerprint differs
+/// from the confirmed one: `HOSTKEY_CHANGED <expected> <actual_sha256>`.
+pub const HOSTKEY_CHANGED_PREFIX: &str = "HOSTKEY_CHANGED ";
 
 /// The camera's SSH port: 22, or `RIMIX_SSH_PORT` (a development override
 /// for the simulator) when it holds a port number.
@@ -239,7 +308,7 @@ pub(crate) async fn connect_via(
         old.disconnect().await;
     }
     let destination = lock(&state.settings).destination();
-    let before_reconnect = ssid.map(|name| rejoin_hook(state.wifi.clone(), name.to_string()));
+    let before_reconnect = ssid.map(|name| rejoin_hook(state.wifi.clone(), name.to_string(), addr));
     let camera = Camera::connect(CameraConfig {
         addr,
         guid: state.guid,
@@ -253,6 +322,10 @@ pub(crate) async fn connect_via(
     .await
     .map_err(|e| match e {
         Error::HostKeyUnknown { sha256, md5 } => format!("{HOSTKEY_PREFIX}{sha256} {md5}"),
+        Error::HostKeyMismatch {
+            expected,
+            actual_sha256,
+        } => format!("{HOSTKEY_CHANGED_PREFIX}{expected} {actual_sha256}"),
         e => format!("Cannot connect to {addr}: {e}"),
     })?;
     let events = camera.subscribe();
@@ -654,6 +727,141 @@ mod tests {
         let text = std::fs::read_to_string(&state.settings_path).unwrap();
         assert!(!text.contains(SSH_PASSWORD), "{text}");
         stop(sim, &state).await;
+    }
+
+    #[tokio::test]
+    async fn a_changed_fingerprint_names_both() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sim = ssh_sim().await;
+        let state = app_state(tmp.path());
+        let port = sim.ssh_addr.unwrap().port();
+        let ip = sim.addr.ip().to_string();
+        let stored = "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let actual = sim.fingerprint_sha256.clone().unwrap();
+        let err = connect_via(
+            &state,
+            &ip,
+            None,
+            Some(login(SSH_PASSWORD, Some(stored.into()))),
+            port,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err, format!("HOSTKEY_CHANGED {stored} {actual}"));
+        assert!(state.camera.lock().await.is_none());
+        sim.events.send(SimCommand::Shutdown).await.unwrap();
+    }
+
+    #[test]
+    fn slash_24_compares_the_first_three_octets() {
+        let cam = Ipv4Addr::new(192, 168, 122, 1);
+        assert!(same_slash_24(Ipv4Addr::new(192, 168, 122, 10), cam));
+        assert!(!same_slash_24(Ipv4Addr::new(192, 168, 1, 10), cam));
+    }
+
+    /// Answers `networksetup` and `ipconfig` as a Mac on `address` would,
+    /// and records every command.
+    #[cfg(target_os = "macos")]
+    struct MacOnAddress {
+        address: &'static str,
+        calls: StdMutex<Vec<String>>,
+    }
+
+    #[cfg(target_os = "macos")]
+    impl rimix_wifi::Runner for MacOnAddress {
+        fn run(&self, program: &str, args: &[&str]) -> std::io::Result<rimix_wifi::Output> {
+            let line = format!("{program} {}", args.join(" "));
+            lock(&self.calls).push(line.clone());
+            let stdout = if line.contains("-listallhardwareports") {
+                "Hardware Port: Wi-Fi\nDevice: en0\n".to_string()
+            } else if line.starts_with("ipconfig getifaddr") {
+                format!("{}\n", self.address)
+            } else if line.contains("-getairportnetwork") {
+                "You are not associated with an AirPort network.\n".to_string()
+            } else {
+                String::new()
+            };
+            Ok(rimix_wifi::Output {
+                success: true,
+                stdout,
+                stderr: String::new(),
+            })
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn rejoin_is_skipped_while_the_wifi_is_on_the_cameras_network() {
+        let runner = Arc::new(MacOnAddress {
+            address: "192.168.122.10",
+            calls: StdMutex::new(Vec::new()),
+        });
+        let wifi = Wifi::new(runner.clone());
+        let outcome = rejoin_blocking(
+            &wifi,
+            "DIRECT-x",
+            Some(Ipv4Addr::new(192, 168, 122, 1)),
+            &AtomicBool::new(false),
+        );
+        assert_eq!(outcome, Rejoin::Skipped);
+        assert!(lock(&runner.calls)
+            .iter()
+            .all(|c| !c.contains("-setairportnetwork")));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn rejoin_joins_when_the_wifi_is_elsewhere_and_stops_when_cancelled() {
+        let camera = Some(Ipv4Addr::new(192, 168, 122, 1));
+        let elsewhere = || {
+            Arc::new(MacOnAddress {
+                address: "10.0.0.5",
+                calls: StdMutex::new(Vec::new()),
+            })
+        };
+        let runner = elsewhere();
+        let wifi = Wifi::new(runner.clone()).with_clock(std::time::Instant::now, |_| {});
+        let outcome = rejoin_blocking(&wifi, "DIRECT-x", camera, &AtomicBool::new(false));
+        assert_eq!(outcome, Rejoin::Joined);
+        assert!(lock(&runner.calls)
+            .iter()
+            .any(|c| c.contains("-setairportnetwork en0 DIRECT-x")));
+
+        let runner = elsewhere();
+        let wifi = Wifi::new(runner.clone()).with_clock(std::time::Instant::now, |_| {});
+        let outcome = rejoin_blocking(&wifi, "DIRECT-x", camera, &AtomicBool::new(true));
+        assert_eq!(outcome, Rejoin::Failed("cancelled".into()));
+        assert!(lock(&runner.calls)
+            .iter()
+            .all(|c| !c.contains("-setairportnetwork")));
+    }
+
+    #[test]
+    fn rejoin_without_an_address_joins() {
+        let wifi = Wifi::fake();
+        let outcome = rejoin_blocking(
+            &wifi,
+            "DIRECT-x",
+            Some(Ipv4Addr::new(192, 168, 122, 1)),
+            &AtomicBool::new(false),
+        );
+        assert_eq!(outcome, Rejoin::Joined);
+        assert_eq!(wifi.current_network().unwrap().as_deref(), Some("DIRECT-x"));
+    }
+
+    #[tokio::test]
+    async fn dropping_the_hook_future_cancels_the_join() {
+        let flag = Arc::new(AtomicBool::new(false));
+        let guard = CancelOnDrop(flag.clone());
+        let task = tokio::spawn(async move {
+            let _guard = guard;
+            std::future::pending::<()>().await;
+        });
+        tokio::task::yield_now().await;
+        assert!(!flag.load(Ordering::SeqCst));
+        task.abort();
+        let _ = task.await;
+        assert!(flag.load(Ordering::SeqCst));
     }
 
     #[tokio::test]
