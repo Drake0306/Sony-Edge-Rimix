@@ -24,4 +24,18 @@ pub enum Error {
         path: std::path::PathBuf,
         source: std::io::Error,
     },
+    /// The camera's SSH server (Access Authentication) refused the login.
+    #[error("the camera refused the username or password")]
+    SshAuth,
+    /// The camera's SSH host key matches neither fingerprint the user
+    /// confirmed earlier.
+    #[error("the camera's fingerprint changed (expected {expected}, got {actual_sha256})")]
+    HostKeyMismatch {
+        expected: String,
+        actual_sha256: String,
+    },
+    /// No fingerprint was confirmed yet; show these to the user to compare
+    /// with the camera's Access Authen. Info screen.
+    #[error("the camera's fingerprint needs confirming: {sha256}")]
+    HostKeyUnknown { sha256: String, md5: String },
 }

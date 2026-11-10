@@ -75,6 +75,7 @@ async fn open(
         auto_receive,
         reconnect,
         before_reconnect: None,
+        ssh: None,
     })
     .await
     .with_context(|| format!("cannot connect to {}", target.addr))?;

@@ -5,7 +5,7 @@
 
 use std::borrow::Cow;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use russh::keys::{Algorithm, HashAlg, PrivateKey};
@@ -38,9 +38,12 @@ pub(crate) struct SshFront {
 }
 
 /// Binds the SSH server on `bind_ip` with an OS-chosen port and a fresh
-/// ed25519 host key, spawning it into `tasks`. Forwards go to `ptp`.
+/// ed25519 host key, spawning it into `tasks`. Forwards go to `ptp`. Each
+/// login attempt is logged to `log` as `ssh auth <method> <user> accepted`
+/// or `... refused` (never the password).
 pub(crate) async fn start(
     account: SshSimConfig,
+    log: Arc<Mutex<Vec<String>>>,
     bind_ip: IpAddr,
     ptp: SocketAddr,
     tasks: &mut JoinSet<()>,
@@ -72,7 +75,7 @@ pub(crate) async fn start(
         }
         _ => ptp,
     };
-    tasks.spawn(serve(listener, config, Arc::new(account), ptp));
+    tasks.spawn(serve(listener, config, Arc::new(account), ptp, log));
     SshFront {
         addr,
         fingerprint_sha256,
@@ -96,6 +99,7 @@ async fn serve(
     config: Arc<server::Config>,
     account: Arc<SshSimConfig>,
     ptp: SocketAddr,
+    log: Arc<Mutex<Vec<String>>>,
 ) {
     let mut connections = JoinSet::new();
     loop {
@@ -105,6 +109,7 @@ async fn serve(
                     let handler = Camera {
                         account: account.clone(),
                         ptp,
+                        log: log.clone(),
                         failures: 0,
                         forwards: JoinSet::new(),
                     };
@@ -142,16 +147,26 @@ async fn serve_connection(mut tcp: TcpStream, config: Arc<server::Config>, handl
 struct Camera {
     account: Arc<SshSimConfig>,
     ptp: SocketAddr,
+    log: Arc<Mutex<Vec<String>>>,
     failures: u32,
     /// Forwards opened on this connection; dropped with the session.
     forwards: JoinSet<()>,
 }
 
 impl Camera {
-    fn check(&mut self, user: &str, password: &[u8]) -> Result<Auth, russh::Error> {
+    fn note(&self, method: &str, user: &str, outcome: &str) {
+        self.log
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(format!("ssh auth {method} {user} {outcome}"));
+    }
+
+    fn check(&mut self, method: &str, user: &str, password: &[u8]) -> Result<Auth, russh::Error> {
         if user == self.account.user && password == self.account.password.as_bytes() {
+            self.note(method, user, "accepted");
             return Ok(Auth::Accept);
         }
+        self.note(method, user, "refused");
         self.failures += 1;
         tracing::debug!(
             user,
@@ -171,7 +186,7 @@ impl server::Handler for Camera {
     type Error = russh::Error;
 
     async fn auth_password(&mut self, user: &str, password: &str) -> Result<Auth, Self::Error> {
-        self.check(user, password.as_bytes())
+        self.check("password", user, password.as_bytes())
     }
 
     async fn auth_keyboard_interactive<'a>(
@@ -181,14 +196,17 @@ impl server::Handler for Camera {
         response: Option<Response<'a>>,
     ) -> Result<Auth, Self::Error> {
         match response {
-            None => Ok(Auth::Partial {
-                name: Cow::Borrowed(""),
-                instructions: Cow::Borrowed(""),
-                prompts: Cow::Borrowed(PASSWORD_PROMPT),
-            }),
+            None => {
+                self.note("keyboard-interactive", user, "prompted");
+                Ok(Auth::Partial {
+                    name: Cow::Borrowed(""),
+                    instructions: Cow::Borrowed(""),
+                    prompts: Cow::Borrowed(PASSWORD_PROMPT),
+                })
+            }
             Some(mut answers) => {
                 let password = answers.next().unwrap_or_default();
-                self.check(user, &password)
+                self.check("keyboard-interactive", user, &password)
             }
         }
     }

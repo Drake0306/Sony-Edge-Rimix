@@ -47,6 +47,8 @@ export interface PropertySummary {
 
 export interface CameraState {
   connected: boolean;
+  /** True while the session runs through the camera's SSH tunnel. */
+  secured: boolean;
   model: string;
   firmware: string;
   battery: number | null;

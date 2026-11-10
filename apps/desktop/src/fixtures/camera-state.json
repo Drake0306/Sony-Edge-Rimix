@@ -1,5 +1,6 @@
 {
  "connected": true,
+ "secured": false,
  "model": "ZV-E10",
  "firmware": "2.00",
  "battery": 72,

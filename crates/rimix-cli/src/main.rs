@@ -168,7 +168,13 @@ fn exit_code(err: &anyhow::Error) -> i32 {
             | Error::Disconnected
             | Error::Protocol(_),
         ) => 3,
-        Some(Error::Response { .. } | Error::Unsupported(_)) => 4,
+        Some(
+            Error::Response { .. }
+            | Error::Unsupported(_)
+            | Error::SshAuth
+            | Error::HostKeyMismatch { .. }
+            | Error::HostKeyUnknown { .. },
+        ) => 4,
         Some(Error::Recovered { .. }) => 5,
         None => 1,
     }

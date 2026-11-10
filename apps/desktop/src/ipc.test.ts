@@ -18,6 +18,7 @@ describe('camera events', () => {
     if (!isStateChanged(event)) return;
     const state = event.StateChanged;
     expect(state.model).toBe('ZV-E10');
+    expect(state.secured).toBe(true);
     expect(state.battery).toBe(72);
     expect(state.focus_found).toBe(false);
     expect(state.live_view_fps).toBe(29.5);

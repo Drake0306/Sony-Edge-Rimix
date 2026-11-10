@@ -200,6 +200,7 @@ pub async fn connect(
         auto_receive: true,
         reconnect: true,
         before_reconnect,
+        ssh: None,
     })
     .await
     .map_err(|e| format!("Cannot connect to {addr}: {e}"))?;
@@ -854,6 +855,7 @@ mod tests {
     fn state_changed_event_json_is_stable() {
         let event = CameraEvent::StateChanged(CameraState {
             connected: true,
+            secured: true,
             model: "ZV-E10".into(),
             firmware: "2.00".into(),
             battery: Some(72),

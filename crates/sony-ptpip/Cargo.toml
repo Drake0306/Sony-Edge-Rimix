@@ -11,10 +11,13 @@ serde = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
 url = { workspace = true }
+serde_json = { workspace = true }
 quick-xml = { workspace = true }
 uuid = { workspace = true }
 directories = { workspace = true }
 hostname = "0.4"
+russh = { version = "0.65.1", default-features = false, features = ["ring"] }
+md5 = "0.8"
 
 [dev-dependencies]
 sony-ptpip-sim = { path = "../sony-ptpip-sim" }
@@ -22,3 +25,4 @@ tokio = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 tempfile = "3"
 url = { workspace = true }
+serde_json = { workspace = true }

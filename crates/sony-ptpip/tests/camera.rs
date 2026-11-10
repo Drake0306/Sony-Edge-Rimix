@@ -25,6 +25,7 @@ fn config(sim: &SimHandle, dir: &Path) -> CameraConfig {
         auto_receive: true,
         reconnect: true,
         before_reconnect: None,
+        ssh: None,
     }
 }
 

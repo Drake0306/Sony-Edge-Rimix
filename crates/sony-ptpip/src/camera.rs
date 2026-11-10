@@ -40,6 +40,7 @@ use crate::ptp::codes::{OP_GET_DEVICE_INFO, PROP_FOCUS_MODE};
 use crate::ptp::{parse_device_info, PtpValue};
 use crate::sony::property::{read_all_props, read_changed_props, Enabled, PropertyDesc};
 use crate::sony::{control, sdio_connect};
+use crate::ssh::{SshConfig, SshTunnel};
 use crate::{quirks_for, ConnectOptions, PtpEvent, PtpIpConnection};
 
 use state::Snapshot;
@@ -75,6 +76,10 @@ pub struct CameraConfig {
     /// Runs before reconnect attempts 2 and later (see [`ReconnectHook`]).
     #[serde(skip)]
     pub before_reconnect: Option<ReconnectHook>,
+    /// For cameras with Access Authentication: reach PTP/IP through the
+    /// camera's SSH server, forwarding to `addr`'s port.
+    #[serde(default)]
+    pub ssh: Option<SshConfig>,
 }
 
 impl std::fmt::Debug for CameraConfig {
@@ -97,6 +102,7 @@ impl std::fmt::Debug for CameraConfig {
                     }
                 ),
             )
+            .field("ssh", &self.ssh)
             .finish()
     }
 }
@@ -105,6 +111,8 @@ impl std::fmt::Debug for CameraConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CameraState {
     pub connected: bool,
+    /// True while the session runs through the camera's SSH tunnel.
+    pub secured: bool,
     pub model: String,
     pub firmware: String,
     /// Battery level in percent, when the camera reports one.
@@ -191,6 +199,9 @@ struct Inner {
     auto_receive: bool,
     reconnect: bool,
     before_reconnect: Option<ReconnectHook>,
+    ssh: Option<SshConfig>,
+    /// The SSH tunnel the current session runs through; dropped with it.
+    tunnel: StdMutex<Option<SshTunnel>>,
     destination: StdMutex<Destination>,
     /// `None` while disconnected. Hold it only for one operation at a time.
     conn: tokio::sync::Mutex<Option<PtpIpConnection>>,
@@ -220,6 +231,8 @@ struct RecentShot {
 /// What [`connect_once`] sets up.
 struct Session {
     conn: PtpIpConnection,
+    /// Set when the connection runs through SSH.
+    tunnel: Option<SshTunnel>,
     events: broadcast::Receiver<PtpEvent>,
     model: String,
     firmware: String,
@@ -265,8 +278,11 @@ impl Inner {
     /// need.
     async fn install(&self, session: Session) -> broadcast::Receiver<PtpEvent> {
         *self.conn.lock().await = Some(session.conn);
+        let secured = session.tunnel.is_some();
+        *lock(&self.tunnel) = session.tunnel;
         let mut snap = lock(&self.snapshot);
         snap.connected = true;
+        snap.secured = secured;
         snap.model = session.model;
         snap.firmware = session.firmware;
         snap.props = session.props;
@@ -277,9 +293,11 @@ impl Inner {
     /// Drops the connection and tells subscribers.
     async fn lose_connection(&self, reason: String) {
         self.conn.lock().await.take();
+        lock(&self.tunnel).take();
         {
             let mut snap = lock(&self.snapshot);
             snap.connected = false;
+            snap.secured = false;
             snap.live_view_fps = 0.0;
         }
         self.emit(CameraEvent::Disconnected { reason });
@@ -289,13 +307,22 @@ impl Inner {
 
 /// Opens the connection and reads what the facade needs: transport connect,
 /// GetDeviceInfo, the SDIO handshake, every property, and a live view check.
+/// With SSH configured, a fresh tunnel is opened first and PTP/IP dials it.
 async fn connect_once(inner: &Inner) -> Result<Session, Error> {
     let opts = ConnectOptions {
         guid: inner.guid,
         name: inner.host_name.clone(),
         ..ConnectOptions::default()
     };
-    let (mut conn, _) = PtpIpConnection::connect(inner.addr, opts).await?;
+    let tunnel = match &inner.ssh {
+        Some(ssh) => {
+            let camera = SocketAddr::new(inner.addr.ip(), ssh.port);
+            Some(SshTunnel::open(camera, ssh, inner.addr.port()).await?)
+        }
+        None => None,
+    };
+    let target = tunnel.as_ref().map_or(inner.addr, SshTunnel::local_addr);
+    let (mut conn, _) = PtpIpConnection::connect(target, opts).await?;
     // Subscribe before reading properties so no change is missed.
     let events = conn.events();
     let (data, _) = conn.command_data_in(OP_GET_DEVICE_INFO, &[]).await?;
@@ -315,6 +342,7 @@ async fn connect_once(inner: &Inner) -> Result<Session, Error> {
     }
     Ok(Session {
         conn,
+        tunnel,
         events,
         model: info.model,
         firmware: info.device_version,
@@ -339,6 +367,8 @@ impl Camera {
             auto_receive: cfg.auto_receive,
             reconnect: cfg.reconnect,
             before_reconnect: cfg.before_reconnect,
+            ssh: cfg.ssh,
+            tunnel: StdMutex::new(None),
             destination: StdMutex::new(cfg.destination),
             conn: tokio::sync::Mutex::new(None),
             snapshot: StdMutex::new(Snapshot::default()),
@@ -455,6 +485,9 @@ impl Camera {
                 }
             }
         }
+        // After closing, which goes through the tunnel.
+        lock(&self.inner.tunnel).take();
+        lock(&self.inner.snapshot).secured = false;
         let was_connected = std::mem::replace(&mut lock(&self.inner.snapshot).connected, false);
         if was_connected {
             self.inner.emit(CameraEvent::Disconnected {

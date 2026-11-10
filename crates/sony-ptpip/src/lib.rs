@@ -6,6 +6,7 @@ pub mod ptp;
 pub mod ptpip;
 pub mod quirks;
 pub mod sony;
+pub mod ssh;
 
 pub use camera::{
     BoxFuture, Camera, CameraConfig, CameraEvent, CameraState, Choice, PropertySummary,
@@ -16,6 +17,7 @@ pub use guid::{default_host_name, load_or_create_guid};
 pub use ptpip::transport::{ConnectOptions, PtpEvent, PtpIpConnection};
 pub use quirks::{quirks_for, Quirks, WriteMode};
 pub use sony::{focus, sdio_connect, set_value, shoot, toggle_record, ExtDeviceInfo};
+pub use ssh::{normalize_fingerprint, SshConfig, SshTunnel};
 
 /// Live view frames: `liveview::start` once after the handshake, then
 /// `liveview::next_frame` in a loop.

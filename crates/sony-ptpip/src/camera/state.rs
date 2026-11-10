@@ -15,6 +15,7 @@ const PROP_COLOUR_TEMP: u16 = 0xD20F;
 #[derive(Debug, Default)]
 pub(super) struct Snapshot {
     pub connected: bool,
+    pub secured: bool,
     pub model: String,
     pub firmware: String,
     pub props: Vec<PropertyDesc>,
@@ -42,6 +43,7 @@ impl Snapshot {
         let colour_temp = number(PROP_COLOUR_TEMP).and_then(|k| u16::try_from(k).ok());
         CameraState {
             connected: self.connected,
+            secured: self.secured,
             model: self.model.clone(),
             firmware: self.firmware.clone(),
             battery: number(PROP_BATTERY)
