@@ -105,8 +105,10 @@ pub fn parse_live_view_dataset(buf: &[u8]) -> Result<Option<LiveViewFrame>, Erro
     if !jpeg.starts_with(&[0xFF, 0xD8]) {
         return Err(Error::Protocol("live view image is not a JPEG".into()));
     }
-    let meta = section(buf, meta_offset, meta_size, "metadata")?;
-    let (focus_frames, level_deg) = parse_metadata(meta).unwrap_or_default();
+    let (focus_frames, level_deg) = section(buf, meta_offset, meta_size, "metadata")
+        .ok()
+        .and_then(parse_metadata)
+        .unwrap_or_default();
     Ok(Some(LiveViewFrame {
         jpeg: jpeg.to_vec(),
         focus_frames,
@@ -308,6 +310,19 @@ mod tests {
         assert_eq!(frame.jpeg, JPEG);
         assert!(frame.focus_frames.is_empty());
         assert_eq!(frame.level_deg, None);
+    }
+
+    #[test]
+    fn metadata_range_out_of_bounds_still_returns_jpeg() {
+        for (offset, size) in [(16, 1000), (5000, 0)] {
+            let mut b = dataset(&metadata(), &JPEG);
+            b[8..12].copy_from_slice(&(offset as u32).to_le_bytes());
+            b[12..16].copy_from_slice(&(size as u32).to_le_bytes());
+            let frame = parse_live_view_dataset(&b).unwrap().unwrap();
+            assert_eq!(&frame.jpeg[..2], &[0xFF, 0xD8]);
+            assert!(frame.focus_frames.is_empty());
+            assert_eq!(frame.level_deg, None);
+        }
     }
 
     #[test]
