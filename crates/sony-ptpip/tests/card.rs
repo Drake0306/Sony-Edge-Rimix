@@ -97,6 +97,7 @@ async fn list_objects_returns_the_card_with_kinds() {
     for o in &objects {
         assert_eq!(o.storage, storages[0]);
         assert!(o.captured.is_some(), "{o:?}");
+        assert!(o.size_known, "{o:?}");
     }
     let mut handles: Vec<_> = objects.iter().map(|o| o.handle).collect();
     handles.sort();
@@ -289,4 +290,34 @@ fn card_download_progress_serialises() {
             "handle": 7, "filename": "C0001.MP4", "received": 1, "total": 2
         }})
     );
+}
+
+#[tokio::test]
+async fn files_of_4_gib_or_more_are_refused_before_any_part_file() {
+    let mut card = small_clip();
+    card[0].bytes = 5 * 1024 * MIB;
+    let sim = spawn(SimConfig {
+        card,
+        ..SimConfig::default()
+    })
+    .await;
+    let tmp = tempfile::tempdir().unwrap();
+    let mut conn = connect(&sim).await;
+    let storage = list_storages(&mut conn).await.unwrap()[0];
+    let clip = list_objects(&mut conn, storage).await.unwrap().remove(0);
+    assert!(!clip.size_known, "{clip:?}");
+    let err = download(&mut conn, &clip, tmp.path(), CARD_CHUNK, |_, _| {})
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            Error::Unsupported("files of 4 GiB or more cannot be downloaded yet")
+        ),
+        "{err:?}"
+    );
+    assert!(names(tmp.path()).is_empty(), "{:?}", names(tmp.path()));
+    assert!(partial_offsets(&sim, 0).is_empty());
+    conn.close().await.unwrap();
+    sim.events.send(SimCommand::Shutdown).await.unwrap();
 }

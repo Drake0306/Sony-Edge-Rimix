@@ -23,6 +23,8 @@ use crate::PtpIpConnection;
 pub const CARD_CHUNK: u32 = 1 << 20;
 /// GetObjectHandles parent meaning "the root of the storage".
 const ROOT: u32 = 0xFFFF_FFFF;
+/// ObjectInfo size meaning "4 GiB or more; see the object's other size".
+const SIZE_UNKNOWN: u32 = 0xFFFF_FFFF;
 /// GetObjectHandles format meaning "every format".
 const ALL_FORMATS: u32 = 0;
 
@@ -64,7 +66,11 @@ pub struct CardObject {
     pub handle: u32,
     pub storage: u32,
     pub filename: String,
+    /// The size the camera reports; meaningless unless `size_known`.
     pub bytes: u64,
+    /// False when the camera reports the size as 0xFFFFFFFF, as PTP does
+    /// for files of 4 GiB or more.
+    pub size_known: bool,
     pub format: u16,
     pub kind: CardKind,
     pub captured: Option<NaiveDateTime>,
@@ -127,6 +133,7 @@ pub async fn object(conn: &mut PtpIpConnection, handle: u32) -> Result<Option<Ca
         storage: info.storage_id,
         kind: CardKind::of(info.object_format, &info.filename),
         bytes: u64::from(info.compressed_size),
+        size_known: info.compressed_size != SIZE_UNKNOWN,
         format: info.object_format,
         captured: parse_ptp_date(&info.capture_date),
         filename: info.filename,
@@ -209,8 +216,17 @@ impl PartialDownload {
     /// left by an earlier try is resumed from its length, or discarded if it
     /// is longer than the file. Partial files of the same name with another
     /// size (another camera's file, or one from before a card format) are
-    /// deleted, never resumed.
+    /// deleted, never resumed. An object whose size is not known (4 GiB or
+    /// more) is refused with [`Error::Unsupported`] before anything is
+    /// written.
     pub fn begin(obj: &CardObject, dest_dir: &Path) -> Result<PartialDownload, Error> {
+        if !obj.size_known {
+            // Without the real size a download would stop at 4 GiB and pass
+            // a truncated file off as complete.
+            return Err(Error::Unsupported(
+                "files of 4 GiB or more cannot be downloaded yet",
+            ));
+        }
         let name = check_filename(&obj.filename)?.to_string();
         std::fs::create_dir_all(dest_dir)?;
         let part = dest_dir.join(part_name(&name, obj.bytes));
@@ -280,7 +296,7 @@ impl PartialDownload {
             return Ok(());
         }
         let offset = u32::try_from(self.received)
-            .map_err(|_| Error::Unsupported("card files above 4 GiB"))?;
+            .map_err(|_| Error::Unsupported("files of 4 GiB or more cannot be downloaded yet"))?;
         let want = u32::try_from((self.total - self.received).min(u64::from(chunk.max(1))))
             .unwrap_or(chunk);
         let idle = conn.timeout().max(TRANSFER_IDLE);
