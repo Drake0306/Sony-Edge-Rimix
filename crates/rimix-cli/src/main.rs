@@ -100,6 +100,9 @@ enum Cmd {
         ip: SocketAddr,
         #[arg(long, default_value = ".")]
         out: PathBuf,
+        /// Quit after this many seconds (for tests).
+        #[arg(long, hide = true, value_name = "SECS")]
+        exit_after: Option<u64>,
     },
 }
 
@@ -164,7 +167,11 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Cmd::Shoot { ip, out } => commands::shoot(&target(ip), &out).await,
         Cmd::Record { ip } => commands::record(&target(ip)).await,
         Cmd::Liveview { ip, frames, out } => commands::liveview(&target(ip), frames, &out).await,
-        Cmd::Watch { ip, out } => commands::watch(&target(ip), &out).await,
+        Cmd::Watch {
+            ip,
+            out,
+            exit_after,
+        } => commands::watch(&target(ip), &out, exit_after.map(Duration::from_secs)).await,
     }
 }
 

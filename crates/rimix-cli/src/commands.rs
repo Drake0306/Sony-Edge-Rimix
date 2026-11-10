@@ -62,6 +62,7 @@ async fn open(
     name: Option<String>,
     out: Option<&Path>,
     auto_receive: bool,
+    reconnect: bool,
 ) -> Result<Camera> {
     let guid = load_or_create_guid(&target.guid_file)
         .map_err(|e| anyhow::anyhow!(CliError::Io(format!("guid file: {e}"))))?;
@@ -75,7 +76,7 @@ async fn open(
         host_name: name.unwrap_or_else(host_name),
         destination,
         auto_receive,
-        reconnect: false,
+        reconnect,
     })
     .await
     .with_context(|| format!("cannot connect to {}", target.addr))?;
@@ -108,7 +109,7 @@ pub async fn discover(timeout: Duration, ssdp_target: Option<SocketAddr>) -> Res
 }
 
 pub async fn connect(target: &Target, name: Option<String>) -> Result<()> {
-    let camera = open(target, name, None, false).await?;
+    let camera = open(target, name, None, false, false).await?;
     let state = camera.state();
     println!("Model: {}", state.model);
     println!("Firmware: {}", state.firmware);
@@ -121,7 +122,7 @@ pub async fn connect(target: &Target, name: Option<String>) -> Result<()> {
 }
 
 pub async fn props(target: &Target, all: bool) -> Result<()> {
-    let camera = open(target, None, None, false).await?;
+    let camera = open(target, None, None, false, false).await?;
     let state = camera.state();
     camera.disconnect().await;
     let shown: Vec<&PropertySummary> = if all {
@@ -184,7 +185,7 @@ fn report_set(camera: &Camera, code: u16) -> Result<()> {
 }
 
 pub async fn set(target: &Target, code: u16, value: &str) -> Result<()> {
-    let camera = open(target, None, None, false).await?;
+    let camera = open(target, None, None, false, false).await?;
     let result = async {
         let value = parse_value(value, &find(&camera, code)?.raw)?;
         camera.set(code, value).await?;
@@ -196,7 +197,7 @@ pub async fn set(target: &Target, code: u16, value: &str) -> Result<()> {
 }
 
 pub async fn step(target: &Target, code: u16, delta: i32) -> Result<()> {
-    let camera = open(target, None, None, false).await?;
+    let camera = open(target, None, None, false, false).await?;
     let result = async {
         camera.step(code, delta).await?;
         report_set(&camera, code)
@@ -219,7 +220,7 @@ async fn next_event(rx: &mut Receiver<CameraEvent>, deadline: Instant) -> Option
 }
 
 pub async fn shoot(target: &Target, out: &Path) -> Result<()> {
-    let camera = open(target, None, Some(out), true).await?;
+    let camera = open(target, None, Some(out), true, false).await?;
     let mut rx = camera.subscribe();
     let result = async {
         camera.shoot().await?;
@@ -250,7 +251,7 @@ pub async fn shoot(target: &Target, out: &Path) -> Result<()> {
 }
 
 pub async fn record(target: &Target) -> Result<()> {
-    let camera = open(target, None, None, false).await?;
+    let camera = open(target, None, None, false, false).await?;
     let result = async {
         camera.toggle_record().await?;
         // The camera reports the new state through a property change event.
@@ -282,7 +283,7 @@ pub async fn record(target: &Target) -> Result<()> {
 
 pub async fn liveview(target: &Target, frames: u32, out: &Path) -> Result<()> {
     std::fs::create_dir_all(out).map_err(|e| io_error("cannot create the output folder", e))?;
-    let camera = open(target, None, None, false).await?;
+    let camera = open(target, None, None, false, false).await?;
     let mut rx = camera.subscribe();
     let result = async {
         let deadline = Instant::now() + WAIT;
@@ -318,8 +319,15 @@ pub async fn liveview(target: &Target, frames: u32, out: &Path) -> Result<()> {
     result
 }
 
-pub async fn watch(target: &Target, out: &Path) -> Result<()> {
-    let camera = open(target, None, Some(out), true).await?;
+pub async fn watch(target: &Target, out: &Path, exit_after: Option<Duration>) -> Result<()> {
+    let camera = open(target, None, Some(out), true, true).await?;
+    let quit = async {
+        match exit_after {
+            Some(d) => tokio::time::sleep(d).await,
+            None => std::future::pending().await,
+        }
+    };
+    tokio::pin!(quit);
     camera.set_destination(Destination {
         base: out.to_path_buf(),
         mode: DestinationMode::CustomFolder,
@@ -329,6 +337,7 @@ pub async fn watch(target: &Target, out: &Path) -> Result<()> {
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => break,
+            _ = &mut quit => break,
             event = rx.recv() => match event {
                 Ok(CameraEvent::Connected) => println!("connected"),
                 Ok(CameraEvent::Disconnected { reason }) => println!("disconnected: {reason}"),

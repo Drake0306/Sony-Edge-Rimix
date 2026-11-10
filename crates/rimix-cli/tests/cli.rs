@@ -186,3 +186,83 @@ fn bad_arguments_exit_2() {
         .assert()
         .code(2);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_reconnects_after_a_drop() {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command as Std, Stdio};
+    use std::sync::mpsc;
+
+    let env = Env::new(SimConfig::default()).await;
+    let out_dir = env.out();
+    let mut child = Std::new(assert_cmd::cargo::cargo_bin("rimix"))
+        .arg("--guid-file")
+        .arg(env.guid())
+        .args(["watch", &env.addr(), "--exit-after", "20", "--out"])
+        .arg(&out_dir)
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let (tx, rx) = mpsc::channel();
+    let stdout = child.stdout.take().unwrap();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    fn wait(rx: &mpsc::Receiver<String>, want: &str) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            match rx.recv_timeout(left) {
+                Ok(line) if line.contains(want) => return,
+                Ok(_) => {}
+                Err(_) => panic!("no line containing {want:?} within 10 s"),
+            }
+        }
+    }
+    wait(&rx, "connected");
+    env.sim
+        .events
+        .send(SimCommand::DropConnection)
+        .await
+        .unwrap();
+    let waited = tokio::task::spawn_blocking(move || {
+        wait(&rx, "disconnected");
+        wait(&rx, "reconnecting #");
+        wait(&rx, "connected");
+    })
+    .await;
+    let _ = child.kill();
+    let _ = child.wait();
+    waited.unwrap();
+    env.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn step_moves_shutter_to_the_neighbouring_value() {
+    let env = Env::new(SimConfig::default()).await;
+    let mut cmd = rimix(&env.guid());
+    cmd.args(["step", &env.addr(), "D20D", "+1"]);
+    let out = run(cmd).await;
+    assert!(out.status.success(), "{:?}", out);
+    let text = stdout(&out);
+    assert!(text.starts_with("Set 0xD20D to "), "{text}");
+    assert!(!text.contains("1/125"), "{text}");
+    env.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn props_all_lists_more_rows_than_the_default() {
+    let env = Env::new(SimConfig::default()).await;
+    let mut default = rimix(&env.guid());
+    default.args(["props", &env.addr()]);
+    let mut all = rimix(&env.guid());
+    all.args(["props", &env.addr(), "--all"]);
+    let default = stdout(&run(default).await).lines().count();
+    let all = stdout(&run(all).await).lines().count();
+    assert!(all > default, "{all} rows vs {default}");
+    env.finish().await;
+}
