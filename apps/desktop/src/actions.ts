@@ -125,11 +125,12 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     async forgetCamera(rc) {
       const settings = store.get().settings;
       if (!settings) return;
-      await saveSettings({
-        ...settings,
-        recentCameras: settings.recentCameras.filter((c) => c.ip !== rc.ip),
-        lastIp: settings.lastIp === rc.ip ? null : settings.lastIp,
-      });
+      // Cameras are told apart by network (Wi-Fi Direct cameras share one
+      // address); one known only by address is matched by address.
+      const same = (c: RecentCamera) => (rc.ssid ? c.ssid === rc.ssid : !c.ssid && c.ip === rc.ip);
+      const recentCameras = settings.recentCameras.filter((c) => !same(c));
+      const lastKept = recentCameras.some((c) => c.ip === settings.lastIp);
+      await saveSettings({ ...settings, recentCameras, lastIp: lastKept ? settings.lastIp : null });
     },
     async disconnect() {
       await ipc.disconnect().catch((e) => toast(message(e)));

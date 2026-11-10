@@ -174,6 +174,17 @@ describe('connect over Wi-Fi', () => {
     expect(vi.mocked(ipc.saveSettings).mock.calls[1][0]).toMatchObject({ recentCameras: [], lastIp: null });
   });
 
+  test('forgetCamera removes only the camera on that network', async () => {
+    const a: RecentCamera = { ip: '192.168.122.1', model: 'ZV-E10', lastUsed: 3, ssid: SSID };
+    const b: RecentCamera = { ip: '192.168.122.1', model: 'ILCE-7M4', lastUsed: 2, ssid: 'DIRECT-zz99:ILCE-7M4' };
+    const c: RecentCamera = { ip: '192.168.122.1', model: 'A7 IV', lastUsed: 1, ssid: null };
+    const store = storeWith('Automatic', { recentCameras: [a, b, c], lastIp: a.ip });
+    await createActions(store).forgetCamera(a);
+    expect(store.get().settings).toMatchObject({ recentCameras: [b, c], lastIp: a.ip });
+    await createActions(store).forgetCamera(c);
+    expect(store.get().settings).toMatchObject({ recentCameras: [b], lastIp: a.ip });
+  });
+
   test('forgetCamera keeps lastIp pointing at another camera', async () => {
     const a: RecentCamera = { ip: '192.168.122.1', model: 'ZV-E10', lastUsed: 2, ssid: SSID };
     const b: RecentCamera = { ip: '10.0.0.5', model: 'A7 IV', lastUsed: 1, ssid: null };

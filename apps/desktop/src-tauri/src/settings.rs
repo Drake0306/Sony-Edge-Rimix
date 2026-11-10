@@ -121,18 +121,27 @@ impl AppSettings {
         }
     }
 
-    /// Puts the camera first in the recent list, replacing an older entry
-    /// with the same `ip` or the same `ssid` (the new entry keeps the newest
-    /// known ssid), keeps at most [`MAX_RECENT`] and makes `ip` the last IP.
+    /// Puts the camera first in the recent list, keeps at most
+    /// [`MAX_RECENT`] and makes `ip` the last IP.
+    ///
+    /// Cameras are told apart by their network, because every camera on its
+    /// own Wi-Fi Direct network has the same IP. A connect with an `ssid`
+    /// replaces the entry with that ssid. A connect by address alone replaces
+    /// an entry at that ip with no ssid, or one at that ip of the same model,
+    /// which keeps its ssid.
     pub fn remember_camera(&mut self, ip: &str, model: &str, ssid: Option<&str>, now_millis: u64) {
-        let mut kept_ssid = ssid.map(str::to_string);
-        self.recent_cameras.retain(|c| {
-            let same = c.ip == ip || (ssid.is_some() && c.ssid.as_deref() == ssid);
-            if same && kept_ssid.is_none() {
-                kept_ssid = c.ssid.clone();
-            }
-            !same
+        let older = self.recent_cameras.iter().position(|c| match ssid {
+            Some(ssid) => c.ssid.as_deref() == Some(ssid),
+            None => c.ip == ip && (c.ssid.is_none() || c.model == model),
         });
+        let kept_ssid = match (ssid, older) {
+            (Some(ssid), _) => Some(ssid.to_string()),
+            (None, Some(i)) => self.recent_cameras[i].ssid.clone(),
+            (None, None) => None,
+        };
+        if let Some(i) = older {
+            self.recent_cameras.remove(i);
+        }
         self.recent_cameras.insert(
             0,
             RecentCamera {
@@ -146,11 +155,19 @@ impl AppSettings {
         self.last_ip = Some(ip.to_string());
     }
 
-    /// Drops the remembered camera at `ip`. If that was the last IP, the last
+    /// Drops the remembered camera with this `ssid`, or with no ssid at `ip`
+    /// when `ssid` is `None`. If no camera is left at the last IP, the last
     /// IP becomes the newest camera still remembered, or none.
-    pub fn forget_camera(&mut self, ip: &str) {
-        self.recent_cameras.retain(|c| c.ip != ip);
-        if self.last_ip.as_deref() == Some(ip) {
+    pub fn forget_camera(&mut self, ssid: Option<&str>, ip: &str) {
+        self.recent_cameras.retain(|c| match ssid {
+            Some(ssid) => c.ssid.as_deref() != Some(ssid),
+            None => c.ssid.is_some() || c.ip != ip,
+        });
+        let last_still_there = self
+            .recent_cameras
+            .iter()
+            .any(|c| Some(c.ip.as_str()) == self.last_ip.as_deref());
+        if !last_still_there {
             self.last_ip = self.recent_cameras.first().map(|c| c.ip.clone());
         }
     }
@@ -288,11 +305,13 @@ mod tests {
         assert!(back.contains("\"presets\":[]"), "{back}");
     }
 
+    const WD: &str = "192.168.122.1";
+
     #[test]
-    fn remember_camera_merges_by_ip_or_ssid_and_keeps_the_network() {
+    fn remember_camera_keeps_the_network_for_an_address_only_reconnect() {
         let mut s = AppSettings::default();
-        s.remember_camera("192.168.122.1", "ZV-E10", Some("DIRECT-abc1:ZV-E10"), 1);
-        s.remember_camera("192.168.122.1", "ZV-E10", None, 2); // same ip, no ssid known
+        s.remember_camera(WD, "ZV-E10", Some("DIRECT-abc1:ZV-E10"), 1);
+        s.remember_camera(WD, "ZV-E10", None, 2); // same model, same ip, no ssid known
         assert_eq!(s.recent_cameras.len(), 1);
         assert_eq!(
             s.recent_cameras[0].ssid.as_deref(),
@@ -302,12 +321,60 @@ mod tests {
         s.remember_camera("10.0.0.9", "ZV-E10", Some("DIRECT-abc1:ZV-E10"), 3); // same network, router ip
         assert_eq!(s.recent_cameras.len(), 1);
         assert_eq!(s.recent_cameras[0].ip, "10.0.0.9");
-        s.remember_camera("10.0.0.7", "ILCE-7M4", Some("DIRECT-zz99:ILCE-7M4"), 4);
+    }
+
+    #[test]
+    fn two_cameras_at_the_wifi_direct_address_are_both_kept() {
+        let mut s = AppSettings::default();
+        s.remember_camera(WD, "ZV-E10", Some("DIRECT-abc1:ZV-E10"), 1);
+        s.remember_camera(WD, "ILCE-7M4", Some("DIRECT-zz99:ILCE-7M4"), 2);
+        let nets: Vec<_> = s
+            .recent_cameras
+            .iter()
+            .map(|c| (c.model.as_str(), c.ssid.as_deref()))
+            .collect();
+        assert_eq!(
+            nets,
+            vec![
+                ("ILCE-7M4", Some("DIRECT-zz99:ILCE-7M4")),
+                ("ZV-E10", Some("DIRECT-abc1:ZV-E10")),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_address_only_connect_to_another_model_does_not_take_its_network() {
+        let mut s = AppSettings::default();
+        s.remember_camera(WD, "ZV-E10", Some("DIRECT-abc1:ZV-E10"), 1);
+        s.remember_camera(WD, "ILCE-7M4", None, 2);
         assert_eq!(s.recent_cameras.len(), 2);
-        s.forget_camera("10.0.0.7");
+        assert_eq!(s.recent_cameras[0].model, "ILCE-7M4");
+        assert_eq!(s.recent_cameras[0].ssid, None);
+        assert_eq!(
+            s.recent_cameras[1].ssid.as_deref(),
+            Some("DIRECT-abc1:ZV-E10")
+        );
+        // Address-only entries still merge with each other.
+        s.remember_camera(WD, "ILCE-7M4", None, 3);
+        assert_eq!(s.recent_cameras.len(), 2);
+    }
+
+    #[test]
+    fn forget_camera_removes_the_entry_with_that_network_or_address() {
+        let mut s = AppSettings::default();
+        s.remember_camera(WD, "ZV-E10", Some("DIRECT-abc1:ZV-E10"), 1);
+        s.remember_camera(WD, "ILCE-7M4", Some("DIRECT-zz99:ILCE-7M4"), 2);
+        s.remember_camera("10.0.0.7", "A7 IV", None, 3);
+        s.forget_camera(Some("DIRECT-abc1:ZV-E10"), WD);
+        let left: Vec<_> = s.recent_cameras.iter().map(|c| c.model.as_str()).collect();
+        assert_eq!(left, vec!["A7 IV", "ILCE-7M4"]);
+        assert_eq!(s.last_ip.as_deref(), Some("10.0.0.7"));
+        s.forget_camera(None, "10.0.0.7");
         assert_eq!(s.recent_cameras.len(), 1);
-        assert_eq!(s.last_ip.as_deref(), Some("10.0.0.9"));
-        s.forget_camera("10.0.0.9");
+        assert_eq!(s.last_ip.as_deref(), Some(WD));
+        s.forget_camera(None, WD); // no ssid-less entry there: nothing goes
+        assert_eq!(s.recent_cameras.len(), 1);
+        s.forget_camera(Some("DIRECT-zz99:ILCE-7M4"), WD);
         assert!(s.recent_cameras.is_empty());
         assert_eq!(s.last_ip, None);
     }
