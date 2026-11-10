@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'vitest';
-import fixture from './fixtures/state-changed.json';
-import captureSaved from './fixtures/capture-saved.json';
-import { applyEvent, createStore, defaultSettings, initialState } from './state';
+import tagged from './fixtures/state-changed.json';
+import taggedSaved from './fixtures/capture-saved.json';
+import { applyEvent, cameraBusy, createStore, defaultSettings, initialState, type AppState } from './state';
 import type { CameraEvent, CameraState } from './ipc';
 import { start } from './interval';
+
+// The fixtures are tagged with the camera they came from.
+const fixture = tagged.event as unknown;
+const captureSaved = taggedSaved.event as unknown;
 
 describe('store', () => {
   test('set merges and notifies subscribers', () => {
@@ -50,7 +54,9 @@ describe('store', () => {
     s = { ...s, ...applyEvent(s, { CaptureProgress: { filename: 'DSC00001.JPG', received: 1, total: 3 } }) };
     s = { ...s, ...applyEvent(s, captureSaved as unknown as CameraEvent) };
     expect(s.transfers).toEqual({});
-    expect(s.captures[0]).toEqual({ path: '/p/DSC00001-1.JPG', filename: 'DSC00001-1.JPG', bytes: 3 });
+    expect(s.captures[0]).toEqual({
+      path: '/p/DSC00001-1.JPG', filename: 'DSC00001-1.JPG', bytes: 3, cameraId: null, cameraLabel: '',
+    });
   });
 
   test('a failed save is kept as one persistent error until the next save', () => {
@@ -98,6 +104,87 @@ describe('store', () => {
     expect(applyEvent(initialState(), 'Connected')).toEqual({});
     expect(applyEvent(initialState(), { CaptureSkipped: { filename: 'DSC00001.JPG' } })).toEqual({});
     expect(applyEvent({ ...initialState(), reconnecting: 2 }, 'Connected')).toEqual({ reconnecting: null });
+  });
+});
+
+describe('several cameras', () => {
+  const base = (fixture as unknown as { StateChanged: CameraState }).StateChanged;
+  const zv = { ...base, model: 'ZV-E10' };
+  const a7 = { ...base, model: 'ILCE-7M4' };
+  const A = '10.0.0.5:15740';
+  const B = 'DIRECT-zz99:ILCE-7M4';
+  const two = (): AppState => ({
+    ...initialState(),
+    screen: 'main',
+    cameras: { [A]: zv, [B]: a7 },
+    activeId: A,
+    camera: zv,
+  });
+  const step = (s: AppState, event: CameraEvent, id: string) => ({ ...s, ...applyEvent(s, event, id) });
+
+  test('a state change from another camera updates it without touching the active camera', () => {
+    const s = two();
+    const changed = { ...a7, battery: 10 };
+    const next = step(s, { StateChanged: changed }, B);
+    expect(next.cameras[B]).toBe(changed);
+    expect(next.cameras[A]).toBe(zv);
+    expect(next.camera).toBe(zv);
+    expect(next.status).toBe(s.status);
+    // From the active camera, both follow.
+    const own = { ...zv, battery: 50 };
+    const after = step(next, { StateChanged: own }, A);
+    expect(after.camera).toBe(own);
+    expect(after.cameras[A]).toBe(own);
+  });
+
+  test('events from a camera that is not connected are ignored', () => {
+    expect(applyEvent(two(), { StateChanged: a7 }, 'gone:1')).toEqual({});
+  });
+
+  test('both cameras saving DSC00001.JPG keep both captures, each naming its camera', () => {
+    let s = two();
+    s = step(s, { CaptureProgress: { filename: 'DSC00001.JPG', received: 1, total: 3 } }, A);
+    s = step(s, { CaptureProgress: { filename: 'DSC00001.JPG', received: 2, total: 3 } }, B);
+    expect(Object.keys(s.transfers).sort()).toEqual([`${A}/DSC00001.JPG`, `${B}/DSC00001.JPG`].sort());
+    const saved = (filename: string): CameraEvent => ({
+      CaptureSaved: { path: `/p/${filename}`, bytes: 3, filename, camera_filename: 'DSC00001.JPG' },
+    });
+    s = step(s, saved('DSC00001.JPG'), A);
+    expect(Object.keys(s.transfers)).toEqual([`${B}/DSC00001.JPG`]);
+    s = step(s, saved('DSC00001-1.JPG'), B);
+    expect(s.transfers).toEqual({});
+    expect(s.captures.map((c) => [c.filename, c.cameraId, c.cameraLabel])).toEqual([
+      ['DSC00001-1.JPG', B, 'ILCE-7M4'],
+      ['DSC00001.JPG', A, 'ZV-E10'],
+    ]);
+  });
+
+  test('reconnecting is tracked per camera and shown for the active one', () => {
+    let s = step(two(), { Reconnecting: { attempt: 2 } }, B);
+    expect(s.reconnecting).toBeNull();
+    expect(s.attempts).toEqual({ [B]: 2 });
+    expect(cameraBusy(s, B)).toBe(true);
+    expect(cameraBusy(s, A)).toBe(false);
+    s = step(s, 'Connected', B);
+    expect(s.attempts).toEqual({});
+    s = step(s, { Reconnecting: { attempt: 1 } }, A);
+    expect(s.reconnecting).toBe(1);
+  });
+
+  test('a busy camera is judged by its own transfers', () => {
+    const s = { ...two(), transfers: { [`${B}/DSC00002.JPG`]: { received: 1, total: 3 } } };
+    expect(cameraBusy(s, B)).toBe(true);
+    expect(cameraBusy(s, A)).toBe(false);
+  });
+
+  test('a final SSH failure on another camera ends only a run on that camera', () => {
+    const refused: CameraEvent = { Disconnected: { reason: 'the camera refused the username or password' } };
+    const onA = { ...two(), interval: start({ everyS: 5, count: null }, 0, A) };
+    const patch = applyEvent(onA, refused, B);
+    expect(patch.interval).toBeUndefined();
+    expect(patch.cameras?.[B].connected).toBe(false);
+    expect(patch.camera).toBeUndefined();
+    expect(applyEvent(onA, refused, A).interval).toBeNull();
   });
 });
 

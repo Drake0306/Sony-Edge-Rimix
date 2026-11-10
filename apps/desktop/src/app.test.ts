@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import cameraState from './fixtures/camera-state.json';
 import type { Actions } from './actions';
-import { eventToast, intervalTicker, startApp, toastConnecting } from './app';
+import { eventToast, intervalTicker, routeCameraEvent, startApp, toastConnecting } from './app';
 import type { CameraState } from './ipc';
 import { start } from './interval';
 import { createStore, initialState, type AppState } from './state';
@@ -169,6 +169,29 @@ describe('interval ticker', () => {
     }
   });
 
+  test('after a switch the run keeps shooting the camera it started on, judged by that camera', () => {
+    vi.useFakeTimers();
+    try {
+      const a7 = { ...camera, model: 'ILCE-7M4' };
+      const { store, actions, stop } = setup({ cameras: { A: camera, B: a7 }, activeId: 'A' });
+      store.set({ interval: start({ everyS: 2, count: null }, Date.now(), 'A') });
+      store.set({ activeId: 'B', camera: a7 });
+      vi.advanceTimersByTime(2000);
+      expect(actions.shoot).toHaveBeenCalledWith('A');
+      // The active camera recording does not hold up a run on the other one.
+      store.set({ camera: { ...a7, recording: true }, cameras: { A: camera, B: { ...a7, recording: true } } });
+      vi.advanceTimersByTime(2000);
+      expect(actions.shoot).toHaveBeenCalledTimes(2);
+      // Its own camera recording does.
+      store.set({ cameras: { A: { ...camera, recording: true }, B: a7 }, camera: a7 });
+      vi.advanceTimersByTime(2000);
+      expect(actions.shoot).toHaveBeenCalledTimes(2);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test('a link loss misses shots without ending the run, and the run picks up on reconnect', () => {
     vi.useFakeTimers();
     try {
@@ -185,5 +208,31 @@ describe('interval ticker', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('camera events', () => {
+  const camera = cameraState as unknown as CameraState;
+  const a7 = { ...camera, model: 'ILCE-7M4' };
+
+  test('while adding a camera, events from the connected ones still land but keep the connect screen', () => {
+    const store = createStore<AppState>({
+      ...initialState(), screen: 'connect', keepCameras: true, cameras: { A: camera, B: a7 }, activeId: 'A', camera,
+    });
+    const changed = { ...a7, battery: 5 };
+    routeCameraEvent(store, 'B', { StateChanged: changed }, () => {});
+    expect(store.get().cameras.B).toBe(changed);
+    const own = { ...camera, battery: 9 };
+    routeCameraEvent(store, 'A', { StateChanged: own }, () => {});
+    expect(store.get().camera).toBe(own);
+    expect(store.get().screen).toBe('connect');
+  });
+
+  test('on the connect screen after a disconnect, late state does not bring a camera back', () => {
+    const store = createStore<AppState>({ ...initialState(), screen: 'connect' });
+    routeCameraEvent(store, 'A', { StateChanged: camera }, () => {});
+    expect(store.get().camera).toBeNull();
+    expect(store.get().cameras).toEqual({});
+    expect(store.get().screen).toBe('connect');
   });
 });

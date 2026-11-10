@@ -7,9 +7,10 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::settings::{AppSettings, PresetValue};
-use crate::state::{self, AppState, ApplyOutcome, SshLogin};
+use crate::state::{self, AppState, ApplyOutcome, CameraId, CameraSummary, SshLogin};
 
-/// The Tauri event that carries each `CameraEvent` (except `Frame`) as JSON.
+/// The Tauri event that carries each `CameraEvent` (except `Frame`) as JSON,
+/// tagged with its camera: `{"camera_id": "...", "event": ...}`.
 pub const CAMERA_EVENT: &str = "camera-event";
 
 #[tauri::command]
@@ -17,9 +18,17 @@ pub async fn discover(timeout_ms: u64) -> Result<Vec<DiscoveredCamera>, String> 
     state::discover(timeout_ms).await
 }
 
-/// Connects (through the camera's SSH tunnel when `ssh` is given) and
-/// forwards the camera's events to the webview until it is disconnected or
-/// replaced.
+/// What `connect` gives the webview: the new camera's id and state.
+#[derive(serde::Serialize)]
+pub struct ConnectResult {
+    pub id: CameraId,
+    pub state: CameraState,
+}
+
+/// Connects (through the camera's SSH tunnel when `ssh` is given), makes it
+/// the active camera and forwards its events, tagged with its id, to the
+/// webview until it is disconnected or replaced. Other cameras stay
+/// connected unless `keep_others` is false.
 #[tauri::command]
 pub async fn connect(
     app: AppHandle,
@@ -27,76 +36,132 @@ pub async fn connect(
     ip: String,
     ssid: Option<String>,
     ssh: Option<SshLogin>,
-) -> Result<CameraState, String> {
-    let (camera_state, events) = state::connect(&state, &ip, ssid.as_deref(), ssh).await?;
-    tauri::async_runtime::spawn(state::forward_events(events, move |event| {
+    keep_others: Option<bool>,
+) -> Result<ConnectResult, String> {
+    let (id, camera_state, events) = state::connect(
+        &state,
+        &ip,
+        ssid.as_deref(),
+        ssh,
+        keep_others.unwrap_or(true),
+    )
+    .await?;
+    tauri::async_runtime::spawn(state::forward_events(id.clone(), events, move |event| {
         if let Err(e) = app.emit(CAMERA_EVENT, event) {
             tracing::warn!(error = %e, "cannot send a camera event to the window");
         }
     }));
-    Ok(camera_state)
+    Ok(ConnectResult {
+        id,
+        state: camera_state,
+    })
+}
+
+/// Disconnects the camera `camera_id` names, or the active one.
+#[tauri::command]
+pub async fn disconnect(
+    state: State<'_, AppState>,
+    camera_id: Option<CameraId>,
+) -> Result<(), String> {
+    state::disconnect(&state, camera_id).await
 }
 
 #[tauri::command]
-pub async fn disconnect(state: State<'_, AppState>) -> Result<(), String> {
-    state::disconnect(&state).await
+pub async fn disconnect_all(state: State<'_, AppState>) -> Result<(), String> {
+    state::disconnect_all(&state).await;
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn get_state(state: State<'_, AppState>) -> Result<Option<CameraState>, String> {
-    Ok(state::get_state(&state).await)
+pub async fn list_cameras(state: State<'_, AppState>) -> Result<Vec<CameraSummary>, String> {
+    Ok(state::list_cameras(&state).await)
+}
+
+#[tauri::command]
+pub async fn set_active_camera(state: State<'_, AppState>, id: CameraId) -> Result<(), String> {
+    state::set_active_camera(&state, id).await
+}
+
+/// Shoots every connected camera at once: `[id, error or null]` per camera.
+#[tauri::command]
+pub async fn shoot_all(
+    state: State<'_, AppState>,
+) -> Result<Vec<(CameraId, Option<String>)>, String> {
+    Ok(state::shoot_all(&state).await)
+}
+
+#[tauri::command]
+pub async fn get_state(
+    state: State<'_, AppState>,
+    camera_id: Option<CameraId>,
+) -> Result<Option<CameraState>, String> {
+    Ok(state::get_state(&state, camera_id).await)
 }
 
 #[tauri::command]
 pub async fn set_property(
     state: State<'_, AppState>,
+    camera_id: Option<CameraId>,
     code: u16,
     raw: serde_json::Value,
 ) -> Result<(), String> {
-    state::set_property(&state, code, raw).await
+    state::set_property(&state, camera_id, code, raw).await
 }
 
 #[tauri::command]
 pub async fn apply_values(
     state: State<'_, AppState>,
+    camera_id: Option<CameraId>,
     values: Vec<PresetValue>,
 ) -> Result<Vec<ApplyOutcome>, String> {
-    state::apply_values(&state, values).await
+    state::apply_values(&state, camera_id, values).await
 }
 
 #[tauri::command]
 pub async fn step_property(
     state: State<'_, AppState>,
+    camera_id: Option<CameraId>,
     code: u16,
     delta: i32,
 ) -> Result<(), String> {
-    state::step_property(&state, code, delta).await
+    state::step_property(&state, camera_id, code, delta).await
 }
 
 #[tauri::command]
-pub async fn shoot(state: State<'_, AppState>) -> Result<(), String> {
-    state::shoot(&state).await
+pub async fn shoot(state: State<'_, AppState>, camera_id: Option<CameraId>) -> Result<(), String> {
+    state::shoot(&state, camera_id).await
 }
 
 #[tauri::command]
-pub async fn focus(state: State<'_, AppState>) -> Result<(), String> {
-    state::focus(&state).await
+pub async fn focus(state: State<'_, AppState>, camera_id: Option<CameraId>) -> Result<(), String> {
+    state::focus(&state, camera_id).await
 }
 
 #[tauri::command]
-pub async fn toggle_record(state: State<'_, AppState>) -> Result<(), String> {
-    state::toggle_record(&state).await
+pub async fn toggle_record(
+    state: State<'_, AppState>,
+    camera_id: Option<CameraId>,
+) -> Result<(), String> {
+    state::toggle_record(&state, camera_id).await
 }
 
-/// The latest JPEG as a raw body (an ArrayBuffer in the webview).
+/// The camera's latest JPEG as a raw body (an ArrayBuffer in the webview).
 #[tauri::command]
-pub async fn live_view_frame(state: State<'_, AppState>) -> Result<Response, String> {
-    Ok(Response::new(state::live_view_frame(&state).await?))
+pub async fn live_view_frame(
+    state: State<'_, AppState>,
+    camera_id: Option<CameraId>,
+) -> Result<Response, String> {
+    Ok(Response::new(
+        state::live_view_frame(&state, camera_id).await?,
+    ))
 }
 
 #[tauri::command]
-pub async fn live_view_meta(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    state::live_view_meta(&state).await
+pub async fn live_view_meta(
+    state: State<'_, AppState>,
+    camera_id: Option<CameraId>,
+) -> Result<serde_json::Value, String> {
+    state::live_view_meta(&state, camera_id).await
 }
 
 #[tauri::command]

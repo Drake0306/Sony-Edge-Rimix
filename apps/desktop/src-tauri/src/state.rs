@@ -21,11 +21,62 @@ use rimix_wifi::{SystemRunner, Wifi};
 /// The error every camera command gives while no camera is connected.
 pub const NOT_CONNECTED: &str = "Not connected to a camera";
 
-/// Managed Tauri state: the camera (when connected) and the settings.
-pub struct AppState {
+/// Which camera a command is for: the camera's Wi-Fi name when it was
+/// connected through its network, else its `ip:port`. Serialised as a plain
+/// string.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct CameraId(pub String);
+
+impl std::fmt::Display for CameraId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// The id for a camera at `addr`, reached through the network `ssid` if known.
+pub fn camera_id(addr: SocketAddr, ssid: Option<&str>) -> CameraId {
+    CameraId(ssid.map_or_else(|| addr.to_string(), str::to_string))
+}
+
+/// One connected camera.
+pub struct Slot {
+    pub id: CameraId,
+    /// Where the camera answers PTP/IP. Two cameras cannot answer at one
+    /// address at once, so a connect there replaces this slot.
+    pub addr: SocketAddr,
+    /// The camera's model, as the UI names it.
+    pub label: String,
     /// Held in an `Arc` so a long command (a shot) does not keep the lock
     /// and stall live view polling.
-    pub camera: tokio::sync::Mutex<Option<Arc<Camera>>>,
+    pub camera: Arc<Camera>,
+}
+
+/// A camera event as the webview receives it, naming the camera it came
+/// from: `{"camera_id": "...", "event": {...}}`.
+#[derive(Clone, Copy, serde::Serialize)]
+pub struct TaggedEvent<'a> {
+    pub camera_id: &'a CameraId,
+    pub event: &'a CameraEvent,
+}
+
+/// One row of [`list_cameras`].
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct CameraSummary {
+    pub id: CameraId,
+    pub label: String,
+    pub connected: bool,
+    pub secured: bool,
+    pub active: bool,
+}
+
+/// Managed Tauri state: the connected cameras, which one the UI drives, and
+/// the settings.
+pub struct AppState {
+    /// In the order they were connected.
+    pub cameras: tokio::sync::Mutex<Vec<Slot>>,
+    /// The camera commands act on when they name none.
+    pub active: StdMutex<Option<CameraId>>,
     pub settings: StdMutex<AppSettings>,
     pub guid: [u8; 16],
     pub settings_path: PathBuf,
@@ -49,7 +100,8 @@ impl AppState {
     pub fn new(guid: [u8; 16], settings_path: PathBuf) -> Self {
         let settings = settings::load(&settings_path);
         AppState {
-            camera: tokio::sync::Mutex::new(None),
+            cameras: tokio::sync::Mutex::new(Vec::new()),
+            active: StdMutex::new(None),
             settings: StdMutex::new(settings),
             guid,
             settings_path,
@@ -57,12 +109,31 @@ impl AppState {
         }
     }
 
-    async fn camera(&self) -> Result<Arc<Camera>, String> {
-        self.camera
-            .lock()
-            .await
-            .clone()
-            .ok_or_else(|| NOT_CONNECTED.to_string())
+    /// The camera `id` names, or the active one for `None`.
+    async fn find(&self, id: Option<&CameraId>) -> Option<Arc<Camera>> {
+        let id = match id {
+            Some(id) => id.clone(),
+            None => lock(&self.active).clone()?,
+        };
+        let slots = self.cameras.lock().await;
+        slots.iter().find(|s| s.id == id).map(|s| s.camera.clone())
+    }
+
+    /// Like [`AppState::find`], failing with [`NOT_CONNECTED`].
+    async fn camera(&self, id: Option<&CameraId>) -> Result<Arc<Camera>, String> {
+        self.find(id).await.ok_or_else(|| NOT_CONNECTED.to_string())
+    }
+
+    /// Takes the slot `id` out; if it was active, the slot now at its place
+    /// (or the last one) becomes active. Call with the slots locked.
+    fn remove_slot(&self, slots: &mut Vec<Slot>, id: &CameraId) -> Option<Slot> {
+        let at = slots.iter().position(|s| &s.id == id)?;
+        let slot = slots.remove(at);
+        let mut active = lock(&self.active);
+        if active.as_ref() == Some(id) {
+            *active = slots.get(at).or_else(|| slots.last()).map(|s| s.id.clone());
+        }
+        Some(slot)
     }
 }
 
@@ -269,21 +340,27 @@ fn ssh_port_from(var: Option<String>) -> u16 {
     var.and_then(|v| v.trim().parse().ok()).unwrap_or(22)
 }
 
-/// Connects to the camera at `ip`, replacing any camera already connected,
-/// and remembers it in the settings with its Wi-Fi name (`ssid`, never a
+/// Connects to the camera at `ip` and makes it the active camera. A camera
+/// already connected under the same [`CameraId`] or at the same address is
+/// replaced; the others stay connected unless `keep_others` is false.
+/// Remembers the camera in the settings with its Wi-Fi name (`ssid`, never a
 /// password) when known. With `ssh`, the session runs through the camera's
 /// Access Authentication tunnel and the username and confirmed fingerprint
-/// are remembered too. Returns its state and a subscription to its events
-/// for [`forward_events`].
+/// are remembered too. Returns its id, its state and a subscription to its
+/// events for [`forward_events`].
 pub async fn connect(
     state: &AppState,
     ip: &str,
     ssid: Option<&str>,
     ssh: Option<SshLogin>,
-) -> Result<(CameraState, broadcast::Receiver<CameraEvent>), String> {
+    keep_others: bool,
+) -> Result<Connected, String> {
     let port = ssh_port_from(std::env::var("RIMIX_SSH_PORT").ok());
-    connect_via(state, ip, ssid, ssh, port).await
+    connect_via(state, ip, ssid, ssh, port, keep_others).await
 }
+
+/// What [`connect`] gives: the camera's id, its state and its events.
+pub type Connected = (CameraId, CameraState, broadcast::Receiver<CameraEvent>);
 
 /// [`connect`] with the camera's SSH port given.
 pub(crate) async fn connect_via(
@@ -292,8 +369,10 @@ pub(crate) async fn connect_via(
     ssid: Option<&str>,
     ssh: Option<SshLogin>,
     ssh_port: u16,
-) -> Result<(CameraState, broadcast::Receiver<CameraEvent>), String> {
+    keep_others: bool,
+) -> Result<Connected, String> {
     let addr = parse_addr(ip)?;
+    let id = camera_id(addr, ssid);
     let remembered_login = ssh
         .as_ref()
         .and_then(|l| Some((l.user.clone(), l.fingerprint.clone()?)));
@@ -303,9 +382,26 @@ pub(crate) async fn connect_via(
         expected_fingerprint: login.fingerprint,
         port: ssh_port,
     });
-    let previous = state.camera.lock().await.take();
-    if let Some(old) = previous {
-        old.disconnect().await;
+    // The camera takes one session at a time: an earlier connection to it,
+    // under this id or at this address, goes first.
+    let previous: Vec<Slot> = {
+        let mut slots = state.cameras.lock().await;
+        if keep_others {
+            let same: Vec<CameraId> = slots
+                .iter()
+                .filter(|s| s.id == id || s.addr == addr)
+                .map(|s| s.id.clone())
+                .collect();
+            same.iter()
+                .filter_map(|old| state.remove_slot(&mut slots, old))
+                .collect()
+        } else {
+            *lock(&state.active) = None;
+            std::mem::take(&mut *slots)
+        }
+    };
+    for old in previous {
+        old.camera.disconnect().await;
     }
     let destination = lock(&state.settings).destination();
     let before_reconnect = ssid.map(|name| rejoin_hook(state.wifi.clone(), name.to_string(), addr));
@@ -330,10 +426,21 @@ pub(crate) async fn connect_via(
     })?;
     let events = camera.subscribe();
     let camera_state = camera.state();
-    // Another connect may have finished while this one waited.
-    let replaced = state.camera.lock().await.replace(Arc::new(camera));
+    // Another connect to this camera may have finished while this one waited.
+    let replaced = {
+        let mut slots = state.cameras.lock().await;
+        let replaced = state.remove_slot(&mut slots, &id);
+        slots.push(Slot {
+            id: id.clone(),
+            addr,
+            label: camera_state.model.clone(),
+            camera: Arc::new(camera),
+        });
+        *lock(&state.active) = Some(id.clone());
+        replaced
+    };
     if let Some(old) = replaced {
-        old.disconnect().await;
+        old.camera.disconnect().await;
     }
     let snapshot = {
         let mut s = lock(&state.settings);
@@ -346,48 +453,131 @@ pub(crate) async fn connect_via(
     if let Err(e) = settings::save(&state.settings_path, &snapshot) {
         tracing::warn!(error = %e, "cannot save settings after connecting");
     }
-    Ok((camera_state, events))
+    Ok((id, camera_state, events))
 }
 
-/// Hands every event except `Frame` to `emit` (the UI polls frames instead)
-/// until the camera is disconnected or replaced and its channel closes.
+/// Hands every event except `Frame` to `emit`, tagged with `camera_id`
+/// (the UI polls frames instead), until the camera is disconnected or
+/// replaced and its channel closes.
 pub async fn forward_events(
+    camera_id: CameraId,
     mut rx: broadcast::Receiver<CameraEvent>,
-    mut emit: impl FnMut(&CameraEvent),
+    mut emit: impl FnMut(TaggedEvent<'_>),
 ) {
     loop {
         match rx.recv().await {
             Ok(CameraEvent::Frame) => {}
-            Ok(event) => emit(&event),
+            Ok(event) => emit(TaggedEvent {
+                camera_id: &camera_id,
+                event: &event,
+            }),
             Err(RecvError::Lagged(missed)) => {
-                tracing::warn!(missed, "camera events fell behind");
+                tracing::warn!(%camera_id, missed, "camera events fell behind");
             }
             Err(RecvError::Closed) => break,
         }
     }
 }
 
-pub async fn disconnect(state: &AppState) -> Result<(), String> {
-    let camera = state.camera.lock().await.take();
-    if let Some(camera) = camera {
-        camera.disconnect().await;
+/// Disconnects the camera `id` names (the active one for `None`); when it
+/// was active, the next remaining camera becomes active.
+pub async fn disconnect(state: &AppState, id: Option<CameraId>) -> Result<(), String> {
+    let slot = {
+        let mut slots = state.cameras.lock().await;
+        let id = id.or_else(|| lock(&state.active).clone());
+        id.and_then(|id| state.remove_slot(&mut slots, &id))
+    };
+    if let Some(slot) = slot {
+        slot.camera.disconnect().await;
     }
     Ok(())
 }
 
-pub async fn get_state(state: &AppState) -> Option<CameraState> {
-    state.camera.lock().await.as_ref().map(|c| c.state())
+/// Disconnects every camera.
+pub async fn disconnect_all(state: &AppState) {
+    let slots = {
+        let mut slots = state.cameras.lock().await;
+        *lock(&state.active) = None;
+        std::mem::take(&mut *slots)
+    };
+    for slot in slots {
+        slot.camera.disconnect().await;
+    }
+}
+
+pub async fn get_state(state: &AppState, id: Option<CameraId>) -> Option<CameraState> {
+    state.find(id.as_ref()).await.map(|c| c.state())
+}
+
+/// The connected cameras in the order they were connected.
+pub async fn list_cameras(state: &AppState) -> Vec<CameraSummary> {
+    let active = lock(&state.active).clone();
+    let slots = state.cameras.lock().await;
+    slots
+        .iter()
+        .map(|slot| {
+            let s = slot.camera.state();
+            CameraSummary {
+                id: slot.id.clone(),
+                label: slot.label.clone(),
+                connected: s.connected,
+                secured: s.secured,
+                active: active.as_ref() == Some(&slot.id),
+            }
+        })
+        .collect()
+}
+
+/// Makes `id` the camera that commands without an id act on.
+pub async fn set_active_camera(state: &AppState, id: CameraId) -> Result<(), String> {
+    let slots = state.cameras.lock().await;
+    if !slots.iter().any(|s| s.id == id) {
+        return Err(NOT_CONNECTED.to_string());
+    }
+    *lock(&state.active) = Some(id);
+    Ok(())
+}
+
+/// Shoots every connected camera at once; one entry per camera, with the
+/// error when its shot failed.
+pub async fn shoot_all(state: &AppState) -> Vec<(CameraId, Option<String>)> {
+    let cameras: Vec<(CameraId, Arc<Camera>)> = state
+        .cameras
+        .lock()
+        .await
+        .iter()
+        .map(|s| (s.id.clone(), s.camera.clone()))
+        .collect();
+    // Spawned so the shots run concurrently (no `join_all` without the
+    // futures crate); awaited in order afterwards.
+    let shots: Vec<_> = cameras
+        .into_iter()
+        .map(|(id, camera)| {
+            let shot = tokio::spawn(async move { camera.shoot().await.map_err(|e| e.to_string()) });
+            (id, shot)
+        })
+        .collect();
+    let mut out = Vec::with_capacity(shots.len());
+    for (id, shot) in shots {
+        let error = match shot.await {
+            Ok(result) => result.err(),
+            Err(e) => Some(e.to_string()),
+        };
+        out.push((id, error));
+    }
+    out
 }
 
 /// Sets property `code` to `raw`, a PTP value as serde writes it, e.g.
 /// `{"U32": 1600}`.
 pub async fn set_property(
     state: &AppState,
+    id: Option<CameraId>,
     code: u16,
     raw: serde_json::Value,
 ) -> Result<(), String> {
     let value: PtpValue = serde_json::from_value(raw).map_err(|e| format!("Invalid value: {e}"))?;
-    let camera = state.camera().await?;
+    let camera = state.camera(id.as_ref()).await?;
     camera.set(code, value).await.map_err(|e| e.to_string())
 }
 
@@ -409,9 +599,10 @@ pub const APPLY_RETRY_WAIT: Duration = Duration::from_millis(300);
 /// [`APPLY_RETRY_WAIT`], so only values refused twice are reported.
 pub async fn apply_values(
     state: &AppState,
+    id: Option<CameraId>,
     values: Vec<PresetValue>,
 ) -> Result<Vec<ApplyOutcome>, String> {
-    let camera = state.camera().await?;
+    let camera = state.camera(id.as_ref()).await?;
     let set = |code: u16, raw: PtpValue| {
         let camera = camera.clone();
         async move { camera.set(code, raw).await.map_err(|e| e.to_string()) }
@@ -450,29 +641,34 @@ where
     out
 }
 
-pub async fn step_property(state: &AppState, code: u16, delta: i32) -> Result<(), String> {
-    let camera = state.camera().await?;
+pub async fn step_property(
+    state: &AppState,
+    id: Option<CameraId>,
+    code: u16,
+    delta: i32,
+) -> Result<(), String> {
+    let camera = state.camera(id.as_ref()).await?;
     camera.step(code, delta).await.map_err(|e| e.to_string())
 }
 
-pub async fn shoot(state: &AppState) -> Result<(), String> {
-    let camera = state.camera().await?;
+pub async fn shoot(state: &AppState, id: Option<CameraId>) -> Result<(), String> {
+    let camera = state.camera(id.as_ref()).await?;
     camera.shoot().await.map_err(|e| e.to_string())
 }
 
-pub async fn focus(state: &AppState) -> Result<(), String> {
-    let camera = state.camera().await?;
+pub async fn focus(state: &AppState, id: Option<CameraId>) -> Result<(), String> {
+    let camera = state.camera(id.as_ref()).await?;
     camera.focus().await.map_err(|e| e.to_string())
 }
 
-pub async fn toggle_record(state: &AppState) -> Result<(), String> {
-    let camera = state.camera().await?;
+pub async fn toggle_record(state: &AppState, id: Option<CameraId>) -> Result<(), String> {
+    let camera = state.camera(id.as_ref()).await?;
     camera.toggle_record().await.map_err(|e| e.to_string())
 }
 
-/// The latest live view JPEG; empty when there is none or no camera.
-pub async fn live_view_frame(state: &AppState) -> Result<Vec<u8>, String> {
-    let camera = state.camera.lock().await.clone();
+/// The camera's latest live view JPEG; empty when there is none or no camera.
+pub async fn live_view_frame(state: &AppState, id: Option<CameraId>) -> Result<Vec<u8>, String> {
+    let camera = state.find(id.as_ref()).await;
     Ok(camera
         .and_then(|c| c.latest_frame())
         .map(|f| f.jpeg.clone())
@@ -481,8 +677,11 @@ pub async fn live_view_frame(state: &AppState) -> Result<Vec<u8>, String> {
 
 /// Focus frames and level for the latest frame, and the frame rate:
 /// `{ "focus_frames": [...], "level_deg": number|null, "fps": number }`.
-pub async fn live_view_meta(state: &AppState) -> Result<serde_json::Value, String> {
-    let camera = state.camera.lock().await.clone();
+pub async fn live_view_meta(
+    state: &AppState,
+    id: Option<CameraId>,
+) -> Result<serde_json::Value, String> {
+    let camera = state.find(id.as_ref()).await;
     let frame = camera.as_ref().and_then(|c| c.latest_frame());
     let fps = camera.map_or(0.0, |c| c.state().live_view_fps);
     Ok(serde_json::json!({
@@ -496,13 +695,13 @@ pub fn get_settings(state: &AppState) -> AppSettings {
     lock(&state.settings).clone()
 }
 
-/// Stores the settings and points a connected camera at the new destination.
+/// Stores the settings and points every connected camera at the new destination.
 pub async fn save_settings(state: &AppState, s: AppSettings) -> Result<(), String> {
     settings::save(&state.settings_path, &s).map_err(|e| format!("Cannot save settings: {e}"))?;
     let destination = s.destination();
     *lock(&state.settings) = s;
-    if let Some(camera) = state.camera.lock().await.as_ref() {
-        camera.set_destination(destination);
+    for slot in state.cameras.lock().await.iter() {
+        slot.camera.set_destination(destination.clone());
     }
     Ok(())
 }
@@ -594,13 +793,17 @@ mod tests {
         let sim = spawn(SimConfig::default()).await;
         let state = app_state(dir.path());
         let ip = sim.addr.to_string();
-        connect(&state, &ip, Some("DIRECT-x"), None).await.unwrap();
-        let camera = state.camera.lock().await.clone().unwrap();
+        connect(&state, &ip, Some("DIRECT-x"), None, true)
+            .await
+            .unwrap();
+        let camera = state.camera(None).await.unwrap();
         assert!(camera.has_reconnect_hook());
         drop(camera);
-        connect(&state, &ip, None, None).await.unwrap();
-        let camera = state.camera.lock().await.clone().unwrap();
+        // Another id (the address), so the first slot is dropped explicitly.
+        connect(&state, &ip, None, None, false).await.unwrap();
+        let camera = state.camera(None).await.unwrap();
         assert!(!camera.has_reconnect_hook());
+        assert_eq!(state.cameras.lock().await.len(), 1);
         drop(camera);
         sim.events.send(SimCommand::Shutdown).await.unwrap();
     }
@@ -608,14 +811,14 @@ mod tests {
     async fn connected(dir: &Path) -> (SimHandle, AppState, CameraState) {
         let sim = spawn(SimConfig::default()).await;
         let state = app_state(dir);
-        let (camera_state, _rx) = connect(&state, &sim.addr.to_string(), None, None)
+        let (_, camera_state, _rx) = connect(&state, &sim.addr.to_string(), None, None, true)
             .await
             .unwrap();
         (sim, state, camera_state)
     }
 
     async fn stop(sim: SimHandle, state: &AppState) {
-        disconnect(state).await.unwrap();
+        disconnect(state, None).await.unwrap();
         sim.events.send(SimCommand::Shutdown).await.unwrap();
     }
 
@@ -643,7 +846,7 @@ mod tests {
         let sim = spawn(SimConfig::default()).await;
         let state = app_state(tmp.path());
         let ip = sim.addr.to_string();
-        let (camera_state, _rx) = connect(&state, &ip, Some("DIRECT-abc1:ZV-E10"), None)
+        let (_, camera_state, _rx) = connect(&state, &ip, Some("DIRECT-abc1:ZV-E10"), None, true)
             .await
             .unwrap();
         assert!(camera_state.connected);
@@ -657,9 +860,9 @@ mod tests {
             Some("DIRECT-abc1:ZV-E10")
         );
         assert_eq!(get_settings(&state), saved);
-        assert!(get_state(&state).await.unwrap().connected);
+        assert!(get_state(&state, None).await.unwrap().connected);
         stop(sim, &state).await;
-        assert_eq!(get_state(&state).await, None);
+        assert_eq!(get_state(&state, None).await, None);
     }
 
     const SSH_USER: &str = "cam";
@@ -696,20 +899,28 @@ mod tests {
         let md5 = sim.fingerprint_md5.clone().unwrap();
 
         // No fingerprint confirmed yet: the exact line the front end parses.
-        let err = connect_via(&state, &ip, None, Some(login(SSH_PASSWORD, None)), port)
-            .await
-            .unwrap_err();
+        let err = connect_via(
+            &state,
+            &ip,
+            None,
+            Some(login(SSH_PASSWORD, None)),
+            port,
+            true,
+        )
+        .await
+        .unwrap_err();
         assert_eq!(err, format!("HOSTKEY {sha256} {md5}"));
         assert!(settings::load(&state.settings_path)
             .recent_cameras
             .is_empty());
 
-        let (camera_state, _rx) = connect_via(
+        let (_, camera_state, _rx) = connect_via(
             &state,
             &ip,
             None,
             Some(login(SSH_PASSWORD, Some(sha256.clone()))),
             port,
+            true,
         )
         .await
         .unwrap();
@@ -744,11 +955,12 @@ mod tests {
             None,
             Some(login(SSH_PASSWORD, Some(stored.into()))),
             port,
+            true,
         )
         .await
         .unwrap_err();
         assert_eq!(err, format!("HOSTKEY_CHANGED {stored} {actual}"));
-        assert!(state.camera.lock().await.is_none());
+        assert!(state.cameras.lock().await.is_empty());
         sim.events.send(SimCommand::Shutdown).await.unwrap();
     }
 
@@ -872,7 +1084,7 @@ mod tests {
         let port = sim.ssh_addr.unwrap().port();
         let ip = sim.addr.ip().to_string();
         let fp = sim.fingerprint_sha256.clone();
-        let err = connect_via(&state, &ip, None, Some(login("wrong", fp)), port)
+        let err = connect_via(&state, &ip, None, Some(login("wrong", fp)), port, true)
             .await
             .unwrap_err();
         assert_eq!(
@@ -894,34 +1106,36 @@ mod tests {
     async fn commands_fail_plainly_when_not_connected() {
         let tmp = tempfile::tempdir().unwrap();
         let state = app_state(tmp.path());
-        assert_eq!(shoot(&state).await.unwrap_err(), NOT_CONNECTED);
-        assert!(live_view_frame(&state).await.unwrap().is_empty());
-        let meta = live_view_meta(&state).await.unwrap();
+        assert_eq!(shoot(&state, None).await.unwrap_err(), NOT_CONNECTED);
+        assert!(live_view_frame(&state, None).await.unwrap().is_empty());
+        let meta = live_view_meta(&state, None).await.unwrap();
         assert_eq!(
             meta,
             serde_json::json!({ "focus_frames": [], "level_deg": null, "fps": 0.0 })
         );
-        disconnect(&state).await.unwrap();
+        disconnect(&state, None).await.unwrap();
     }
 
     #[tokio::test]
     async fn set_and_step_property_change_the_camera() {
         let tmp = tempfile::tempdir().unwrap();
         let (sim, state, before) = connected(tmp.path()).await;
-        set_property(&state, PROP_ISO, serde_json::json!({ "U32": 1600 }))
+        set_property(&state, None, PROP_ISO, serde_json::json!({ "U32": 1600 }))
             .await
             .unwrap();
-        let after = get_state(&state).await.unwrap();
+        let after = get_state(&state, None).await.unwrap();
         assert_eq!(short_of(&after, PROP_ISO), "1600");
         // A value that is not a PTP value is refused before the camera.
-        let err = set_property(&state, PROP_ISO, serde_json::json!(1600))
+        let err = set_property(&state, None, PROP_ISO, serde_json::json!(1600))
             .await
             .unwrap_err();
         assert!(err.starts_with("Invalid value"), "{err}");
 
         assert_eq!(short_of(&before, PROP_SHUTTER_SPEED), "1/125");
-        step_property(&state, PROP_SHUTTER_SPEED, 1).await.unwrap();
-        let stepped = get_state(&state).await.unwrap();
+        step_property(&state, None, PROP_SHUTTER_SPEED, 1)
+            .await
+            .unwrap();
+        let stepped = get_state(&state, None).await.unwrap();
         assert_ne!(short_of(&stepped, PROP_SHUTTER_SPEED), "1/125");
         stop(sim, &state).await;
     }
@@ -945,7 +1159,7 @@ mod tests {
                 raw: PtpValue::U32(66536),
             },
         ];
-        let out = apply_values(&state, values).await.unwrap();
+        let out = apply_values(&state, None, values).await.unwrap();
         assert_eq!(out.len(), 3);
         assert_eq!(out[0].code, PROP_ISO);
         assert!(out[0].error.is_none(), "{:?}", out[0].error);
@@ -953,7 +1167,7 @@ mod tests {
         assert!(out[1].error.is_some());
         assert_eq!(out[2].code, PROP_SHUTTER_SPEED);
         assert!(out[2].error.is_none(), "{:?}", out[2].error);
-        let after = get_state(&state).await.unwrap();
+        let after = get_state(&state, None).await.unwrap();
         assert_eq!(short_of(&after, PROP_ISO), "1600");
         assert_ne!(short_of(&after, PROP_SHUTTER_SPEED), "1/125");
         stop(sim, &state).await;
@@ -963,7 +1177,7 @@ mod tests {
     async fn apply_values_tries_a_refused_value_again_before_reporting_it() {
         let tmp = tempfile::tempdir().unwrap();
         let (sim, state, _) = connected(tmp.path()).await;
-        let camera = state.camera().await.unwrap();
+        let camera = state.camera(None).await.unwrap();
         let attempts = Arc::new(StdMutex::new(Vec::new()));
         let log = attempts.clone();
         let set = |code: u16, raw: PtpValue| {
@@ -1040,7 +1254,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let state = app_state(tmp.path());
         assert_eq!(
-            apply_values(&state, vec![]).await.unwrap_err(),
+            apply_values(&state, None, vec![]).await.unwrap_err(),
             NOT_CONNECTED
         );
     }
@@ -1061,8 +1275,12 @@ mod tests {
     async fn shoot_saves_into_the_destination_from_settings() {
         let tmp = tempfile::tempdir().unwrap();
         let (sim, state, _) = connected(tmp.path()).await;
-        shoot(&state).await.unwrap();
-        assert!(get_state(&state).await.unwrap().last_shot_at.is_some());
+        shoot(&state, None).await.unwrap();
+        assert!(get_state(&state, None)
+            .await
+            .unwrap()
+            .last_shot_at
+            .is_some());
         let shots = tmp.path().join("shots");
         timeout(WAIT, async {
             while std::fs::read_dir(&shots).map_or(0, |d| d.count()) == 0 {
@@ -1071,7 +1289,7 @@ mod tests {
         })
         .await
         .expect("no shot saved");
-        focus(&state).await.unwrap();
+        focus(&state, None).await.unwrap();
         stop(sim, &state).await;
     }
 
@@ -1081,7 +1299,7 @@ mod tests {
         let (sim, state, _) = connected(tmp.path()).await;
         let jpeg = timeout(WAIT, async {
             loop {
-                let jpeg = live_view_frame(&state).await.unwrap();
+                let jpeg = live_view_frame(&state, None).await.unwrap();
                 if !jpeg.is_empty() {
                     return jpeg;
                 }
@@ -1091,7 +1309,7 @@ mod tests {
         .await
         .expect("no live view frame");
         assert_eq!(&jpeg[..2], &[0xFF, 0xD8]);
-        let meta = live_view_meta(&state).await.unwrap();
+        let meta = live_view_meta(&state, None).await.unwrap();
         assert!(meta["focus_frames"].is_array(), "{meta}");
         assert!(meta["fps"].is_number(), "{meta}");
         assert!(meta.get("level_deg").is_some(), "{meta}");
@@ -1103,17 +1321,19 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let sim = spawn(SimConfig::default()).await;
         let state = app_state(tmp.path());
-        let (_, rx) = connect(&state, &sim.addr.to_string(), None, None)
+        let (id, _, rx) = connect(&state, &sim.addr.to_string(), None, None, true)
             .await
             .unwrap();
         let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink = seen.clone();
-        let forwarder = tokio::spawn(forward_events(rx, move |ev| {
-            sink.lock().unwrap().push(ev.clone())
+        let expected = id.clone();
+        let forwarder = tokio::spawn(forward_events(id, rx, move |ev| {
+            assert_eq!(ev.camera_id, &expected);
+            sink.lock().unwrap().push(ev.event.clone())
         }));
         // Let some live view frames go by, then change something.
         tokio::time::sleep(Duration::from_millis(300)).await;
-        set_property(&state, PROP_ISO, serde_json::json!({ "U32": 1600 }))
+        set_property(&state, None, PROP_ISO, serde_json::json!({ "U32": 1600 }))
             .await
             .unwrap();
         stop(sim, &state).await;
@@ -1141,7 +1361,7 @@ mod tests {
         save_settings(&state, s.clone()).await.unwrap();
         assert_eq!(settings::load(&state.settings_path), s);
         assert_eq!(get_settings(&state), s);
-        shoot(&state).await.unwrap();
+        shoot(&state, None).await.unwrap();
         let moved = tmp.path().join("elsewhere");
         timeout(WAIT, async {
             while std::fs::read_dir(&moved).map_or(0, |d| d.count()) == 0 {
@@ -1212,6 +1432,7 @@ mod tests {
     /// `src/ipc.test.ts` checks against the TypeScript type guards.
     #[test]
     fn state_changed_event_json_is_stable() {
+        let id = CameraId("192.168.122.1:15740".into());
         let event = CameraEvent::StateChanged(CameraState {
             connected: true,
             secured: true,
@@ -1236,8 +1457,12 @@ mod tests {
             live_view_fps: 29.5,
             last_shot_at: None,
         });
+        let tagged = TaggedEvent {
+            camera_id: &id,
+            event: &event,
+        };
         assert_eq!(
-            serde_json::to_string(&event).unwrap(),
+            serde_json::to_string(&tagged).unwrap(),
             STATE_CHANGED_FIXTURE.trim()
         );
         assert_eq!(
@@ -1259,8 +1484,13 @@ mod tests {
             filename: "DSC00001-1.JPG".into(),
             camera_filename: "DSC00001.JPG".into(),
         });
+        let id = CameraId("192.168.122.1:15740".into());
+        let tagged = TaggedEvent {
+            camera_id: &id,
+            event: &event,
+        };
         assert_eq!(
-            serde_json::to_string(&event).unwrap(),
+            serde_json::to_string(&tagged).unwrap(),
             CAPTURE_SAVED_FIXTURE.trim()
         );
     }
@@ -1341,5 +1571,261 @@ mod tests {
             current_network(&state).await.unwrap().as_deref(),
             Some("DIRECT-abc1:ZV-E10")
         );
+    }
+
+    async fn two_sims() -> (SimHandle, SimHandle) {
+        (
+            spawn(SimConfig::default()).await,
+            spawn(SimConfig {
+                model: "ILCE-7M4".into(),
+                ..SimConfig::default()
+            })
+            .await,
+        )
+    }
+
+    async fn shutdown(sims: [SimHandle; 2], state: &AppState) {
+        disconnect_all(state).await;
+        for sim in sims {
+            sim.events.send(SimCommand::Shutdown).await.unwrap();
+        }
+    }
+
+    #[test]
+    fn the_id_is_the_network_name_else_the_address() {
+        let addr: SocketAddr = "192.168.122.1:15740".parse().unwrap();
+        assert_eq!(
+            camera_id(addr, Some("DIRECT-ab:ZV-E10")).0,
+            "DIRECT-ab:ZV-E10"
+        );
+        assert_eq!(camera_id(addr, None).0, "192.168.122.1:15740");
+        assert_eq!(
+            serde_json::to_string(&CameraId("x".into())).unwrap(),
+            r#""x""#
+        );
+    }
+
+    #[tokio::test]
+    async fn two_cameras_make_two_slots_and_the_newest_is_active() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (a, b) = two_sims().await;
+        let state = app_state(tmp.path());
+        let (id_a, state_a, _ra) = connect(&state, &a.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        let (id_b, state_b, _rb) = connect(&state, &b.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        assert_eq!(id_a.0, a.addr.to_string());
+        assert_eq!(id_b.0, b.addr.to_string());
+        assert_eq!(
+            (state_a.model.as_str(), state_b.model.as_str()),
+            ("ZV-E10", "ILCE-7M4")
+        );
+        let list = list_cameras(&state).await;
+        assert_eq!(
+            list,
+            vec![
+                CameraSummary {
+                    id: id_a.clone(),
+                    label: "ZV-E10".into(),
+                    connected: true,
+                    secured: false,
+                    active: false,
+                },
+                CameraSummary {
+                    id: id_b.clone(),
+                    label: "ILCE-7M4".into(),
+                    connected: true,
+                    secured: false,
+                    active: true,
+                },
+            ]
+        );
+        // None is the active camera; an id picks that one.
+        assert_eq!(get_state(&state, None).await.unwrap().model, "ILCE-7M4");
+        assert_eq!(
+            get_state(&state, Some(id_a.clone())).await.unwrap().model,
+            "ZV-E10"
+        );
+        set_property(
+            &state,
+            Some(id_a.clone()),
+            PROP_ISO,
+            serde_json::json!({ "U32": 1600 }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            short_of(
+                &get_state(&state, Some(id_a.clone())).await.unwrap(),
+                PROP_ISO
+            ),
+            "1600"
+        );
+        assert_ne!(
+            short_of(&get_state(&state, None).await.unwrap(), PROP_ISO),
+            "1600"
+        );
+
+        set_active_camera(&state, id_a.clone()).await.unwrap();
+        assert_eq!(get_state(&state, None).await.unwrap().model, "ZV-E10");
+        let unknown = CameraId("nope".into());
+        assert_eq!(
+            set_active_camera(&state, unknown.clone())
+                .await
+                .unwrap_err(),
+            NOT_CONNECTED
+        );
+        assert_eq!(
+            shoot(&state, Some(unknown)).await.unwrap_err(),
+            NOT_CONNECTED
+        );
+        shutdown([a, b], &state).await;
+        assert!(list_cameras(&state).await.is_empty());
+        assert_eq!(get_state(&state, None).await, None);
+    }
+
+    #[tokio::test]
+    async fn reconnecting_the_same_id_replaces_only_that_slot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (a, b) = two_sims().await;
+        let state = app_state(tmp.path());
+        let (id_a, _, _ra) = connect(&state, &a.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        connect(&state, &b.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        let (again, _, _rc) = connect(&state, &a.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        assert_eq!(again, id_a);
+        let list = list_cameras(&state).await;
+        assert_eq!(list.len(), 2, "{list:?}");
+        assert!(list.iter().all(|c| c.connected));
+        assert_eq!(list.iter().find(|c| c.active).unwrap().id, id_a);
+        shutdown([a, b], &state).await;
+    }
+
+    #[tokio::test]
+    async fn the_same_camera_under_another_id_replaces_its_slot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sim = spawn(SimConfig::default()).await;
+        let state = app_state(tmp.path());
+        let ip = sim.addr.to_string();
+        connect(&state, &ip, Some("DIRECT-x"), None, true)
+            .await
+            .unwrap();
+        let (id, _, _rx) = connect(&state, &ip, None, None, true).await.unwrap();
+        let list = list_cameras(&state).await;
+        assert_eq!(list.len(), 1, "{list:?}");
+        assert_eq!(list[0].id, id);
+        assert!(list[0].active);
+        disconnect_all(&state).await;
+        sim.events.send(SimCommand::Shutdown).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn disconnecting_the_active_camera_activates_the_other() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (a, b) = two_sims().await;
+        let state = app_state(tmp.path());
+        let (id_a, _, _ra) = connect(&state, &a.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        let (id_b, _, _rb) = connect(&state, &b.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        disconnect(&state, None).await.unwrap();
+        let list = list_cameras(&state).await;
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, id_a);
+        assert!(list[0].active);
+        assert!(get_state(&state, Some(id_b)).await.is_none());
+        // Disconnecting one that is not active keeps the active one.
+        let (id_b, _, _rb) = connect(&state, &b.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        disconnect(&state, Some(id_a)).await.unwrap();
+        assert_eq!(list_cameras(&state).await[0].id, id_b);
+        assert!(list_cameras(&state).await[0].active);
+        shutdown([a, b], &state).await;
+    }
+
+    #[tokio::test]
+    async fn shoot_all_keeps_both_files_with_the_same_camera_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (a, b) = two_sims().await;
+        let state = app_state(tmp.path());
+        let (id_a, _, ra) = connect(&state, &a.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        let (id_b, _, rb) = connect(&state, &b.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        let saved = Arc::new(StdMutex::new(Vec::new()));
+        for (id, rx) in [(id_a.clone(), ra), (id_b.clone(), rb)] {
+            let sink = saved.clone();
+            tokio::spawn(forward_events(id, rx, move |ev| {
+                if let CameraEvent::CaptureSaved(r) = ev.event {
+                    sink.lock().unwrap().push((
+                        ev.camera_id.clone(),
+                        r.camera_filename.clone(),
+                        r.filename.clone(),
+                    ));
+                }
+            }));
+        }
+        let mut out = shoot_all(&state).await;
+        out.sort_by(|x, y| x.0 .0.cmp(&y.0 .0));
+        let mut ids = vec![(id_a.clone(), None), (id_b.clone(), None)];
+        ids.sort_by(|x, y| x.0 .0.cmp(&y.0 .0));
+        assert_eq!(out, ids);
+        timeout(WAIT, async {
+            while saved.lock().unwrap().len() < 2 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("both shots saved");
+        let mut saved = saved.lock().unwrap().clone();
+        saved.sort_by(|x, y| x.2.cmp(&y.2));
+        // Both cameras call their first shot DSC00001.JPG; both are kept.
+        assert!(saved.iter().all(|s| s.1 == "DSC00001.JPG"), "{saved:?}");
+        assert_eq!(saved[0].2, "DSC00001-1.JPG");
+        assert_eq!(saved[1].2, "DSC00001.JPG");
+        assert_ne!(saved[0].0, saved[1].0);
+        let mut files: Vec<String> = std::fs::read_dir(tmp.path().join("shots"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        files.sort();
+        assert_eq!(files, vec!["DSC00001-1.JPG", "DSC00001.JPG"]);
+        shutdown([a, b], &state).await;
+    }
+
+    #[tokio::test]
+    async fn shoot_all_reports_each_camera_and_needs_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = app_state(tmp.path());
+        assert!(shoot_all(&state).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn keep_others_false_drops_the_other_cameras() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (a, b) = two_sims().await;
+        let state = app_state(tmp.path());
+        connect(&state, &a.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        let (id_b, _, _rb) = connect(&state, &b.addr.to_string(), None, None, false)
+            .await
+            .unwrap();
+        let list = list_cameras(&state).await;
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, id_b);
+        shutdown([a, b], &state).await;
     }
 }

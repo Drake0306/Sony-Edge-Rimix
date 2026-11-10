@@ -8,7 +8,7 @@ import { button, el, icon } from '../dom';
 import { discover, type SshLogin } from '../ipc';
 import { parseWifiQr } from '../qr/payload';
 import { createScanner, webcamSupported } from '../qr/scanner';
-import { watch, type AppStore } from '../state';
+import { cameraCount, watch, type AppStore } from '../state';
 import { rowButton } from './sidePanels';
 
 export const DEFAULT_IP = '192.168.122.1';
@@ -84,9 +84,16 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
 
   const status = el('header', 'status glass capsule');
   status.setAttribute('aria-label', 'Status');
-  status.append(el('span', 'brand', 'Rimix'), el('span', 'quietword', 'No camera connected'));
+  const quietword = el('span', 'quietword', 'No camera connected');
+  status.append(el('span', 'brand', 'Rimix'), quietword);
 
   const headline = el('div', 'headline');
+  // While cameras stay connected (adding another), a way back to them.
+  const back = button('textbtn back');
+  back.hidden = true;
+  back.addEventListener('click', () =>
+    store.set({ screen: 'main', keepCameras: false, pendingFingerprint: null, sshPrefill: null, error: null }),
+  );
   const message = el('p', 'message');
   message.setAttribute('role', 'status');
   // A camera's SSH fingerprint to compare with its screen before connecting.
@@ -100,6 +107,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   confirmRow.append(matches, cancel);
   confirm.append(confirmText, confirmRow);
   headline.append(
+    back,
     el('h1', '', 'Connect a camera'),
     el('p', '', 'Three ways in. Pick whichever is nearest to hand.'),
     message,
@@ -355,6 +363,13 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   cancel.addEventListener('click', () => store.set({ pendingFingerprint: null }));
 
   const offs = [
+    watch(store, (s) => `${cameraCount(s)}|${s.camera?.model ?? ''}`, (_, s) => {
+      const count = cameraCount(s);
+      back.hidden = count === 0;
+      back.textContent = `Back to ${s.camera?.model ?? (count === 1 ? 'the camera' : 'the cameras')}`;
+      quietword.textContent =
+        count === 0 ? 'No camera connected' : `${count} ${count === 1 ? 'camera' : 'cameras'} connected`;
+    }),
     // Progress while connecting, otherwise the last error.
     watch(store, (s) => s.connecting ?? s.error, (_, s) => {
       message.textContent = s.connecting?.text ?? s.error ?? '';

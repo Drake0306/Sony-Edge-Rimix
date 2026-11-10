@@ -18,14 +18,16 @@ export interface IntervalRun {
   /** When the next shot is due, in ms since the epoch. */
   nextAt: number;
   running: boolean;
+  /** The camera the run shoots, whichever is active later; null for the active one. */
+  cameraId: string | null;
 }
 
 const clampEvery = (s: number) => Math.max(MIN_EVERY_S, Number.isFinite(s) ? s : MIN_EVERY_S);
 
-/** A run whose first shot comes one period from `now`. */
-export function start(plan: IntervalPlan, now: number): IntervalRun {
+/** A run on camera `cameraId` whose first shot comes one period from `now`. */
+export function start(plan: IntervalPlan, now: number, cameraId: string | null = null): IntervalRun {
   const everyS = clampEvery(plan.everyS);
-  return { plan: { ...plan, everyS }, taken: 0, missed: 0, nextAt: now + everyS * 1000, running: true };
+  return { plan: { ...plan, everyS }, taken: 0, missed: 0, nextAt: now + everyS * 1000, running: true, cameraId };
 }
 
 /**

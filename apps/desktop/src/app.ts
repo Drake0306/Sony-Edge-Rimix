@@ -14,11 +14,12 @@ import * as sidePanels from './components/sidePanels';
 import * as topbar from './components/topbar';
 import { el, isTyping } from './dom';
 import { tick } from './interval';
-import { getSettings, getState, onCameraEvent, type CameraEvent } from './ipc';
+import { getSettings, getState, listCameras, onCameraEvent, type CameraEvent, type CameraState } from './ipc';
 import {
   applyEvent,
   cameraBusy,
   createStore,
+  statusOf,
   defaultSettings,
   initialState,
   watch,
@@ -80,6 +81,33 @@ export function toastConnecting(store: AppStore, toast: (message: string) => voi
   });
 }
 
+/**
+ * Folds one camera's event into the store, toasting what is news. On the
+ * connect screen, `connect` sets the camera: state from the connected
+ * cameras still lands while one is being added, but never flips back to
+ * the main screen; after a disconnect, late state is dropped.
+ */
+export function routeCameraEvent(
+  store: AppStore,
+  cameraId: string,
+  event: CameraEvent,
+  toast: (message: string) => void,
+): void {
+  const msg = eventToast(event);
+  if (msg) toast(msg);
+  const state = store.get();
+  const patch = applyEvent(state, event, cameraId);
+  if (state.screen === 'connect') {
+    delete patch.screen;
+    if (!state.keepCameras) {
+      delete patch.camera;
+      delete patch.cameras;
+      delete patch.status;
+    }
+  }
+  if (Object.keys(patch).length) store.set(patch);
+}
+
 /** Space shoots (unless a button has focus), R records, F focuses: once per press, never while typing. */
 export function handleShortcut(e: KeyboardEvent, store: AppStore, actions: Actions): void {
   if (e.repeat || store.get().screen !== 'main' || isTyping(e.target)) return;
@@ -94,17 +122,19 @@ export function handleShortcut(e: KeyboardEvent, store: AppStore, actions: Actio
 }
 
 /**
- * Runs the interval timer while `interval` is running: shoots when a shot
- * is due and the camera is free, and clears the run once it has finished.
+ * Runs the interval timer while `interval` is running: shoots the run's
+ * camera (whichever is active) when a shot is due and that camera is free,
+ * and clears the run once it has finished.
  */
 export function intervalTicker(store: AppStore, actions: Actions): () => void {
   let timer: number | null = null;
   const step = () => {
     const state = store.get();
     if (!state.interval?.running) return;
-    const { run, shoot } = tick(state.interval, Date.now(), cameraBusy(state));
+    const id = state.interval.cameraId ?? state.activeId;
+    const { run, shoot } = tick(state.interval, Date.now(), cameraBusy(state, id));
     if (run !== state.interval) store.set({ interval: run.running ? run : null });
-    if (shoot) actions.shoot();
+    if (shoot) actions.shoot(state.interval.cameraId);
   };
   const off = watch(store, (s) => !!s.interval?.running, (running) => {
     if (running && timer === null) timer = window.setInterval(step, INTERVAL_TICK_MS);
@@ -140,6 +170,7 @@ export async function startApp(root: HTMLElement): Promise<void> {
 
   let unmount: (() => void)[] = [];
   watch(store, (s) => s.screen, (name) => {
+    if (name === 'main' && store.get().keepCameras) store.set({ keepCameras: false });
     unmount.forEach((u) => u());
     screen.className = `screen ${name}`;
     screen.setAttribute('aria-label', name === 'main' ? 'Main screen' : 'Connect screen');
@@ -156,29 +187,21 @@ export async function startApp(root: HTMLElement): Promise<void> {
 
   document.addEventListener('keydown', (e) => handleShortcut(e, store, actions));
 
-  await onCameraEvent((event) => {
-    const msg = eventToast(event);
-    if (msg) toast(msg);
-    const patch = applyEvent(store.get(), event);
-    // On the connect screen, `connect` sets the camera; late state from a
-    // camera the user disconnected must not bring the main screen back.
-    if (store.get().screen === 'connect') {
-      delete patch.screen;
-      delete patch.camera;
-      delete patch.status;
-    }
-    if (Object.keys(patch).length) store.set(patch);
-  });
+  await onCameraEvent((cameraId, event) => routeCameraEvent(store, cameraId, event, toast));
 
   if (settingsError) toast(`Cannot load settings: ${String(settingsError)}`);
   try {
+    // After a reload of the window, the cameras may still be connected.
     const camera = await getState();
     if (camera) {
-      store.set({
-        camera,
-        screen: 'main',
-        status: { fps: camera.live_view_fps, lastShotAt: camera.last_shot_at },
-      });
+      const list = (await listCameras().catch(() => null)) ?? [];
+      const cameras: Record<string, CameraState> = {};
+      for (const c of list) {
+        const s = c.active ? camera : await getState(c.id).catch(() => null);
+        if (s) cameras[c.id] = s;
+      }
+      const activeId = list.find((c) => c.active)?.id ?? null;
+      store.set({ cameras, activeId, camera, screen: 'main', status: statusOf(camera) });
     }
   } catch (e) {
     toast(`Cannot reach the app: ${String(e)}`);

@@ -4,7 +4,7 @@ import { MIN_EVERY_S, start, statusText, tick } from './interval';
 describe('interval', () => {
   test('the first shot comes one period after start, then one per period', () => {
     let run = start({ everyS: 5, count: null }, 1000);
-    expect(run).toEqual({ plan: { everyS: 5, count: null }, taken: 0, missed: 0, nextAt: 6000, running: true });
+    expect(run).toEqual({ plan: { everyS: 5, count: null }, taken: 0, missed: 0, nextAt: 6000, running: true, cameraId: null });
 
     let r = tick(run, 5999, false);
     expect(r.shoot).toBe(false);
@@ -51,7 +51,7 @@ describe('interval', () => {
   });
 
   test('statusText', () => {
-    const base = { plan: { everyS: 5, count: 20 }, taken: 3, missed: 0, nextAt: 10000, running: true };
+    const base = { plan: { everyS: 5, count: 20 }, taken: 3, missed: 0, nextAt: 10000, running: true, cameraId: null };
     expect(statusText(base, 6000)).toBe('Interval 3 of 20, next in 4 s');
     expect(statusText({ ...base, plan: { everyS: 5, count: null } }, 6000)).toBe('Interval 3 taken, next in 4 s');
     expect(statusText({ ...base, plan: { everyS: 5, count: null }, missed: 1 }, 6000)).toBe(

@@ -171,12 +171,26 @@ describe('dock', () => {
 
   test('Shoot, Record and Focus call their commands', () => {
     const { root } = setup();
-    const acts = [...root.querySelectorAll<HTMLButtonElement>('.act')];
+    const acts = [...root.querySelectorAll<HTMLButtonElement>('.act')].filter((a) => !a.hidden);
     expect(acts.map((a) => a.textContent)).toEqual(['Record', 'Shoot', 'Focus']);
     acts.forEach((a) => a.click());
     expect(invoke).toHaveBeenCalledWith('toggle_record');
     expect(invoke).toHaveBeenCalledWith('shoot');
     expect(invoke).toHaveBeenCalledWith('focus');
+  });
+
+  test('Shoot all sits beside Shoot only while more than one camera is connected', () => {
+    const { root, store } = setup();
+    const labels = () => [...root.querySelectorAll<HTMLButtonElement>('.act')].map((a) => a.textContent);
+    const shootAll = () => [...root.querySelectorAll<HTMLButtonElement>('.act')].find((a) => a.textContent === 'Shoot all')!;
+    expect(shootAll().hidden).toBe(true);
+    store.set({ cameras: { a: camera, b: camera }, activeId: 'a' });
+    expect(shootAll().hidden).toBe(false);
+    expect(labels()).toEqual(['Record', 'Shoot', 'Shoot all', 'Focus']);
+    shootAll().click();
+    expect(invoke).toHaveBeenCalledWith('shoot_all');
+    store.set({ cameras: { a: camera } });
+    expect(shootAll().hidden).toBe(true);
   });
 });
 

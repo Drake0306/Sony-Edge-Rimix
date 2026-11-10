@@ -1,17 +1,29 @@
 import { describe, expect, test } from 'vitest';
-import fixture from './fixtures/state-changed.json';
-import captureSaved from './fixtures/capture-saved.json';
+import tagged from './fixtures/state-changed.json';
+import taggedSaved from './fixtures/capture-saved.json';
 import {
   isCaptureSaved,
   isConnected,
   isDisconnected,
   isStateChanged,
   type CameraEvent,
+  type TaggedEvent,
 } from './ipc';
 
 // The fixture is the exact JSON pinned by the Rust test
-// `state_changed_event_json_is_stable` in src-tauri/src/state.rs.
+// `state_changed_event_json_is_stable` in src-tauri/src/state.rs: each event
+// arrives tagged with the camera it came from.
+const fixture = tagged.event as unknown;
+const captureSaved = taggedSaved.event as unknown;
+
 describe('camera events', () => {
+  test('events are tagged with their camera id', () => {
+    const t = tagged as unknown as TaggedEvent;
+    expect(t.camera_id).toBe('192.168.122.1:15740');
+    expect(isStateChanged(t.event)).toBe(true);
+    expect((taggedSaved as unknown as TaggedEvent).camera_id).toBe('192.168.122.1:15740');
+  });
+
   test('cameraEventSchema_parses_state_changed_payload', () => {
     const event = fixture as unknown as CameraEvent;
     expect(isStateChanged(event)).toBe(true);

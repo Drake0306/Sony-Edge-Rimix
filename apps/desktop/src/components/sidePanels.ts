@@ -4,7 +4,7 @@
 import { sameAddress } from '../address';
 import type { Actions } from '../actions';
 import { button, el, icon } from '../dom';
-import type { AppSettings, DestinationMode } from '../ipc';
+import type { AppSettings, DestinationMode, RecentCamera } from '../ipc';
 import { watch, type AppState, type AppStore, type SaveError } from '../state';
 import * as intervalTimer from './intervalTimer';
 
@@ -141,21 +141,38 @@ function scopes(store: AppStore, actions: Actions): { el: HTMLElement; destroy: 
 }
 
 
+/** Whether remembered camera `rc` is the camera connected as `id`. */
+const remembers = (rc: RecentCamera, id: string) => (rc.ssid ? rc.ssid === id : sameAddress(rc.ip, id));
+
+/** A plain action row: just its label. */
+function actionRow(label: string, run: () => void): HTMLElement {
+  const r = rowButton(label);
+  r.querySelector('button')!.addEventListener('click', run);
+  return r;
+}
+
 function cameras(store: AppStore, actions: Actions): { el: HTMLElement; destroy: () => void } {
   const g = group('list', 'Cameras');
   const key = (s: AppState) =>
     JSON.stringify([
       s.camera?.model,
       s.camera?.connected,
+      s.activeId,
+      Object.entries(s.cameras).map(([id, c]) => [id, c.model, c.connected]),
       s.reconnecting === null,
       s.settings?.recentCameras,
       s.settings?.lastIp,
     ]);
-  const destroy = watch(store, key, (_, { camera, settings, reconnecting }) => {
+  const destroy = watch(store, key, (_, { camera, cameras: connected, activeId, settings, reconnecting }) => {
     const rows: HTMLElement[] = [];
-    // The connected camera is the newest remembered one at the last address;
-    // other cameras that share that address (Wi-Fi Direct) keep their rows.
-    const current = settings?.lastIp ? settings.recentCameras.find((c) => sameAddress(c.ip, settings.lastIp!)) : undefined;
+    const ids = Object.keys(connected);
+    // The active camera is the remembered one under its id, else the newest
+    // remembered one at the last address; other cameras that share that
+    // address (Wi-Fi Direct) keep their rows.
+    const recent = settings?.recentCameras ?? [];
+    const current =
+      (activeId !== null ? recent.find((c) => remembers(c, activeId)) : undefined) ??
+      (settings?.lastIp ? recent.find((c) => sameAddress(c.ip, settings.lastIp!)) : undefined);
     if (camera) {
       const r = rowButton(camera.model, 'this', 'check');
       const b = r.querySelector('button')!;
@@ -165,8 +182,22 @@ function cameras(store: AppStore, actions: Actions): { el: HTMLElement; destroy:
       if (!camera.connected && reconnecting === null && current) b.addEventListener('click', () => void actions.connectRecent(current));
       rows.push(r);
     }
-    for (const rc of settings?.recentCameras ?? []) {
+    // The other connected cameras, in the order they were connected; a
+    // click makes one active.
+    for (const id of ids) {
+      if (id === activeId) continue;
+      const other = connected[id];
+      const r = rowButton(other.model);
+      const b = r.querySelector('button')!;
+      b.prepend(el('i', other.connected ? 'dot' : 'dot off'));
+      b.title = `Switch to ${other.model}`;
+      b.addEventListener('click', () => void actions.switchCamera(id));
+      rows.push(r);
+    }
+    if (ids.length > 1) rows.push(actionRow('Shoot all', () => void actions.shootAll()));
+    for (const rc of recent) {
       if (camera && rc === current) continue;
+      if (ids.some((id) => remembers(rc, id))) continue;
       const r = rowButton(rc.model, rc.ssid ?? rc.ip);
       const b = r.querySelector('button')!;
       b.prepend(el('i', 'dot off'));
@@ -174,9 +205,9 @@ function cameras(store: AppStore, actions: Actions): { el: HTMLElement; destroy:
       b.addEventListener('click', () => void actions.connectRecent(rc));
       rows.push(r);
     }
-    const d = rowButton('Disconnect');
-    d.querySelector('button')!.addEventListener('click', () => void actions.disconnect());
-    rows.push(d);
+    rows.push(actionRow('Add a camera', () => actions.addCamera()));
+    rows.push(actionRow('Disconnect', () => void actions.disconnect()));
+    if (ids.length > 1) rows.push(actionRow('Disconnect all', () => void actions.disconnectAll()));
     g.replaceChildren(...rows);
   });
   return { el: sect('Cameras', g), destroy };

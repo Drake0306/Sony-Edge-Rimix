@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Actions } from '../actions';
 import { NOT_A_WIFI_CODE } from '../copy';
-import type { AppSettings, RecentCamera } from '../ipc';
+import type { AppSettings, CameraState, RecentCamera } from '../ipc';
 import { createStore, defaultSettings, initialState, type AppStore } from '../state';
 import { createScanner, webcamSupported } from '../qr/scanner';
 import { mount, SSH_PASSWORD_NEEDED } from './connectScreen';
@@ -468,5 +468,21 @@ describe('scanning', () => {
     // Other settings changes leave the scanner alone.
     store.set({ settings: { ...store.get().settings!, appearance: 'Light' } });
     expect(start).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('adding a camera', () => {
+  test('Back returns to the main screen while cameras stay connected', () => {
+    setup();
+    const back = () => root.querySelector<HTMLButtonElement>('.headline .back')!;
+    expect(back().hidden).toBe(true);
+    const camera = { model: 'ZV-E10' } as unknown as CameraState;
+    store.set({ cameras: { a: camera }, activeId: 'a', camera, keepCameras: true });
+    expect(back().hidden).toBe(false);
+    expect(back().textContent).toBe('Back to ZV-E10');
+    back().click();
+    expect(store.get().screen).toBe('main');
+    expect(store.get().keepCameras).toBe(false);
+    unmount();
   });
 });

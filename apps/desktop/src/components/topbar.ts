@@ -1,11 +1,11 @@
-// The status capsule: Rimix, model, link (with a lock through Access
+// The status capsule: Rimix, model (and how many cameras, when several), link (with a lock through Access
 // Authentication), battery and firmware. The App
 // settings button beside it is in appSettings.ts.
 
 import type { Actions } from '../actions';
 import { reconnectingText } from '../copy';
 import { el } from '../dom';
-import { watch, type AppStore } from '../state';
+import { cameraCount, watch, type AppStore } from '../state';
 
 const LOCK_GLYPH =
   '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="2.5" y="5.5" width="7" height="5" rx="1.2"/><path d="M4 5.5V4a2 2 0 0 1 4 0v1.5"/></svg>';
@@ -53,9 +53,12 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
         s.camera?.firmware,
         s.camera?.generation,
         s.reconnecting,
+        cameraCount(s),
       ]),
-    (_, { camera, reconnecting }) => {
-      model.textContent = camera?.model ?? '';
+    (_, s) => {
+      const { camera, reconnecting } = s;
+      const count = cameraCount(s);
+      model.textContent = (camera?.model ?? '') + (count > 1 ? ` · ${count} cameras` : '');
       link.textContent =
         reconnecting !== null ? reconnectingText(reconnecting) : camera?.connected === false ? 'Not connected' : 'Wi-Fi';
       bars.classList.toggle('lost', camera?.connected === false);

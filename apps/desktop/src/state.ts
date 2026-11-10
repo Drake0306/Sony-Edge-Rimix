@@ -32,6 +32,10 @@ export interface CaptureItem {
   path: string;
   filename: string;
   bytes: number;
+  /** The camera that took it; null when unknown. */
+  cameraId: string | null;
+  /** That camera's model, shown on the tile while several are connected. */
+  cameraLabel: string;
 }
 
 export interface Transfer {
@@ -47,22 +51,31 @@ export interface SaveError {
 
 export interface AppState {
   screen: 'connect' | 'main';
+  /** The active camera's state: always `cameras[activeId]` once it is known. */
   camera: CameraState | null;
+  /** Every connected camera by id, in the order they were connected. */
+  cameras: Record<string, CameraState>;
+  /** The camera the controls, live view and shortcuts act on. */
+  activeId: string | null;
+  /** True while the connect screen is up to add a camera beside the connected ones. */
+  keepCameras: boolean;
   settings: AppSettings | null;
   /** True while `settings` are defaults standing in for settings that failed to load and have not been saved since. */
   unsaved: boolean;
   nearby: DiscoveredCamera[];
   /** Newest first, at most six. */
   captures: CaptureItem[];
-  /** Files on their way from the camera, keyed by the camera's filename. */
+  /** Files on their way from a camera, keyed by `${cameraId}/${camera filename}`. */
   transfers: Record<string, Transfer>;
   /** Shown in Save to until the next shot is saved. */
   saveError: SaveError | null;
   status: { fps: number; lastShotAt: number | null };
   /** Live view overlays switched from the Scopes panel. */
   overlays: { thirds: boolean; zebra: boolean; waveform: boolean; falseColour: boolean };
-  /** Reconnect attempt while the link is down, otherwise null. */
+  /** The active camera's reconnect attempt while its link is down, otherwise null. */
   reconnecting: number | null;
+  /** Reconnect attempts of every camera whose link is down, by id. */
+  attempts: Record<string, number>;
   /** Progress of a connect started from the connect screen, otherwise null. */
   connecting: { phase: 'joining' | 'finding' | 'connecting'; text: string } | null;
   error: string | null;
@@ -106,6 +119,9 @@ export const MAX_CAPTURES = 6;
 export const initialState = (): AppState => ({
   screen: 'connect',
   camera: null,
+  cameras: {},
+  activeId: null,
+  keepCameras: false,
   settings: null,
   unsaved: false,
   nearby: [],
@@ -115,6 +131,7 @@ export const initialState = (): AppState => ({
   status: { fps: 0, lastShotAt: null },
   overlays: { thirds: true, zebra: false, waveform: false, falseColour: false },
   reconnecting: null,
+  attempts: {},
   connecting: null,
   error: null,
   presetBusy: null,
@@ -156,66 +173,129 @@ export function watch<T extends object, S>(
   });
 }
 
-/** What a camera event changes; the toast for a skipped shot is the app's job. */
-export function applyEvent(state: AppState, event: CameraEvent): Partial<AppState> {
-  if (event === 'Connected') return state.reconnecting === null ? {} : { reconnecting: null };
+/** The status line's numbers for a camera. */
+export const statusOf = (camera: CameraState): AppState['status'] => ({
+  fps: camera.live_view_fps,
+  lastShotAt: camera.last_shot_at,
+});
+
+/** The fields that show `id` as the active camera. */
+export function activate(state: AppState, id: string | null): Partial<AppState> {
+  const camera = id === null ? null : (state.cameras[id] ?? null);
+  return {
+    activeId: id,
+    camera,
+    reconnecting: id === null ? null : (state.attempts[id] ?? null),
+    ...(camera ? { status: statusOf(camera) } : {}),
+  };
+}
+
+/** `record` without `key`. */
+export function without<T>(record: Record<string, T>, key: string): Record<string, T> {
+  const rest = { ...record };
+  delete rest[key];
+  return rest;
+}
+
+/** How many cameras are connected. */
+export const cameraCount = (state: AppState) => Object.keys(state.cameras).length;
+
+const transferKey = (cameraId: string | null, filename: string) =>
+  cameraId === null ? filename : `${cameraId}/${filename}`;
+
+/** The camera's filename in a `transfers` key. */
+export const transferName = (key: string) => key.slice(key.lastIndexOf('/') + 1);
+
+/** The camera id in a `transfers` key, or null for one without. */
+export const transferCamera = (key: string) => (key.includes('/') ? key.slice(0, key.lastIndexOf('/')) : null);
+
+/**
+ * What a camera event from `cameraId` changes; the toast for a skipped shot
+ * is the app's job. Events from a camera that is not connected (late ones
+ * from a camera just disconnected) change nothing. Without an id the event
+ * is the active camera's.
+ */
+export function applyEvent(state: AppState, event: CameraEvent, cameraId: string | null = state.activeId): Partial<AppState> {
+  if (cameraId !== null && !(cameraId in state.cameras)) return {};
+  const active = cameraId === state.activeId;
+  if (event === 'Connected') {
+    if (cameraId === null || !(cameraId in state.attempts)) {
+      return active && state.reconnecting !== null ? { reconnecting: null } : {};
+    }
+    return { attempts: without(state.attempts, cameraId), ...(active ? { reconnecting: null } : {}) };
+  }
   if (event === 'Frame') return {};
   if ('StateChanged' in event) {
     const camera = event.StateChanged;
-    return {
-      screen: 'main',
-      camera,
-      status: { fps: camera.live_view_fps, lastShotAt: camera.last_shot_at },
-    };
+    const cameras = cameraId === null ? {} : { cameras: { ...state.cameras, [cameraId]: camera } };
+    if (!active) return cameras;
+    return { ...cameras, screen: 'main', camera, status: statusOf(camera) };
   }
-  if ('Reconnecting' in event) return { reconnecting: event.Reconnecting.attempt };
+  if ('Reconnecting' in event) {
+    const attempt = event.Reconnecting.attempt;
+    const attempts = cameraId === null ? {} : { attempts: { ...state.attempts, [cameraId]: attempt } };
+    return { ...attempts, ...(active ? { reconnecting: attempt } : {}) };
+  }
   if ('Disconnected' in event) {
     // A plain link loss keeps the interval timer: its ticks count as missed
     // until the camera is back. Only a final failure, where reconnecting has
-    // stopped, ends the run.
+    // stopped, ends the run on that camera.
     // The camera refused the login or its fingerprint changed: reconnecting
     // has stopped, so say why and leave the camera shown as disconnected.
     const error = sshErrorMessage(event.Disconnected.reason);
     if (!error) return {};
-    return { interval: null, reconnecting: null, error, camera: state.camera && { ...state.camera, connected: false } };
+    const patch: Partial<AppState> = { error };
+    const runHere = state.interval !== null && (state.interval.cameraId ?? state.activeId) === cameraId;
+    if (runHere) patch.interval = null;
+    if (cameraId !== null) {
+      const gone = { ...state.cameras[cameraId], connected: false };
+      patch.cameras = { ...state.cameras, [cameraId]: gone };
+      patch.attempts = without(state.attempts, cameraId);
+    }
+    if (active) {
+      patch.reconnecting = null;
+      patch.camera = state.camera && { ...state.camera, connected: false };
+    }
+    return patch;
   }
   if ('CaptureProgress' in event) {
     const { filename, received, total } = event.CaptureProgress;
-    return { transfers: { ...state.transfers, [filename]: { received, total } } };
+    return { transfers: { ...state.transfers, [transferKey(cameraId, filename)]: { received, total } } };
   }
   if ('CaptureSaved' in event) {
     const { path, filename, bytes, camera_filename } = event.CaptureSaved;
-    const transfers = withoutTransfer(state.transfers, camera_filename);
-    const captures = [{ path, filename, bytes }, ...state.captures.filter((c) => c.path !== path)];
+    const transfers = without(state.transfers, transferKey(cameraId, camera_filename));
+    const cameraLabel = (cameraId === null ? state.camera : state.cameras[cameraId])?.model ?? '';
+    const item: CaptureItem = { path, filename, bytes, cameraId, cameraLabel };
+    const captures = [item, ...state.captures.filter((c) => c.path !== path)];
     return { captures: captures.slice(0, MAX_CAPTURES), transfers, saveError: null };
   }
   if ('CaptureFailed' in event) {
     const { filename, error } = event.CaptureFailed;
+    const key = transferKey(cameraId, filename);
     const patch: Partial<AppState> = {};
-    if (filename in state.transfers) patch.transfers = withoutTransfer(state.transfers, filename);
+    if (key in state.transfers) patch.transfers = without(state.transfers, key);
     const same = state.saveError?.filename === filename && state.saveError.error === error;
     if (!same) patch.saveError = { filename, error };
     return patch;
   }
   if ('CaptureSkipped' in event) {
-    const { filename } = event.CaptureSkipped;
-    return filename in state.transfers ? { transfers: withoutTransfer(state.transfers, filename) } : {};
+    const key = transferKey(cameraId, event.CaptureSkipped.filename);
+    return key in state.transfers ? { transfers: without(state.transfers, key) } : {};
   }
   return {};
 }
 
-function withoutTransfer(transfers: Record<string, Transfer>, filename: string): Record<string, Transfer> {
-  const rest = { ...transfers };
-  delete rest[filename];
-  return rest;
-}
-
 /**
- * Whether an interval shot would collide with something: the camera is
- * recording, a file is still on its way, or the link is down.
+ * Whether an interval shot on camera `id` (the active one by default) would
+ * collide with something: it is recording, one of its files is still on
+ * its way, or its link is down.
  */
-export function cameraBusy(state: AppState): boolean {
-  const { camera } = state;
-  if (!camera?.connected || state.reconnecting !== null) return true;
-  return camera.recording || Object.keys(state.transfers).length > 0;
+export function cameraBusy(state: AppState, id: string | null = state.activeId): boolean {
+  const active = id === state.activeId;
+  const camera = id !== null && id in state.cameras ? state.cameras[id] : active ? state.camera : null;
+  const down = active ? state.reconnecting !== null : id !== null && id in state.attempts;
+  if (!camera?.connected || down) return true;
+  const own = (key: string) => id === null || transferCamera(key) === id || transferCamera(key) === null;
+  return camera.recording || Object.keys(state.transfers).some(own);
 }

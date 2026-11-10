@@ -1,14 +1,16 @@
-// The floating glass dock: ten setting chips, presets, Record, Shoot, Focus
-// and the live view status. Chips open the camera settings popover.
+// The floating glass dock: ten setting chips, presets, Record, Shoot (and
+// Shoot all while several cameras are connected), Focus and the live view status. Chips open the camera settings popover.
 
 import type { Actions } from '../actions';
 import { button, el } from '../dom';
 import * as interval from '../interval';
 import { chipValue, CHIP_CODES, findProp, SETTING_NAMES } from '../props';
-import { watch, type AppState, type AppStore } from '../state';
+import { cameraCount, watch, type AppState, type AppStore } from '../state';
 import { presetsControl } from './presetsControl';
 import { createSettingsPopover, stepOnArrow } from './settingsPopover';
 
+const SHOOT_ALL_GLYPH =
+  '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="7.5" cy="10" r="4.5"/><circle cx="12.5" cy="10" r="4.5"/></svg>';
 const FOCUS_GLYPH =
   '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M13 3h2a2 2 0 0 1 2 2v2M17 13v2a2 2 0 0 1-2 2h-2M7 17H5a2 2 0 0 1-2-2v-2"/><circle cx="10" cy="10" r="2.2"/></svg>';
 
@@ -68,9 +70,12 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
 
   const record = action('Record', '', (c) => c.append(el('span', 'rec')), () => actions.toggleRecord());
   const shoot = action('Shoot', 'shoot', () => {}, () => actions.shoot());
+  // Shown only while more than one camera is connected.
+  const shootAll = action('Shoot all', 'shootall', (c) => (c.innerHTML = SHOOT_ALL_GLYPH), () => void actions.shootAll());
+  shootAll.hidden = true;
   const focus = action('Focus', '', (c) => (c.innerHTML = FOCUS_GLYPH), () => actions.focus());
   const acts = el('div', 'actions');
-  acts.append(record, shoot, focus);
+  acts.append(record, shoot, shootAll, focus);
 
   const left = el('div', 'left');
   const presets = presetsControl(store, actions);
@@ -94,6 +99,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       record.classList.toggle('recording', !!camera?.recording);
       record.setAttribute('aria-pressed', String(!!camera?.recording));
     }),
+    watch(store, (s) => cameraCount(s) > 1, (several) => (shootAll.hidden = !several)),
     watch(store, (s) => s.status, (_, s) => (right.textContent = liveStatusText(s))),
     watch(store, (s) => s.interval, (_, s) => (right.textContent = liveStatusText(s))),
   ];

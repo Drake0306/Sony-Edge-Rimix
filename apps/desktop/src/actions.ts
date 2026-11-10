@@ -15,7 +15,7 @@ import type { AppSettings, Preset, PtpValue, RecentCamera, SshLogin } from './ip
 import { start, type IntervalPlan } from './interval';
 import { describeFailures, upsertPreset } from './presets';
 import type { WifiCredentials } from './qr/payload';
-import type { AppStore } from './state';
+import { activate, cameraCount, transferCamera, without, type AppState, type AppStore } from './state';
 
 /** How long to wait for the camera after joining its network. */
 export const FIND_MS = 30_000;
@@ -37,8 +37,17 @@ export interface Actions {
    */
   connectRecent(rc: RecentCamera): Promise<boolean>;
   forgetCamera(rc: RecentCamera): Promise<void>;
-  disconnect(): Promise<void>;
-  shoot(): void;
+  /** Disconnects one camera (the active one by default); the next becomes active. */
+  disconnect(cameraId?: string): Promise<void>;
+  disconnectAll(): Promise<void>;
+  /** Makes another connected camera the one the controls act on. */
+  switchCamera(cameraId: string): Promise<void>;
+  /** Shows the connect screen while the connected cameras stay connected. */
+  addCamera(): void;
+  /** Shoots one camera, the active one by default. */
+  shoot(cameraId?: string | null): void;
+  /** Shoots every connected camera at once, toasting any that failed. */
+  shootAll(): Promise<void>;
   focus(): void;
   toggleRecord(): void;
   stepProperty(code: number, delta: number): void;
@@ -50,7 +59,7 @@ export interface Actions {
   savePreset(preset: Preset): Promise<void>;
   deletePreset(id: string): Promise<void>;
   pickFolder(): Promise<string | null>;
-  /** Starts the interval timer; the app's ticker shoots on its schedule. */
+  /** Starts the interval timer on the active camera; the app's ticker shoots on its schedule. */
   startInterval(plan: IntervalPlan): void;
   stopInterval(): void;
   toast(message: string): void;
@@ -82,6 +91,44 @@ export function rememberedFingerprint(settings: AppSettings | null, ip: string, 
   return settings?.recentCameras.find(same)?.sshFingerprint ?? null;
 }
 
+/** Whether a camera id is an address (`ip:port`) rather than a Wi-Fi network name. */
+export const isAddressId = (id: string) => /^(\[[0-9a-fA-F:.]+\]|[0-9.]+):\d+$/.test(id);
+
+/** What showing no camera at all resets. */
+const noCameras = (): Partial<AppState> => ({
+  screen: 'connect',
+  keepCameras: false,
+  camera: null,
+  cameras: {},
+  activeId: null,
+  attempts: {},
+  reconnecting: null,
+  captures: [],
+  transfers: {},
+  activePreset: null,
+  interval: null,
+});
+
+/**
+ * The store after camera `id` is gone: the next camera (the one after it,
+ * else the one before) becomes active if it was, and its files in flight
+ * and an interval run on it go too. With no camera left, the connect screen.
+ */
+function dropCamera(state: AppState, id: string): Partial<AppState> {
+  const ids = Object.keys(state.cameras);
+  const at = ids.indexOf(id);
+  const rest = ids.filter((k) => k !== id);
+  if (rest.length === 0) return noCameras();
+  const cameras = without(state.cameras, id);
+  const attempts = without(state.attempts, id);
+  const transfers = Object.fromEntries(Object.entries(state.transfers).filter(([k]) => transferCamera(k) !== id));
+  const runHere = state.interval !== null && (state.interval.cameraId ?? state.activeId) === id;
+  const patch: Partial<AppState> = { cameras, attempts, transfers, ...(runHere ? { interval: null } : {}) };
+  if (state.activeId !== id && state.activeId !== null) return patch;
+  const next = rest[Math.min(at, rest.length - 1)];
+  return { ...patch, ...activate({ ...state, cameras, attempts }, next), activePreset: null };
+}
+
 export function createActions(store: AppStore, toast: (m: string) => void = () => {}): Actions {
   const run = (p: Promise<unknown>) => void p.catch((e) => toast(message(e)));
 
@@ -98,6 +145,26 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
   const connectOnce = (ip: string, ssid: string | null, name: string, ssh: SshLogin | null) =>
     store.get().connecting ? Promise.resolve(false) : connectTo(ip, ssid, name, ssh);
 
+  /**
+   * After a failed connect: keeps only the cameras still connected (a
+   * failed reconnect drops the camera it was for) and returns what changes.
+   */
+  async function resync(): Promise<Partial<AppState>> {
+    const live = await ipc.listCameras().catch(() => null);
+    if (!live) return {};
+    let state = store.get();
+    let patch: Partial<AppState> = {};
+    for (const id of Object.keys(state.cameras)) {
+      if (live.some((c) => c.id === id)) continue;
+      const drop = dropCamera(state, id);
+      patch = { ...patch, ...drop };
+      state = { ...state, ...drop };
+    }
+    const active = live.find((c) => c.active)?.id;
+    if (active && active !== state.activeId && active in state.cameras) patch = { ...patch, ...activate(state, active) };
+    return patch;
+  }
+
   /** `name` is what the progress line calls the camera. */
   async function connectTo(ip: string, ssid: string | null, name: string, ssh: SshLogin | null): Promise<boolean> {
     const login =
@@ -108,41 +175,66 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
       error: null,
       pendingFingerprint: null,
       sshPrefill: null,
-      reconnecting: null,
-      interval: null,
       connecting: { phase: 'connecting', text: connectingText(name) },
     });
     try {
-      const camera = await ipc.connect(ip, ssid, login);
+      const { id, state: camera } = await ipc.connect(ip, ssid, login);
       const settings = await ipc.getSettings().catch(() => store.get().settings);
+      // The same camera connected under another id (its network, then its
+      // address) was replaced: keep only the cameras the app still has.
+      const live = await ipc.listCameras().catch(() => null);
+      const kept = live?.some((c) => c.id === id) ? new Set(live.map((c) => c.id)) : null;
+      const s = store.get();
+      // This camera, and any it replaced, start afresh: their files in
+      // flight, reconnect attempts and interval run go.
+      const fresh = (k: string) => k === id || (kept !== null && !kept.has(k));
+      const others = Object.fromEntries(Object.entries(s.cameras).filter(([k]) => !fresh(k)));
+      // A reconnect moves the camera to the end, as the app's list does.
+      const cameras = { ...others, [id]: camera };
+      const attempts = Object.fromEntries(Object.entries(s.attempts).filter(([k]) => !fresh(k)));
+      const transfers = Object.fromEntries(
+        Object.entries(s.transfers).filter(([k]) => {
+          const owner = transferCamera(k);
+          return owner === null || !fresh(owner);
+        }),
+      );
+      const runOn = s.interval === null ? null : (s.interval.cameraId ?? s.activeId);
+      const runHere = s.interval !== null && (runOn === null || fresh(runOn));
       store.set({
         screen: 'main',
-        camera,
+        keepCameras: false,
+        cameras,
+        attempts,
+        transfers,
+        ...activate({ ...s, cameras, attempts }, id),
         settings,
         connecting: null,
-        reconnecting: null,
-        interval: null,
+        ...(runHere ? { interval: null } : {}),
         error: null,
         // Presets belong to a camera; none is active on the new one yet.
         activePreset: null,
-        status: { fps: camera.live_view_fps, lastShotAt: camera.last_shot_at },
       });
       return true;
     } catch (e) {
       const hostKey = login ? parseHostKey(message(e)) : null;
       const changed = login ? parseHostKeyChanged(message(e)) : null;
-      // Connecting drops the previous camera first, so after a failed
-      // switch there may be no camera left to show.
-      const camera = await ipc.getState().catch(() => null);
+      // A failed reconnect drops the camera it was for, so the store follows
+      // the cameras still connected.
+      const resynced = await resync();
+      const left = cameraCount({ ...store.get(), ...resynced }) > 0;
+      // With no camera left, nothing is shown as connected or reconnecting;
+      // the last shots stay in the filmstrip for when one is back.
+      const synced: Partial<AppState> = left
+        ? resynced
+        : { camera: null, cameras: {}, activeId: null, attempts: {}, reconnecting: null, interval: null, transfers: {} };
       if (changed) {
         // Never connect silently: show both fingerprints and offer only Cancel.
         store.set({
+          ...synced,
           error: null,
-          camera,
           connecting: null,
-          reconnecting: null,
-          interval: null,
           screen: 'connect',
+          keepCameras: left,
           pendingFingerprint: { sha256: changed.actual, md5: '', retry: () => Promise.resolve(false), changed },
         });
         return false;
@@ -155,32 +247,30 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
             ? Promise.resolve(false)
             : connectTo(ip, ssid, name, { ...login, fingerprint: hostKey.sha256 });
         store.set({
+          ...synced,
           error: null,
-          camera,
           connecting: null,
-          reconnecting: null,
-          interval: null,
           screen: 'connect',
+          keepCameras: left,
           pendingFingerprint: { ...hostKey, retry },
         });
         return false;
       }
       const error = connectErrorMessage(message(e), ip.trim());
-      store.set(
-        camera
-          ? { error, camera, connecting: null }
-          : { error, camera: null, connecting: null, screen: 'connect', reconnecting: null },
-      );
+      store.set(left ? { ...synced, error, connecting: null } : { ...synced, error, connecting: null, screen: 'connect', keepCameras: false });
       return false;
     }
   }
 
   async function connectWithWifi({ ssid, password }: WifiCredentials, ssh: SshLogin | null = null): Promise<boolean> {
     if (store.get().connecting) return false;
-    // A camera still connected (or reconnecting) would rejoin its own
-    // network before each attempt, racing this join: drop it first.
-    const { camera: current, reconnecting } = store.get();
-    if (current || reconnecting !== null) await disconnect();
+    // A camera reached through another Wi-Fi network rejoins it before each
+    // reconnect attempt, racing this join: drop those first. Cameras reached
+    // by address (on a shared router) stay.
+    const { cameras, camera: current, activeId } = store.get();
+    const elsewhere = Object.keys(cameras).filter((id) => id !== ssid && !isAddressId(id));
+    for (const id of elsewhere) await disconnect(id);
+    if (activeId === null && current) await disconnect();
     store.set({ pendingFingerprint: null });
     const fail = (step: 'join' | 'find' | 'wait', e: unknown) => {
       store.set({ connecting: null, error: wifiErrorMessage(step, ssid, message(e)) });
@@ -206,28 +296,60 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     return connectTo(`${camera.ip}:${camera.ptp_port}`, ssid, camera.model || ssid, ssh);
   }
 
-  /** Drops the camera and everything shown for it, leaving the connect screen up. */
-  async function disconnect(): Promise<void> {
-    await ipc.disconnect().catch((e) => toast(message(e)));
-    store.set({
-      screen: 'connect',
-      camera: null,
-      reconnecting: null,
-      captures: [],
-      transfers: {},
-      activePreset: null,
-      interval: null,
-    });
+  /**
+   * Drops one camera (the active one by default). The next becomes active;
+   * after the last, everything shown for it goes and the connect screen is up.
+   */
+  async function disconnect(cameraId?: string): Promise<void> {
+    const id = cameraId ?? store.get().activeId;
+    await ipc.disconnect(id).catch((e) => toast(message(e)));
+    const state = store.get();
+    if (id === null || !(id in state.cameras)) {
+      store.set(noCameras());
+      return;
+    }
+    const patch = dropCamera(state, id);
+    store.set(patch);
+    // The app picks the next camera the same way; say so in case they differ.
+    const next = store.get().activeId;
+    if (next !== null && next !== state.activeId) await ipc.setActiveCamera(next).catch((e) => toast(message(e)));
+  }
+
+  async function disconnectAll(): Promise<void> {
+    await ipc.disconnectAll().catch((e) => toast(message(e)));
+    store.set(noCameras());
+  }
+
+  async function switchCamera(id: string): Promise<void> {
+    const state = store.get();
+    if (id === state.activeId || !(id in state.cameras)) return;
+    try {
+      await ipc.setActiveCamera(id);
+    } catch (e) {
+      toast(message(e));
+      return;
+    }
+    // Presets belong to a camera; none is known to be active on this one.
+    store.set({ ...activate(store.get(), id), activePreset: null });
+  }
+
+  async function shootAll(): Promise<void> {
+    try {
+      const results = await ipc.shootAll();
+      const { cameras } = store.get();
+      for (const [id, error] of results) if (error) toast(`${cameras[id]?.model ?? id}: ${error}`);
+    } catch (e) {
+      toast(message(e));
+    }
   }
 
   async function connectRecent(rc: RecentCamera): Promise<boolean> {
     if (rc.sshUser) {
       if (store.get().connecting) return false;
-      // Like any camera switch, this replaces the connection: the connect
-      // screen cannot show a camera that is still live.
-      await disconnect();
+      // The connect screen asks for its password; the cameras connected stay.
       store.set({
         screen: 'connect',
+        keepCameras: cameraCount(store.get()) > 0,
         error: null,
         pendingFingerprint: null,
         sshPrefill: { user: rc.sshUser, ssid: rc.ssid, ip: rc.ip },
@@ -252,7 +374,12 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
       await saveSettings({ ...settings, recentCameras, lastIp: lastKept ? settings.lastIp : null });
     },
     disconnect,
-    shoot: () => run(ipc.shoot()),
+    disconnectAll,
+    switchCamera,
+    addCamera: () =>
+      store.set({ screen: 'connect', keepCameras: true, error: null, pendingFingerprint: null, sshPrefill: null }),
+    shoot: (cameraId) => run(ipc.shoot(cameraId ?? null)),
+    shootAll,
     focus: () => run(ipc.focus()),
     toggleRecord: () => run(ipc.toggleRecord()),
     stepProperty: (code, delta) => run(ipc.stepProperty(code, delta)),
@@ -292,7 +419,7 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
         return null;
       }
     },
-    startInterval: (plan) => store.set({ interval: start(plan, Date.now()) }),
+    startInterval: (plan) => store.set({ interval: start(plan, Date.now(), store.get().activeId) }),
     stopInterval: () => store.set({ interval: null }),
     toast,
   };

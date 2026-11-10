@@ -113,14 +113,87 @@ describe('Cameras with a shared address', () => {
 
   test('a second Wi-Fi Direct camera at the same address still shows while connected to the first', () => {
     const { root, unmount } = mountWith([zv, a7], zv.ip, 'ZV-E10');
-    expect(rows(root)).toEqual(['ZV-E10', 'ILCE-7M4', 'Disconnect']);
+    expect(rows(root)).toEqual(['ZV-E10', 'ILCE-7M4', 'Add a camera', 'Disconnect']);
     unmount();
   });
 
   test('a Phase 1 entry without a port is the same camera as one with :15740', () => {
     const old: RecentCamera = { ip: '10.0.0.5', model: 'A7 IV', lastUsed: 1, ssid: null };
     const { root, unmount } = mountWith([{ ...old, ip: '192.168.122.1' }, old], '192.168.122.1:15740', 'A7 IV');
-    expect(rows(root)).toEqual(['A7 IV', 'A7 IV', 'Disconnect']);
+    expect(rows(root)).toEqual(['A7 IV', 'A7 IV', 'Add a camera', 'Disconnect']);
+    unmount();
+  });
+});
+
+describe('Cameras with several connected', () => {
+  const base = cameraState as unknown as CameraState;
+  const zv = { ...base, model: 'ZV-E10', connected: true };
+  const a7 = { ...base, model: 'ILCE-7M4', connected: true };
+  const A = '10.0.0.5:15740';
+  const B = 'DIRECT-zz99:ILCE-7M4';
+  function mountTwo(recent: RecentCamera[] = [], cameras: Record<string, CameraState> = { [A]: zv, [B]: a7 }) {
+    const store = createStore<AppState>({
+      ...initialState(),
+      screen: 'main',
+      camera: zv,
+      cameras,
+      activeId: A,
+      settings: { ...settings, recentCameras: recent, lastIp: '10.0.0.5' },
+    });
+    const actions = {
+      connectRecent: vi.fn(),
+      disconnect: vi.fn(),
+      disconnectAll: vi.fn(),
+      switchCamera: vi.fn(),
+      shootAll: vi.fn(),
+      addCamera: vi.fn(),
+    } as unknown as Actions;
+    const root = document.createElement('div');
+    const unmount = mount(root, store, actions);
+    const buttons = () => [...root.querySelectorAll<HTMLButtonElement>('[aria-label="Cameras"] button')];
+    const byKey = (k: string) => buttons().find((b) => b.querySelector('.k')?.textContent === k || b.textContent === k)!;
+    return { root, store, actions, unmount, buttons, byKey };
+  }
+
+  test('one row per connected camera, then Shoot all, Add a camera, Disconnect and Disconnect all', () => {
+    const zvRc: RecentCamera = { ip: '10.0.0.5', model: 'ZV-E10', lastUsed: 3, ssid: null };
+    const a7Rc: RecentCamera = { ip: '192.168.122.1', model: 'ILCE-7M4', lastUsed: 2, ssid: B };
+    const old: RecentCamera = { ip: '10.0.0.9', model: 'A7 IV', lastUsed: 1, ssid: null };
+    const { root, unmount, byKey } = mountTwo([zvRc, a7Rc, old]);
+    const texts = [...root.querySelectorAll('[aria-label="Cameras"] button')].map(
+      (b) => b.querySelector('.k')?.textContent ?? b.textContent,
+    );
+    // Remembered cameras that are connected are not listed again.
+    expect(texts).toEqual(['ZV-E10', 'ILCE-7M4', 'Shoot all', 'A7 IV', 'Add a camera', 'Disconnect', 'Disconnect all']);
+    expect(byKey('ZV-E10').querySelector('.v')!.textContent).toBe('this');
+    expect(byKey('ILCE-7M4').querySelector('.v')?.textContent ?? '').not.toBe('this');
+    expect(byKey('ILCE-7M4').querySelector('.dot')).not.toBeNull();
+    unmount();
+  });
+
+  test('clicking a camera switches to it; the buttons call their actions', () => {
+    const { actions, unmount, byKey } = mountTwo();
+    byKey('ZV-E10').click();
+    expect(actions.switchCamera).not.toHaveBeenCalled();
+    byKey('ILCE-7M4').click();
+    expect(actions.switchCamera).toHaveBeenCalledWith(B);
+    byKey('Shoot all').click();
+    expect(actions.shootAll).toHaveBeenCalled();
+    byKey('Add a camera').click();
+    expect(actions.addCamera).toHaveBeenCalled();
+    byKey('Disconnect').click();
+    expect(actions.disconnect).toHaveBeenCalledWith();
+    byKey('Disconnect all').click();
+    expect(actions.disconnectAll).toHaveBeenCalled();
+    unmount();
+  });
+
+  test('with one camera there is no Shoot all or Disconnect all', () => {
+    const { root, unmount } = mountTwo([], { [A]: zv });
+    const texts = [...root.querySelectorAll('[aria-label="Cameras"] button')].map(
+      (b) => b.querySelector('.k')?.textContent ?? b.textContent,
+    );
+    expect(texts).toEqual(['ZV-E10', 'Add a camera', 'Disconnect']);
     unmount();
   });
 });

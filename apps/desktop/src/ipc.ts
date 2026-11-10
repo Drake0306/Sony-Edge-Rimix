@@ -8,7 +8,9 @@
 //   {"Disconnected": {"reason": "..."}}           (struct variants: one key)
 //   {"StateChanged": {"connected": true, ...}}    (newtype variants: one key)
 //
-// and a `PtpValue` as {"U16": 5}. The app's own types (AppSettings and
+// and a `PtpValue` as {"U16": 5}. Each event reaches the webview tagged with
+// the camera it came from: {"camera_id": "...", "event": <CameraEvent>}.
+// The app's own types (AppSettings and
 // RecentCamera) use camelCase fields. `src/fixtures/state-changed.json` and
 // `src/fixtures/capture-saved.json` are pinned by the Rust tests
 // `state_changed_event_json_is_stable` and `capture_saved_event_json_is_stable`.
@@ -106,6 +108,30 @@ export const isCaptureSkipped = (e: CameraEvent): e is Tagged<'CaptureSkipped'> 
   hasTag(e, 'CaptureSkipped');
 export const isCaptureFailed = (e: CameraEvent): e is Tagged<'CaptureFailed'> =>
   hasTag(e, 'CaptureFailed');
+
+/** A camera's id: its Wi-Fi name when connected through it, else `ip:port`. */
+export type CameraId = string;
+
+/** A camera event as the `camera-event` Tauri event carries it. */
+export interface TaggedEvent {
+  camera_id: CameraId;
+  event: CameraEvent;
+}
+
+/** What `connect` resolves: the new camera's id and state. */
+export interface ConnectResult {
+  id: CameraId;
+  state: CameraState;
+}
+
+/** One connected camera, as `list_cameras` lists it. */
+export interface CameraSummary {
+  id: CameraId;
+  label: string;
+  connected: boolean;
+  secured: boolean;
+  active: boolean;
+}
 
 export type DiscoverySource = 'Ssdp' | 'Gateway' | 'Manual';
 
@@ -209,28 +235,44 @@ export const openLogs = () => invoke<void>('open_logs');
 /** Waits up to `timeoutMs` for a camera to answer on the network. */
 export const waitForCamera = (timeoutMs: number) =>
   invoke<DiscoveredCamera>('wait_for_camera', { timeoutMs });
+/** Adds `cameraId` to a command's arguments when one is named; none means the active camera. */
+const forCamera = <T extends object>(args: T, cameraId: CameraId | null) =>
+  cameraId === null ? args : { ...args, cameraId };
+/** Calls a command that takes only a camera; with none named it gets no arguments at all. */
+const onCamera = <T>(cmd: string, cameraId: CameraId | null) =>
+  cameraId === null ? invoke<T>(cmd) : invoke<T>(cmd, { cameraId });
+
 /**
  * `ip` is an IP address (port 15740) or `ip:port`. `ssid` is the camera's
  * Wi-Fi name, remembered with the camera when known. With `ssh` the session
  * runs through the camera's Access Authentication tunnel; when the
  * fingerprint needs confirming it rejects with `HOSTKEY <sha256> <md5>`.
+ * Other cameras stay connected; the new one becomes the active camera.
  */
 export const connect = (ip: string, ssid: string | null = null, ssh: SshLogin | null = null) =>
-  invoke<CameraState>('connect', { ip, ssid, ssh });
-export const disconnect = () => invoke<void>('disconnect');
-export const getState = () => invoke<CameraState | null>('get_state');
-export const setProperty = (code: number, raw: PtpValue) =>
-  invoke<void>('set_property', { code, raw });
-export const stepProperty = (code: number, delta: number) =>
-  invoke<void>('step_property', { code, delta });
+  invoke<ConnectResult>('connect', { ip, ssid, ssh });
+/** Disconnects one camera, the active one when none is named. */
+export const disconnect = (cameraId: CameraId | null = null) => onCamera<void>('disconnect', cameraId);
+export const disconnectAll = () => invoke<void>('disconnect_all');
+export const listCameras = () => invoke<CameraSummary[]>('list_cameras');
+/** Makes `id` the camera that commands naming none act on. */
+export const setActiveCamera = (id: CameraId) => invoke<void>('set_active_camera', { id });
+/** Shoots every connected camera at once: `[id, error or null]` for each. */
+export const shootAll = () => invoke<[CameraId, string | null][]>('shoot_all');
+export const getState = (cameraId: CameraId | null = null) => onCamera<CameraState | null>('get_state', cameraId);
+export const setProperty = (code: number, raw: PtpValue, cameraId: CameraId | null = null) =>
+  invoke<void>('set_property', forCamera({ code, raw }, cameraId));
+export const stepProperty = (code: number, delta: number, cameraId: CameraId | null = null) =>
+  invoke<void>('step_property', forCamera({ code, delta }, cameraId));
 /** Writes each value in order, carrying on past refusals; one outcome per value. */
-export const applyValues = (values: PresetValue[]) => invoke<ApplyOutcome[]>('apply_values', { values });
-export const shoot = () => invoke<void>('shoot');
-export const focus = () => invoke<void>('focus');
-export const toggleRecord = () => invoke<void>('toggle_record');
-/** The latest live view JPEG; empty when there is no frame yet. */
-export const liveViewFrame = () => invoke<ArrayBuffer>('live_view_frame');
-export const liveViewMeta = () => invoke<LiveViewMeta>('live_view_meta');
+export const applyValues = (values: PresetValue[], cameraId: CameraId | null = null) =>
+  invoke<ApplyOutcome[]>('apply_values', forCamera({ values }, cameraId));
+export const shoot = (cameraId: CameraId | null = null) => onCamera<void>('shoot', cameraId);
+export const focus = (cameraId: CameraId | null = null) => onCamera<void>('focus', cameraId);
+export const toggleRecord = (cameraId: CameraId | null = null) => onCamera<void>('toggle_record', cameraId);
+/** The active camera's latest live view JPEG; empty when there is no frame yet. */
+export const liveViewFrame = (cameraId: CameraId | null = null) => onCamera<ArrayBuffer>('live_view_frame', cameraId);
+export const liveViewMeta = (cameraId: CameraId | null = null) => onCamera<LiveViewMeta>('live_view_meta', cameraId);
 export const getSettings = () => invoke<AppSettings>('get_settings');
 export const saveSettings = (settings: AppSettings) =>
   invoke<void>('save_settings', { settings });
@@ -239,6 +281,6 @@ export const readThumbnail = (path: string) => invoke<ArrayBuffer>('read_thumbna
 /** `null` when the dialog is cancelled. */
 export const pickFolder = () => invoke<string | null>('pick_folder');
 
-/** Calls `cb` for every camera event except `Frame` (poll `liveViewFrame`). */
-export const onCameraEvent = (cb: (event: CameraEvent) => void): Promise<UnlistenFn> =>
-  listen<CameraEvent>('camera-event', (e) => cb(e.payload));
+/** Calls `cb` with the camera's id for every camera event except `Frame` (poll `liveViewFrame`). */
+export const onCameraEvent = (cb: (cameraId: CameraId, event: CameraEvent) => void): Promise<UnlistenFn> =>
+  listen<TaggedEvent>('camera-event', (e) => cb(e.payload.camera_id, e.payload.event));

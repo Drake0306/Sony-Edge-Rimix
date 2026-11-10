@@ -15,10 +15,20 @@ vi.mock('./ipc', () => ({
   joinNetwork: vi.fn(),
   waitForCamera: vi.fn(),
   disconnect: vi.fn(),
+  disconnectAll: vi.fn(),
   applyValues: vi.fn(),
+  listCameras: vi.fn(),
+  setActiveCamera: vi.fn(),
+  shoot: vi.fn(),
+  shootAll: vi.fn(),
 }));
 
 const camera = cameraState as unknown as CameraState;
+const a7 = { ...camera, model: 'ILCE-7M4' };
+const ID = '192.168.122.1:15740';
+const A = '10.0.0.5:15740';
+const B = 'DIRECT-zz99:ILCE-7M4';
+const summary = (id: string, active = false) => ({ id, label: 'ZV-E10', connected: true, secured: false, active });
 const REFUSED = 'Cannot connect to 10.0.0.9:15740: I/O error: Connection refused (os error 61)';
 const SSID = 'DIRECT-abc1:ZV-E10';
 const found: DiscoveredCamera = {
@@ -38,7 +48,12 @@ function storeWith(wifiJoin: WifiJoin, extra: Partial<AppSettings> = {}, state: 
 }
 
 beforeEach(() => {
-  vi.mocked(ipc.connect).mockReset().mockResolvedValue(camera);
+  vi.mocked(ipc.connect).mockReset().mockResolvedValue({ id: ID, state: camera });
+  vi.mocked(ipc.listCameras).mockReset().mockResolvedValue([]);
+  vi.mocked(ipc.setActiveCamera).mockReset().mockResolvedValue();
+  vi.mocked(ipc.shoot).mockReset().mockResolvedValue();
+  vi.mocked(ipc.shootAll).mockReset().mockResolvedValue([]);
+  vi.mocked(ipc.disconnectAll).mockReset().mockResolvedValue();
   vi.mocked(ipc.getState).mockReset().mockResolvedValue(null);
   vi.mocked(ipc.getSettings).mockReset().mockRejectedValue('no settings');
   vi.mocked(ipc.saveSettings).mockReset().mockResolvedValue();
@@ -52,21 +67,36 @@ describe('connect from the main screen', () => {
     vi.mocked(ipc.connect).mockRejectedValue(REFUSED);
   });
 
-  test('a failed switch that lost the old camera returns to the connect screen', async () => {
-    const store = createStore({ ...initialState(), screen: 'main' as const, camera });
+  test('a failed reconnect that lost the only camera returns to the connect screen', async () => {
+    const store = createStore({ ...initialState(), screen: 'main' as const, camera, cameras: { [A]: camera }, activeId: A });
     expect(await createActions(store).connect('10.0.0.9')).toBe(false);
     expect(store.get().screen).toBe('connect');
     expect(store.get().camera).toBeNull();
+    expect(store.get().cameras).toEqual({});
+    expect(store.get().activeId).toBeNull();
     expect(store.get().connecting).toBeNull();
     expect(store.get().error).toContain('Could not reach the camera at 10.0.0.9.');
   });
 
   test('a failed connect keeps a camera that is still connected', async () => {
-    vi.mocked(ipc.getState).mockResolvedValue(camera);
-    const store = createStore({ ...initialState(), screen: 'main' as const, camera });
+    vi.mocked(ipc.listCameras).mockResolvedValue([summary(A, true)]);
+    const store = createStore({ ...initialState(), screen: 'main' as const, camera, cameras: { [A]: camera }, activeId: A });
     expect(await createActions(store).connect('10.0.0.9')).toBe(false);
     expect(store.get().screen).toBe('main');
     expect(store.get().camera).toBe(camera);
+    expect(store.get().cameras).toEqual({ [A]: camera });
+  });
+
+  test('a failed reconnect of the active camera falls back to the one still connected', async () => {
+    vi.mocked(ipc.listCameras).mockResolvedValue([summary(A, true)]);
+    const store = createStore({
+      ...initialState(), screen: 'main' as const, camera: a7, cameras: { [A]: camera, [B]: a7 }, activeId: B,
+    });
+    expect(await createActions(store).connect('10.0.0.9')).toBe(false);
+    expect(store.get().cameras).toEqual({ [A]: camera });
+    expect(store.get().activeId).toBe(A);
+    expect(store.get().camera).toBe(camera);
+    expect(store.get().screen).toBe('main');
   });
 });
 
@@ -152,6 +182,29 @@ describe('connect over Wi-Fi', () => {
     expect(ipc.joinNetwork).not.toHaveBeenCalled();
   });
 
+  test('a connect adds a camera beside the ones connected and makes it active', async () => {
+    vi.mocked(ipc.connect).mockResolvedValue({ id: B, state: a7 });
+    const store = storeWith('Automatic', {}, { screen: 'main', camera, cameras: { [A]: camera }, activeId: A });
+    expect(await createActions(store).connect('10.0.0.9')).toBe(true);
+    expect(ipc.disconnect).not.toHaveBeenCalled();
+    expect(store.get().cameras).toEqual({ [A]: camera, [B]: a7 });
+    expect(store.get().activeId).toBe(B);
+    expect(store.get().camera).toBe(a7);
+    expect(store.get().screen).toBe('main');
+    expect(store.get().keepCameras).toBe(false);
+  });
+
+  test('the same camera connected under another id replaces its entry', async () => {
+    vi.mocked(ipc.connect).mockResolvedValue({ id: A, state: camera });
+    vi.mocked(ipc.listCameras).mockResolvedValue([summary(B), summary(A, true)]);
+    const store = storeWith('Automatic', {}, {
+      screen: 'main', camera, cameras: { [SSID]: camera, [B]: a7 }, activeId: SSID,
+    });
+    expect(await createActions(store).connect('10.0.0.5')).toBe(true);
+    expect(Object.keys(store.get().cameras)).toEqual([B, A]);
+    expect(store.get().activeId).toBe(A);
+  });
+
   test('a connect to another camera forgets the active preset', async () => {
     const store = storeWith('Automatic', {}, { screen: 'main', camera, activePreset: 2 });
     expect(await createActions(store).connect('10.0.0.9')).toBe(true);
@@ -159,12 +212,12 @@ describe('connect over Wi-Fi', () => {
   });
 
   test('a successful connect clears an error set while it ran', async () => {
-    let finish: (c: CameraState) => void = () => {};
+    let finish: (c: ipc.ConnectResult) => void = () => {};
     vi.mocked(ipc.connect).mockReturnValue(new Promise((r) => (finish = r)));
     const store = storeWith('Automatic');
     const done = createActions(store).connect('192.168.122.1');
     store.set({ error: 'stale' });
-    finish(camera);
+    finish({ id: ID, state: camera });
     expect(await done).toBe(true);
     expect(store.get().error).toBeNull();
   });
@@ -296,19 +349,21 @@ describe('Access Authentication', () => {
     expect(store.get().sshPrefill).toEqual({ user: 'cam', ssid: SSID, ip: '192.168.122.1' });
   });
 
-  test('switching to a remembered Access Authentication camera drops the current one first', async () => {
+  test('a remembered Access Authentication camera is added beside the connected ones', async () => {
     const rc: RecentCamera = {
       ip: '192.168.122.1', model: 'ILCE-7M4', lastUsed: 1, ssid: SSID, sshUser: 'cam', sshFingerprint: SHA,
     };
+    const captures = [{ path: '/p/a.JPG', filename: 'a.JPG', bytes: 1, cameraId: A, cameraLabel: 'ZV-E10' }];
     const store = storeWith('Automatic', { recentCameras: [rc] }, {
-      screen: 'main', camera, reconnecting: 3, captures: [{ path: '/p/a.JPG', filename: 'a.JPG', bytes: 1 }],
+      screen: 'main', camera, cameras: { [A]: camera }, activeId: A, captures,
     });
     expect(await createActions(store).connectRecent(rc)).toBe(false);
-    expect(ipc.disconnect).toHaveBeenCalledTimes(1);
-    expect(store.get().camera).toBeNull();
-    expect(store.get().reconnecting).toBeNull();
-    expect(store.get().captures).toEqual([]);
+    expect(ipc.disconnect).not.toHaveBeenCalled();
+    expect(store.get().camera).toBe(camera);
+    expect(store.get().cameras).toEqual({ [A]: camera });
+    expect(store.get().captures).toEqual(captures);
     expect(store.get().screen).toBe('connect');
+    expect(store.get().keepCameras).toBe(true);
     expect(store.get().sshPrefill).toEqual({ user: 'cam', ssid: SSID, ip: '192.168.122.1' });
   });
 });
@@ -400,19 +455,20 @@ describe('presets', () => {
 });
 
 describe('connect clears a stale link state', () => {
-  test('a successful connect clears reconnecting and the interval; the top bar says Wi-Fi', async () => {
+  test('reconnecting a camera clears its reconnecting and its interval; the top bar says Wi-Fi', async () => {
     const store = storeWith('Automatic', {}, {
-      screen: 'main', camera: { ...camera, connected: false }, reconnecting: 5, interval: start({ everyS: 5, count: null }, 0),
+      screen: 'main',
+      camera: { ...camera, connected: false },
+      cameras: { [ID]: { ...camera, connected: false } },
+      activeId: ID,
+      reconnecting: 5,
+      attempts: { [ID]: 5 },
+      interval: start({ everyS: 5, count: null }, 0, ID),
     });
     const root = document.createElement('div');
     const unmount = mountTopbar(root, store, {} as never);
-    let seen: Partial<AppState> | null = null;
-    vi.mocked(ipc.connect).mockImplementationOnce(async () => {
-      seen = { reconnecting: store.get().reconnecting, interval: store.get().interval };
-      return camera;
-    });
     expect(await createActions(store).connect('192.168.122.1')).toBe(true);
-    expect(seen).toEqual({ reconnecting: null, interval: null });
+    expect(store.get().attempts).toEqual({});
     expect(store.get().reconnecting).toBeNull();
     expect(store.get().interval).toBeNull();
     expect(root.textContent).toContain('Wi-Fi');
@@ -420,12 +476,13 @@ describe('connect clears a stale link state', () => {
     unmount();
   });
 
-  test('joining another network drops a reconnecting camera first', async () => {
+  test('joining another network drops a camera reached through another network first', async () => {
     const order: string[] = [];
     vi.mocked(ipc.disconnect).mockImplementation(async () => void order.push('disconnect'));
     vi.mocked(ipc.joinNetwork).mockImplementation(async () => void order.push('join'));
     const store = storeWith('Automatic', {}, {
-      screen: 'main', camera, reconnecting: 2, interval: start({ everyS: 5, count: null }, 0),
+      screen: 'main', camera, cameras: { [SSID]: camera }, activeId: SSID, reconnecting: 2,
+      attempts: { [SSID]: 2 }, interval: start({ everyS: 5, count: null }, 0, SSID),
     });
     let atJoin: Partial<AppState> | null = null;
     vi.mocked(ipc.joinNetwork).mockImplementationOnce(async () => {
@@ -434,7 +491,16 @@ describe('connect clears a stale link state', () => {
     });
     expect(await createActions(store).connectWithWifi({ ssid: 'DIRECT-new:ILCE-7M4', password: 'pw' })).toBe(true);
     expect(order).toEqual(['disconnect', 'join']);
+    expect(ipc.disconnect).toHaveBeenCalledWith(SSID);
     expect(atJoin).toEqual({ reconnecting: null, interval: null, camera: null });
+  });
+
+  test('joining a network keeps cameras reached by address and the one on that network', async () => {
+    const store = storeWith('Automatic', {}, { screen: 'main', camera, cameras: { [A]: camera }, activeId: A });
+    vi.mocked(ipc.connect).mockResolvedValue({ id: B, state: a7 });
+    expect(await createActions(store).connectWithWifi({ ssid: B, password: 'pw' })).toBe(true);
+    expect(ipc.disconnect).not.toHaveBeenCalled();
+    expect(Object.keys(store.get().cameras)).toEqual([A, B]);
   });
 
   test('joining with no camera connected does not disconnect', async () => {
@@ -444,8 +510,8 @@ describe('connect clears a stale link state', () => {
     expect(ipc.joinNetwork).toHaveBeenCalledTimes(1);
   });
 
-  test('Ask mode also drops a connected camera before waiting', async () => {
-    const store = storeWith('Ask', {}, { screen: 'main', camera });
+  test('Ask mode also drops a camera on another network before waiting', async () => {
+    const store = storeWith('Ask', {}, { screen: 'main', camera, cameras: { [B]: camera }, activeId: B });
     await createActions(store).connectWithWifi({ ssid: SSID, password: '' });
     expect(ipc.disconnect).toHaveBeenCalledTimes(1);
     expect(ipc.joinNetwork).not.toHaveBeenCalled();
@@ -460,7 +526,7 @@ describe('interval timer', () => {
       const actions = createActions(store);
       actions.startInterval({ everyS: 1, count: 3 });
       expect(store.get().interval).toEqual({
-        plan: { everyS: 2, count: 3 }, taken: 0, missed: 0, nextAt: 12_000, running: true,
+        plan: { everyS: 2, count: 3 }, taken: 0, missed: 0, nextAt: 12_000, running: true, cameraId: null,
       });
       actions.stopInterval();
       expect(store.get().interval).toBeNull();
@@ -473,5 +539,86 @@ describe('interval timer', () => {
     const store = storeWith('Automatic', {}, { camera, interval: start({ everyS: 5, count: null }, 0) });
     await createActions(store).disconnect();
     expect(store.get().interval).toBeNull();
+  });
+});
+
+describe('several cameras', () => {
+  const two = (extra: Partial<AppState> = {}) =>
+    storeWith('Automatic', {}, { screen: 'main', camera, cameras: { [A]: camera, [B]: a7 }, activeId: A, ...extra });
+
+  test('switchCamera makes another camera active', async () => {
+    const store = two({ activePreset: 2 });
+    await createActions(store).switchCamera(B);
+    expect(ipc.setActiveCamera).toHaveBeenCalledWith(B);
+    expect(store.get().activeId).toBe(B);
+    expect(store.get().camera).toBe(a7);
+    expect(store.get().activePreset).toBeNull();
+    // An unknown or already active camera changes nothing.
+    await createActions(store).switchCamera('nope');
+    await createActions(store).switchCamera(B);
+    expect(ipc.setActiveCamera).toHaveBeenCalledTimes(1);
+  });
+
+  test('an interval keeps the camera it started on after a switch', async () => {
+    const store = two();
+    const actions = createActions(store);
+    actions.startInterval({ everyS: 5, count: null });
+    expect(store.get().interval?.cameraId).toBe(A);
+    await actions.switchCamera(B);
+    expect(store.get().interval?.cameraId).toBe(A);
+    expect(store.get().interval?.running).toBe(true);
+  });
+
+  test('shoot can name a camera', () => {
+    createActions(two()).shoot(B);
+    expect(ipc.shoot).toHaveBeenCalledWith(B);
+  });
+
+  test('shootAll toasts each camera that failed', async () => {
+    vi.mocked(ipc.shootAll).mockResolvedValue([[A, null], [B, 'Camera busy']]);
+    const toast = vi.fn();
+    await createActions(two(), toast).shootAll();
+    expect(toast.mock.calls).toEqual([['ILCE-7M4: Camera busy']]);
+  });
+
+  test('disconnecting the active camera activates the next one and keeps the captures', async () => {
+    const captures = [{ path: '/p/a.JPG', filename: 'a.JPG', bytes: 1, cameraId: A, cameraLabel: 'ZV-E10' }];
+    const store = two({
+      captures,
+      transfers: { [`${A}/DSC00002.JPG`]: { received: 1, total: 2 }, [`${B}/DSC00003.JPG`]: { received: 1, total: 2 } },
+      interval: start({ everyS: 5, count: null }, 0, A),
+    });
+    await createActions(store).disconnect();
+    expect(ipc.disconnect).toHaveBeenCalledWith(A);
+    expect(store.get().cameras).toEqual({ [B]: a7 });
+    expect(store.get().activeId).toBe(B);
+    expect(store.get().camera).toBe(a7);
+    expect(store.get().screen).toBe('main');
+    expect(store.get().captures).toEqual(captures);
+    expect(Object.keys(store.get().transfers)).toEqual([`${B}/DSC00003.JPG`]);
+    expect(store.get().interval).toBeNull();
+  });
+
+  test('disconnecting another camera keeps the active one and its interval', async () => {
+    const store = two({ interval: start({ everyS: 5, count: null }, 0, A) });
+    await createActions(store).disconnect(B);
+    expect(ipc.disconnect).toHaveBeenCalledWith(B);
+    expect(store.get().activeId).toBe(A);
+    expect(store.get().camera).toBe(camera);
+    expect(store.get().interval?.cameraId).toBe(A);
+  });
+
+  test('disconnectAll drops every camera and shows the connect screen', async () => {
+    const store = two();
+    await createActions(store).disconnectAll();
+    expect(ipc.disconnectAll).toHaveBeenCalledTimes(1);
+    expect(store.get()).toMatchObject({ cameras: {}, activeId: null, camera: null, screen: 'connect' });
+  });
+
+  test('addCamera shows the connect screen and keeps the cameras', () => {
+    const store = two({ error: 'old' });
+    createActions(store).addCamera();
+    expect(store.get()).toMatchObject({ screen: 'connect', keepCameras: true, activeId: A, camera, error: null });
+    expect(Object.keys(store.get().cameras)).toEqual([A, B]);
   });
 });
