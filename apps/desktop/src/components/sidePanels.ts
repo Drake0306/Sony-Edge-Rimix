@@ -134,17 +134,23 @@ function scopes(store: AppStore): { el: HTMLElement; destroy: () => void } {
 function cameras(store: AppStore, actions: Actions): { el: HTMLElement; destroy: () => void } {
   const g = group('list', 'Cameras');
   const key = (s: AppState) =>
-    JSON.stringify([s.camera?.model, s.camera?.connected, s.settings?.recentCameras, s.settings?.lastIp]);
-  const destroy = watch(store, key, (_, { camera, settings }) => {
+    JSON.stringify([
+      s.camera?.model,
+      s.camera?.connected,
+      s.reconnecting === null,
+      s.settings?.recentCameras,
+      s.settings?.lastIp,
+    ]);
+  const destroy = watch(store, key, (_, { camera, settings, reconnecting }) => {
     const rows: HTMLElement[] = [];
     if (camera) {
       const r = rowButton(camera.model, 'this', 'check');
       const b = r.querySelector('button')!;
       b.prepend(el('i', camera.connected ? 'dot' : 'dot off'));
       // Once the link is lost for good (a refused login, say), the row
-      // connects to the camera again.
+      // connects to the camera again; not while it is still reconnecting.
       const current = settings?.recentCameras.find((c) => c.ip === settings.lastIp);
-      if (!camera.connected && current) b.addEventListener('click', () => void actions.connectRecent(current));
+      if (!camera.connected && reconnecting === null && current) b.addEventListener('click', () => void actions.connectRecent(current));
       rows.push(r);
     }
     for (const rc of settings?.recentCameras ?? []) {

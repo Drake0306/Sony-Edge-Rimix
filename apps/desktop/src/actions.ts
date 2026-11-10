@@ -162,9 +162,25 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     return connectTo(`${camera.ip}:${camera.ptp_port}`, ssid, camera.model || ssid, ssh);
   }
 
+  /** Drops the camera and everything shown for it, leaving the connect screen up. */
+  async function disconnect(): Promise<void> {
+    await ipc.disconnect().catch((e) => toast(message(e)));
+    store.set({
+      screen: 'connect',
+      camera: null,
+      reconnecting: null,
+      captures: [],
+      transfers: {},
+      activePreset: null,
+    });
+  }
+
   async function connectRecent(rc: RecentCamera): Promise<boolean> {
     if (rc.sshUser) {
       if (store.get().connecting) return false;
+      // Like any camera switch, this replaces the connection: the connect
+      // screen cannot show a camera that is still live.
+      await disconnect();
       store.set({
         screen: 'connect',
         error: null,
@@ -190,17 +206,7 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
       const lastKept = recentCameras.some((c) => c.ip === settings.lastIp);
       await saveSettings({ ...settings, recentCameras, lastIp: lastKept ? settings.lastIp : null });
     },
-    async disconnect() {
-      await ipc.disconnect().catch((e) => toast(message(e)));
-      store.set({
-        screen: 'connect',
-        camera: null,
-        reconnecting: null,
-        captures: [],
-        transfers: {},
-        activePreset: null,
-      });
-    },
+    disconnect,
     shoot: () => run(ipc.shoot()),
     focus: () => run(ipc.focus()),
     toggleRecord: () => run(ipc.toggleRecord()),

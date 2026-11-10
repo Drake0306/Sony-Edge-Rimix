@@ -42,6 +42,7 @@ beforeEach(() => {
   vi.mocked(ipc.saveSettings).mockReset().mockResolvedValue();
   vi.mocked(ipc.joinNetwork).mockReset().mockResolvedValue();
   vi.mocked(ipc.waitForCamera).mockReset().mockResolvedValue(found);
+  vi.mocked(ipc.disconnect).mockReset().mockResolvedValue();
 });
 
 describe('connect from the main screen', () => {
@@ -257,6 +258,22 @@ describe('Access Authentication', () => {
     expect(await createActions(store).connectRecent(rc)).toBe(false);
     expect(ipc.connect).not.toHaveBeenCalled();
     expect(ipc.joinNetwork).not.toHaveBeenCalled();
+    expect(store.get().screen).toBe('connect');
+    expect(store.get().sshPrefill).toEqual({ user: 'cam', ssid: SSID, ip: '192.168.122.1' });
+  });
+
+  test('switching to a remembered Access Authentication camera drops the current one first', async () => {
+    const rc: RecentCamera = {
+      ip: '192.168.122.1', model: 'ILCE-7M4', lastUsed: 1, ssid: SSID, sshUser: 'cam', sshFingerprint: SHA,
+    };
+    const store = storeWith('Automatic', { recentCameras: [rc] }, {
+      screen: 'main', camera, reconnecting: 3, captures: [{ path: '/p/a.JPG', filename: 'a.JPG', bytes: 1 }],
+    });
+    expect(await createActions(store).connectRecent(rc)).toBe(false);
+    expect(ipc.disconnect).toHaveBeenCalledTimes(1);
+    expect(store.get().camera).toBeNull();
+    expect(store.get().reconnecting).toBeNull();
+    expect(store.get().captures).toEqual([]);
     expect(store.get().screen).toBe('connect');
     expect(store.get().sshPrefill).toEqual({ user: 'cam', ssid: SSID, ip: '192.168.122.1' });
   });

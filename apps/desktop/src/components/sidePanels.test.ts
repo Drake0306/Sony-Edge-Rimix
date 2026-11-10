@@ -3,7 +3,7 @@ import cameraState from '../fixtures/camera-state.json';
 import type { Actions } from '../actions';
 import type { AppSettings, CameraState, RecentCamera } from '../ipc';
 import { createActions } from '../actions';
-import { createStore, initialState } from '../state';
+import { createStore, initialState, type AppState } from '../state';
 import { mount, saveToSection } from './sidePanels';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(() => Promise.resolve()) }));
@@ -63,6 +63,29 @@ describe('Cameras', () => {
     row().click();
     expect(actions.connectRecent).not.toHaveBeenCalled();
     store.set({ camera: { ...camera, connected: false } });
+    row().click();
+    expect(actions.connectRecent).toHaveBeenCalledWith(rc);
+    unmount();
+  });
+
+  test('a camera in the middle of reconnecting ignores a click on its row', () => {
+    const rc: RecentCamera = { ip: '10.0.0.5', model: 'A7 IV', lastUsed: 1, ssid: null };
+    const camera = { ...(cameraState as unknown as CameraState), model: 'A7 IV', connected: false };
+    const store = createStore<AppState>({
+      ...initialState(),
+      screen: 'main',
+      camera,
+      reconnecting: 2,
+      settings: { ...settings, recentCameras: [rc], lastIp: rc.ip },
+    });
+    const actions = { connectRecent: vi.fn(() => Promise.resolve(true)), disconnect: vi.fn() } as unknown as Actions;
+    const root = document.createElement('div');
+    const unmount = mount(root, store, actions);
+    const row = () => root.querySelector<HTMLButtonElement>('[aria-label="Cameras"] button')!;
+    row().click();
+    expect(actions.connectRecent).not.toHaveBeenCalled();
+    // Once reconnecting has given up, the row connects again.
+    store.set({ reconnecting: null });
     row().click();
     expect(actions.connectRecent).toHaveBeenCalledWith(rc);
     unmount();
