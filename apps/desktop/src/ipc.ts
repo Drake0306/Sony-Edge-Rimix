@@ -182,8 +182,12 @@ export const currentNetwork = () => invoke<string | null>('current_network');
 /** Waits up to `timeoutMs` for a camera to answer on the network. */
 export const waitForCamera = (timeoutMs: number) =>
   invoke<DiscoveredCamera>('wait_for_camera', { timeoutMs });
-/** `ip` is an IP address (port 15740) or `ip:port`. */
-export const connect = (ip: string) => invoke<CameraState>('connect', { ip });
+/**
+ * `ip` is an IP address (port 15740) or `ip:port`. `ssid` is the camera's
+ * Wi-Fi name, remembered with the camera when known.
+ */
+export const connect = (ip: string, ssid: string | null = null) =>
+  invoke<CameraState>('connect', { ip, ssid });
 export const disconnect = () => invoke<void>('disconnect');
 export const getState = () => invoke<CameraState | null>('get_state');
 export const setProperty = (code: number, raw: PtpValue) =>

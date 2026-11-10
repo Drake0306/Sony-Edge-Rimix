@@ -61,6 +61,8 @@ export interface AppState {
   overlays: { thirds: boolean; zebra: boolean };
   /** Reconnect attempt while the link is down, otherwise null. */
   reconnecting: number | null;
+  /** Progress of a connect started from the connect screen, otherwise null. */
+  connecting: { phase: 'joining' | 'finding' | 'connecting'; text: string } | null;
   error: string | null;
 }
 
@@ -80,6 +82,7 @@ export const initialState = (): AppState => ({
   status: { fps: 0, lastShotAt: null },
   overlays: { thirds: true, zebra: false },
   reconnecting: null,
+  connecting: null,
   error: null,
 });
 

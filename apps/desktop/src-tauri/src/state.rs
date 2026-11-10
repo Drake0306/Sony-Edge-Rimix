@@ -158,11 +158,13 @@ where
 }
 
 /// Connects to the camera at `ip`, replacing any camera already connected,
-/// and remembers it in the settings. Returns its state and a subscription
+/// and remembers it in the settings with its Wi-Fi name (`ssid`, never a
+/// password) when known. Returns its state and a subscription
 /// to its events for [`forward_events`].
 pub async fn connect(
     state: &AppState,
     ip: &str,
+    ssid: Option<&str>,
 ) -> Result<(CameraState, broadcast::Receiver<CameraEvent>), String> {
     let addr = parse_addr(ip)?;
     let previous = state.camera.lock().await.take();
@@ -189,7 +191,7 @@ pub async fn connect(
     }
     let snapshot = {
         let mut s = lock(&state.settings);
-        s.remember_camera(ip.trim(), &camera_state.model, None, now_millis());
+        s.remember_camera(ip.trim(), &camera_state.model, ssid, now_millis());
         s.clone()
     };
     if let Err(e) = settings::save(&state.settings_path, &snapshot) {
@@ -348,7 +350,7 @@ mod tests {
     async fn connected(dir: &Path) -> (SimHandle, AppState, CameraState) {
         let sim = spawn(SimConfig::default()).await;
         let state = app_state(dir);
-        let (camera_state, _rx) = connect(&state, &sim.addr.to_string()).await.unwrap();
+        let (camera_state, _rx) = connect(&state, &sim.addr.to_string(), None).await.unwrap();
         (sim, state, camera_state)
     }
 
@@ -378,14 +380,22 @@ mod tests {
     #[tokio::test]
     async fn connect_returns_state_and_remembers_the_camera() {
         let tmp = tempfile::tempdir().unwrap();
-        let (sim, state, camera_state) = connected(tmp.path()).await;
+        let sim = spawn(SimConfig::default()).await;
+        let state = app_state(tmp.path());
+        let ip = sim.addr.to_string();
+        let (camera_state, _rx) = connect(&state, &ip, Some("DIRECT-abc1:ZV-E10"))
+            .await
+            .unwrap();
         assert!(camera_state.connected);
         assert_eq!(camera_state.model, "ZV-E10");
-        let ip = sim.addr.to_string();
         let saved = settings::load(&state.settings_path);
         assert_eq!(saved.last_ip.as_deref(), Some(ip.as_str()));
         assert_eq!(saved.recent_cameras[0].ip, ip);
         assert_eq!(saved.recent_cameras[0].model, "ZV-E10");
+        assert_eq!(
+            saved.recent_cameras[0].ssid.as_deref(),
+            Some("DIRECT-abc1:ZV-E10")
+        );
         assert_eq!(get_settings(&state), saved);
         assert!(get_state(&state).await.unwrap().connected);
         stop(sim, &state).await;
@@ -474,7 +484,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let sim = spawn(SimConfig::default()).await;
         let state = app_state(tmp.path());
-        let (_, rx) = connect(&state, &sim.addr.to_string()).await.unwrap();
+        let (_, rx) = connect(&state, &sim.addr.to_string(), None).await.unwrap();
         let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink = seen.clone();
         let forwarder = tokio::spawn(forward_events(rx, move |ev| {

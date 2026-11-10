@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'vitest';
-import { connectErrorMessage } from './copy';
+import {
+  askToJoinText,
+  connectErrorMessage,
+  connectingText,
+  findingText,
+  joiningText,
+  NOT_A_WIFI_CODE,
+  wifiErrorMessage,
+} from './copy';
 
 describe('connectErrorMessage', () => {
   test('connect_error_message_for_refused', () => {
@@ -48,6 +56,43 @@ describe('connectErrorMessage', () => {
     ).toBe('Could not connect to the camera at 1.2.3.4: protocol error: bad packet');
     expect(connectErrorMessage('Not an IP address: cam', 'cam')).toBe(
       'Could not connect to the camera at cam: Not an IP address: cam',
+    );
+  });
+});
+
+describe('Wi-Fi connect copy', () => {
+  const ssid = 'DIRECT-abc1:ZV-E10';
+
+  test('progress lines name the network or camera', () => {
+    expect(joiningText(ssid)).toBe('Joining DIRECT-abc1:ZV-E10');
+    expect(findingText(ssid)).toBe('Looking for the camera on DIRECT-abc1:ZV-E10');
+    expect(askToJoinText(ssid)).toBe(
+      'Join DIRECT-abc1:ZV-E10 from the Wi-Fi menu. Rimix connects as soon as the camera appears.',
+    );
+    expect(connectingText('ZV-E10')).toBe('Connecting to ZV-E10. If the camera asks, press OK on it.');
+  });
+
+  test('a failed join keeps the detail and points at the Wi-Fi menu', () => {
+    expect(wifiErrorMessage('join', ssid, 'Joining Wi-Fi networks is not supported on this system yet')).toBe(
+      'Could not join DIRECT-abc1:ZV-E10: Joining Wi-Fi networks is not supported on this system yet. Join it from the Wi-Fi menu, then try again.',
+    );
+  });
+
+  test('no Wi-Fi at all suggests Nearby', () => {
+    expect(wifiErrorMessage('join', ssid, 'This computer has no Wi-Fi')).toBe(
+      'This computer has no Wi-Fi. Put the camera and this computer on the same router and use Nearby.',
+    );
+  });
+
+  test('a silent network points at PC Remote Function', () => {
+    expect(wifiErrorMessage('find', ssid, 'No camera answered on this network')).toBe(
+      'Joined DIRECT-abc1:ZV-E10 but no camera answered. On the camera, open Menu, Network, PC Remote Function, and stay on that screen.',
+    );
+  });
+
+  test('text that is not a Wi-Fi code', () => {
+    expect(NOT_A_WIFI_CODE).toBe(
+      "This code isn't a camera Wi-Fi code. Check the text below, or type the name and password.",
     );
   });
 });

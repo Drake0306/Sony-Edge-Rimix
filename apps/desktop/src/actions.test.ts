@@ -1,40 +1,153 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { invoke } from '@tauri-apps/api/core';
 import cameraState from './fixtures/camera-state.json';
-import { createActions } from './actions';
-import type { CameraState } from './ipc';
-import { createStore, initialState } from './state';
+import { ASK_FIND_MS, createActions, FIND_MS } from './actions';
+import * as ipc from './ipc';
+import type { AppSettings, CameraState, DiscoveredCamera, RecentCamera, WifiJoin } from './ipc';
+import { createStore, defaultSettings, initialState, type AppState } from './state';
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
+vi.mock('./ipc', () => ({
+  connect: vi.fn(),
+  getState: vi.fn(),
+  getSettings: vi.fn(),
+  saveSettings: vi.fn(),
+  joinNetwork: vi.fn(),
+  waitForCamera: vi.fn(),
+  disconnect: vi.fn(),
+}));
 
 const camera = cameraState as unknown as CameraState;
 const REFUSED = 'Cannot connect to 10.0.0.9:15740: I/O error: Connection refused (os error 61)';
+const SSID = 'DIRECT-abc1:ZV-E10';
+const found: DiscoveredCamera = {
+  model: 'ZV-E10',
+  friendly_name: 'ZV-E10',
+  ip: '192.168.122.1',
+  ptp_port: 15740,
+  ptp_version: null,
+  pairing_required: null,
+  ssh_supported: null,
+  source: 'Gateway',
+};
 
-function answer(stateAfter: CameraState | null) {
-  vi.mocked(invoke).mockImplementation((cmd: string) => {
-    if (cmd === 'connect') return Promise.reject(REFUSED);
-    if (cmd === 'get_state') return Promise.resolve(stateAfter);
-    return Promise.resolve();
-  });
+function storeWith(wifiJoin: WifiJoin, extra: Partial<AppSettings> = {}, state: Partial<AppState> = {}) {
+  const settings = { ...defaultSettings('/tmp'), wifiJoin, ...extra };
+  return createStore({ ...initialState(), settings, ...state });
 }
 
+beforeEach(() => {
+  vi.mocked(ipc.connect).mockReset().mockResolvedValue(camera);
+  vi.mocked(ipc.getState).mockReset().mockResolvedValue(null);
+  vi.mocked(ipc.getSettings).mockReset().mockRejectedValue('no settings');
+  vi.mocked(ipc.saveSettings).mockReset().mockResolvedValue();
+  vi.mocked(ipc.joinNetwork).mockReset().mockResolvedValue();
+  vi.mocked(ipc.waitForCamera).mockReset().mockResolvedValue(found);
+});
+
 describe('connect from the main screen', () => {
-  beforeEach(() => vi.mocked(invoke).mockReset());
+  beforeEach(() => {
+    vi.mocked(ipc.connect).mockRejectedValue(REFUSED);
+  });
 
   test('a failed switch that lost the old camera returns to the connect screen', async () => {
-    answer(null);
     const store = createStore({ ...initialState(), screen: 'main' as const, camera });
     expect(await createActions(store).connect('10.0.0.9')).toBe(false);
     expect(store.get().screen).toBe('connect');
     expect(store.get().camera).toBeNull();
+    expect(store.get().connecting).toBeNull();
     expect(store.get().error).toContain('Could not reach the camera at 10.0.0.9.');
   });
 
   test('a failed connect keeps a camera that is still connected', async () => {
-    answer(camera);
+    vi.mocked(ipc.getState).mockResolvedValue(camera);
     const store = createStore({ ...initialState(), screen: 'main' as const, camera });
     expect(await createActions(store).connect('10.0.0.9')).toBe(false);
     expect(store.get().screen).toBe('main');
     expect(store.get().camera).toBe(camera);
+  });
+});
+
+describe('connect over Wi-Fi', () => {
+  test('connectWithWifi joins, finds and connects, remembering the network', async () => {
+    const store = storeWith('Automatic');
+    const actions = createActions(store);
+    const phases: string[] = [];
+    store.subscribe((s) => {
+      if (s.connecting) phases.push(s.connecting.phase);
+    });
+    expect(await actions.connectWithWifi({ ssid: SSID, password: '12345678' })).toBe(true);
+    expect(phases).toEqual(['joining', 'finding', 'connecting']);
+    expect(ipc.joinNetwork).toHaveBeenCalledWith(SSID, '12345678');
+    expect(ipc.waitForCamera).toHaveBeenCalledWith(FIND_MS);
+    expect(ipc.connect).toHaveBeenCalledWith('192.168.122.1', SSID);
+    expect(store.get().connecting).toBeNull();
+    expect(store.get().screen).toBe('main');
+  });
+
+  test('connectWithWifi explains when no camera answers and frees the screen', async () => {
+    vi.mocked(ipc.waitForCamera).mockRejectedValue('No camera answered on this network');
+    const store = storeWith('Automatic');
+    expect(await createActions(store).connectWithWifi({ ssid: SSID, password: 'x' })).toBe(false);
+    expect(store.get().connecting).toBeNull();
+    expect(store.get().error).toMatch(/no camera answered.*PC Remote Function/);
+    expect(ipc.connect).not.toHaveBeenCalled();
+  });
+
+  test('a failed join says what happened and does not look for the camera', async () => {
+    vi.mocked(ipc.joinNetwork).mockRejectedValue('This computer has no Wi-Fi');
+    const store = storeWith('Automatic');
+    expect(await createActions(store).connectWithWifi({ ssid: SSID, password: 'x' })).toBe(false);
+    expect(store.get().connecting).toBeNull();
+    expect(store.get().error).toBe(
+      'This computer has no Wi-Fi. Put the camera and this computer on the same router and use Nearby.',
+    );
+    expect(ipc.waitForCamera).not.toHaveBeenCalled();
+  });
+
+  test('Ask mode skips joining and waits longer', async () => {
+    const store = storeWith('Ask');
+    const texts: string[] = [];
+    store.subscribe((s) => {
+      if (s.connecting) texts.push(s.connecting.text);
+    });
+    expect(await createActions(store).connectWithWifi({ ssid: SSID, password: 'x' })).toBe(true);
+    expect(ipc.joinNetwork).not.toHaveBeenCalled();
+    expect(ipc.waitForCamera).toHaveBeenCalledWith(ASK_FIND_MS);
+    expect(texts[0]).toContain('from the Wi-Fi menu');
+  });
+
+  test('connectRecent uses the network when known and the address otherwise', async () => {
+    const store = storeWith('Automatic');
+    const actions = createActions(store);
+    const withSsid: RecentCamera = { ip: '192.168.122.1', model: 'ZV-E10', lastUsed: 1, ssid: SSID };
+    expect(await actions.connectRecent(withSsid)).toBe(true);
+    expect(ipc.joinNetwork).toHaveBeenCalledWith(SSID, null);
+    expect(ipc.connect).toHaveBeenLastCalledWith('192.168.122.1', SSID);
+
+    vi.mocked(ipc.joinNetwork).mockClear();
+    expect(await actions.connectRecent({ ...withSsid, ip: '10.0.0.5', ssid: null })).toBe(true);
+    expect(ipc.joinNetwork).not.toHaveBeenCalled();
+    expect(ipc.connect).toHaveBeenLastCalledWith('10.0.0.5', null);
+  });
+
+  test('forgetCamera drops the entry and clears lastIp', async () => {
+    const a: RecentCamera = { ip: '192.168.122.1', model: 'ZV-E10', lastUsed: 2, ssid: SSID };
+    const b: RecentCamera = { ip: '10.0.0.5', model: 'A7 IV', lastUsed: 1, ssid: null };
+    const store = storeWith('Automatic', { recentCameras: [a, b], lastIp: a.ip });
+    await createActions(store).forgetCamera(a);
+    const saved = vi.mocked(ipc.saveSettings).mock.calls[0][0];
+    expect(saved.recentCameras).toEqual([b]);
+    expect(saved.lastIp).toBeNull();
+    expect(store.get().settings?.recentCameras).toEqual([b]);
+
+    await createActions(store).forgetCamera(b);
+    expect(vi.mocked(ipc.saveSettings).mock.calls[1][0]).toMatchObject({ recentCameras: [], lastIp: null });
+  });
+
+  test('forgetCamera keeps lastIp pointing at another camera', async () => {
+    const a: RecentCamera = { ip: '192.168.122.1', model: 'ZV-E10', lastUsed: 2, ssid: SSID };
+    const b: RecentCamera = { ip: '10.0.0.5', model: 'A7 IV', lastUsed: 1, ssid: null };
+    const store = storeWith('Automatic', { recentCameras: [a, b], lastIp: a.ip });
+    await createActions(store).forgetCamera(b);
+    expect(store.get().settings).toMatchObject({ recentCameras: [a], lastIp: a.ip });
   });
 });

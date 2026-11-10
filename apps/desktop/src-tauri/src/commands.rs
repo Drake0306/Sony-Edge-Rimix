@@ -23,8 +23,9 @@ pub async fn connect(
     app: AppHandle,
     state: State<'_, AppState>,
     ip: String,
+    ssid: Option<String>,
 ) -> Result<CameraState, String> {
-    let (camera_state, events) = state::connect(&state, &ip).await?;
+    let (camera_state, events) = state::connect(&state, &ip, ssid.as_deref()).await?;
     tauri::async_runtime::spawn(state::forward_events(events, move |event| {
         if let Err(e) = app.emit(CAMERA_EVENT, event) {
             tracing::warn!(error = %e, "cannot send a camera event to the window");

@@ -144,11 +144,11 @@ function cameras(store: AppStore, actions: Actions): { el: HTMLElement; destroy:
     }
     for (const rc of settings?.recentCameras ?? []) {
       if (camera && rc.ip === settings?.lastIp) continue;
-      const r = rowButton(rc.model, rc.ip);
+      const r = rowButton(rc.model, rc.ssid ?? rc.ip);
       const b = r.querySelector('button')!;
       b.prepend(el('i', 'dot off'));
       b.querySelector('.k')!.classList.add('dim');
-      b.addEventListener('click', () => void actions.connect(rc.ip));
+      b.addEventListener('click', () => void actions.connectRecent(rc));
       rows.push(r);
     }
     const d = rowButton('Disconnect');

@@ -282,6 +282,21 @@ body{overflow:hidden}
 .device .t span{font-variant-numeric:tabular-nums}
 .pbtn:disabled{opacity:.5;cursor:default;filter:none}
 .recent .group .r.row-btn .v{font-variant-numeric:tabular-nums}
+/* connect screen: scan, paste, type */
+.preview video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.way .scanstatus{color:var(--ink);min-height:1.45em}
+.textbtn{align-self:flex-start;color:var(--ink-2);font-size:12.5px;font-weight:600;text-decoration:underline;text-underline-offset:2px;text-decoration-color:var(--hair-2)}
+.textbtn:hover{color:var(--ink)}
+.textbtn:focus-visible{box-shadow:var(--focus);border-radius:4px}
+.field .textbtn{align-self:center;flex:none;padding:0 2px;text-decoration:none}
+.disclosure::before{content:"";display:inline-block;margin-right:6px;border:4px solid transparent;border-left-color:currentColor;border-right-width:0;vertical-align:1px;transition:transform .15s}
+.disclosure[aria-expanded="true"]::before{transform:rotate(90deg)}
+.creds{display:flex;flex-direction:column;gap:8px}
+.field textarea{flex:1;min-width:0;border:0;border-radius:11px;background:var(--input-bg);box-shadow:inset 0 0 0 .5px var(--input-ring);padding:8px 12px;font:inherit;font-size:12.5px;line-height:1.4;color:var(--ink);resize:none}
+.field textarea:hover{background:var(--input-hov)}
+.field textarea:focus-visible{box-shadow:var(--focus)!important;outline:0}
+.field.paste{align-items:flex-end}
+.advanced{display:flex;flex-direction:column;gap:8px}
 
 /* toasts */
 .toasts{position:fixed;left:50%;top:64px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;z-index:70;pointer-events:none}

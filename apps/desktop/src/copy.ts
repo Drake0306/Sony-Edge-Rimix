@@ -42,3 +42,26 @@ export function webcamErrorMessage(e: unknown): string {
   }
   return "The webcam isn't available here. Paste the code's text or type the name and password instead.";
 }
+
+/** The connect screen's progress lines while connecting over Wi-Fi. */
+export const joiningText = (ssid: string) => `Joining ${ssid}`;
+export const findingText = (ssid: string) => `Looking for the camera on ${ssid}`;
+export const askToJoinText = (ssid: string) =>
+  `Join ${ssid} from the Wi-Fi menu. Rimix connects as soon as the camera appears.`;
+export const connectingText = (name: string) => `Connecting to ${name}. If the camera asks, press OK on it.`;
+
+/** The Rust side's `WifiError::NoWifi` Display text. */
+const NO_WIFI = 'This computer has no Wi-Fi';
+
+/** The connect screen's message when joining the camera's network or finding the camera on it fails. */
+export function wifiErrorMessage(step: 'join' | 'find', ssid: string, detail: string): string {
+  if (step === 'find') {
+    return `Joined ${ssid} but no camera answered. On the camera, open Menu, Network, PC Remote Function, and stay on that screen.`;
+  }
+  if (detail === NO_WIFI) {
+    return 'This computer has no Wi-Fi. Put the camera and this computer on the same router and use Nearby.';
+  }
+  return `Could not join ${ssid}: ${detail}. Join it from the Wi-Fi menu, then try again.`;
+}
+
+export const NOT_A_WIFI_CODE = "This code isn't a camera Wi-Fi code. Check the text below, or type the name and password.";
