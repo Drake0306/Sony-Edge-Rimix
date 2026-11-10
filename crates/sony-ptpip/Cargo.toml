@@ -8,3 +8,8 @@ license.workspace = true
 tokio = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+sony-ptpip-sim = { path = "../sony-ptpip-sim" }
+tokio = { workspace = true }

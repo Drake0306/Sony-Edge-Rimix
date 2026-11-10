@@ -1,0 +1,394 @@
+//! PTP/IP connection: command socket with transactions plus an event socket.
+
+use std::future::Future;
+use std::io::ErrorKind;
+use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
+use tokio::io::AsyncWriteExt;
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::net::TcpStream;
+use tokio::sync::broadcast;
+use tokio::task::JoinHandle;
+
+use crate::error::Error;
+use crate::ptp::codes::{OP_CLOSE_SESSION, OP_OPEN_SESSION, RC_OK};
+use crate::ptpip::packet::{read_frame, Packet};
+
+/// PTP/IP protocol version we announce (1.0).
+const PROTOCOL_VERSION: u32 = 0x0001_0000;
+/// Session id used for OpenSession.
+const SESSION_ID: u32 = 1;
+/// `StartData.total_len` value meaning "length not known in advance".
+const UNKNOWN_LEN: u64 = 0xFFFF_FFFF_FFFF_FFFF;
+const EVENT_CHANNEL_CAPACITY: usize = 64;
+/// CmdRequest data-phase field: no data or data from the camera.
+const DATA_PHASE_NONE_OR_IN: u32 = 1;
+/// CmdRequest data-phase field: data to the camera.
+const DATA_PHASE_OUT: u32 = 2;
+
+/// Settings for [`PtpIpConnection::connect`].
+#[derive(Debug, Clone)]
+pub struct ConnectOptions {
+    /// Identifies this host to the camera; keep it stable so pairing is remembered.
+    pub guid: [u8; 16],
+    /// Host name shown on the camera's pairing prompt.
+    pub name: String,
+    /// Limit for each TCP connect and each command round-trip.
+    pub timeout: Duration,
+    /// How long to wait for InitCommandAck while the camera shows the pairing prompt.
+    pub pairing_wait: Duration,
+}
+
+impl Default for ConnectOptions {
+    fn default() -> Self {
+        ConnectOptions {
+            guid: [0; 16],
+            name: "Rimix".into(),
+            timeout: Duration::from_secs(5),
+            pairing_wait: Duration::from_secs(60),
+        }
+    }
+}
+
+/// An event received on the event socket.
+#[derive(Debug, Clone)]
+pub struct PtpEvent {
+    pub code: u16,
+    pub params: Vec<u32>,
+}
+
+/// Payload of a data-in phase.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataIn(pub Vec<u8>);
+
+/// An open PTP/IP session with a camera.
+pub struct PtpIpConnection {
+    reader: OwnedReadHalf,
+    writer: OwnedWriteHalf,
+    next_tid: u32,
+    timeout: Duration,
+    events: broadcast::Sender<PtpEvent>,
+    disconnected: Arc<AtomicBool>,
+    event_task: JoinHandle<()>,
+}
+
+/// Maps "the peer went away" I/O errors to [`Error::Disconnected`].
+fn map_io(e: Error) -> Error {
+    match e {
+        Error::Io(io)
+            if matches!(
+                io.kind(),
+                ErrorKind::UnexpectedEof
+                    | ErrorKind::ConnectionReset
+                    | ErrorKind::ConnectionAborted
+                    | ErrorKind::BrokenPipe
+            ) =>
+        {
+            Error::Disconnected
+        }
+        other => other,
+    }
+}
+
+async fn with_timeout<T>(
+    limit: Duration,
+    fut: impl Future<Output = Result<T, Error>>,
+) -> Result<T, Error> {
+    tokio::time::timeout(limit, fut)
+        .await
+        .map_err(|_| Error::Timeout)?
+}
+
+async fn tcp_connect(addr: SocketAddr, limit: Duration) -> Result<TcpStream, Error> {
+    let s = with_timeout(limit, async { Ok(TcpStream::connect(addr).await?) }).await?;
+    s.set_nodelay(true)?;
+    Ok(s)
+}
+
+async fn send<W: AsyncWriteExt + Unpin>(w: &mut W, p: &Packet) -> Result<(), Error> {
+    w.write_all(&p.encode()).await.map_err(|e| map_io(e.into()))
+}
+
+async fn recv<R: tokio::io::AsyncRead + Unpin>(r: &mut R) -> Result<Packet, Error> {
+    let frame = read_frame(r).await.map_err(map_io)?;
+    Packet::decode(&frame)
+}
+
+fn check_tid(got: u32, want: u32) -> Result<(), Error> {
+    if got != want {
+        return Err(Error::Protocol(format!(
+            "transaction id {got} does not match {want}"
+        )));
+    }
+    Ok(())
+}
+
+fn response(op: u16, tid: u32, p: Packet) -> Result<Vec<u32>, Error> {
+    match p {
+        Packet::CmdResponse {
+            code,
+            tid: rtid,
+            params,
+        } => {
+            check_tid(rtid, tid)?;
+            if code != RC_OK {
+                return Err(Error::Response { code, op });
+            }
+            Ok(params)
+        }
+        other => Err(Error::Protocol(format!(
+            "expected CmdResponse, got {other:?}"
+        ))),
+    }
+}
+
+async fn read_events(
+    mut r: TcpStream,
+    tx: broadcast::Sender<PtpEvent>,
+    disconnected: Arc<AtomicBool>,
+) {
+    loop {
+        match recv(&mut r).await {
+            Ok(Packet::Event { code, params, .. }) => {
+                // No receivers is fine: nobody is listening right now.
+                let _ = tx.send(PtpEvent { code, params });
+            }
+            Ok(other) => tracing::debug!(?other, "ignoring packet on event socket"),
+            Err(e) => {
+                tracing::debug!(error = %e, "event socket closed");
+                disconnected.store(true, Ordering::SeqCst);
+                return;
+            }
+        }
+    }
+}
+
+impl PtpIpConnection {
+    /// Opens the command and event sockets, completes the PTP/IP handshake
+    /// and opens PTP session 1. Returns the camera's InitCommandAck.
+    pub async fn connect(
+        addr: SocketAddr,
+        opts: ConnectOptions,
+    ) -> Result<(PtpIpConnection, Packet), Error> {
+        let cmd = tcp_connect(addr, opts.timeout).await?;
+        let (mut reader, mut writer) = cmd.into_split();
+        send(
+            &mut writer,
+            &Packet::InitCommandRequest {
+                guid: opts.guid,
+                name: opts.name.clone(),
+                version: PROTOCOL_VERSION,
+            },
+        )
+        .await?;
+        let ack = with_timeout(opts.pairing_wait, recv(&mut reader)).await?;
+        let conn_number = match &ack {
+            Packet::InitCommandAck { conn_number, .. } => *conn_number,
+            Packet::InitFail { reason } => {
+                return Err(Error::Protocol(format!(
+                    "camera refused the connection (reason {reason:#x})"
+                )))
+            }
+            other => {
+                return Err(Error::Protocol(format!(
+                    "expected InitCommandAck, got {other:?}"
+                )))
+            }
+        };
+
+        let mut ev = tcp_connect(addr, opts.timeout).await?;
+        send(&mut ev, &Packet::InitEventRequest { conn_number }).await?;
+        match with_timeout(opts.timeout, recv(&mut ev)).await? {
+            Packet::InitEventAck => {}
+            other => {
+                return Err(Error::Protocol(format!(
+                    "expected InitEventAck, got {other:?}"
+                )))
+            }
+        }
+
+        let (events, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
+        let disconnected = Arc::new(AtomicBool::new(false));
+        let event_task = tokio::spawn(read_events(ev, events.clone(), disconnected.clone()));
+        let mut conn = PtpIpConnection {
+            reader,
+            writer,
+            next_tid: 1,
+            timeout: opts.timeout,
+            events,
+            disconnected,
+            event_task,
+        };
+        conn.command(OP_OPEN_SESSION, &[SESSION_ID]).await?;
+        Ok((conn, ack))
+    }
+
+    fn begin(&mut self) -> Result<u32, Error> {
+        if self.disconnected.load(Ordering::SeqCst) {
+            return Err(Error::Disconnected);
+        }
+        let tid = self.next_tid;
+        self.next_tid = self.next_tid.wrapping_add(1).max(1);
+        Ok(tid)
+    }
+
+    /// Runs a transaction with no data phase and returns the response parameters.
+    pub async fn command(&mut self, op: u16, params: &[u32]) -> Result<Vec<u32>, Error> {
+        let tid = self.begin()?;
+        let limit = self.timeout;
+        with_timeout(limit, async {
+            self.send_request(DATA_PHASE_NONE_OR_IN, op, tid, params)
+                .await?;
+            let p = recv(&mut self.reader).await?;
+            response(op, tid, p)
+        })
+        .await
+    }
+
+    /// Runs a transaction with a data phase from the camera; returns the data
+    /// and the response parameters.
+    pub async fn command_data_in(
+        &mut self,
+        op: u16,
+        params: &[u32],
+    ) -> Result<(Vec<u8>, Vec<u32>), Error> {
+        let tid = self.begin()?;
+        let limit = self.timeout;
+        with_timeout(limit, async {
+            self.send_request(DATA_PHASE_NONE_OR_IN, op, tid, params)
+                .await?;
+            let total_len = match recv(&mut self.reader).await? {
+                Packet::StartData {
+                    tid: rtid,
+                    total_len,
+                } => {
+                    check_tid(rtid, tid)?;
+                    total_len
+                }
+                // The camera may answer with no data phase at all (usually an error).
+                p @ Packet::CmdResponse { .. } => return Ok((Vec::new(), response(op, tid, p)?)),
+                other => {
+                    return Err(Error::Protocol(format!(
+                        "expected StartData, got {other:?}"
+                    )))
+                }
+            };
+            let mut data = Vec::new();
+            loop {
+                match recv(&mut self.reader).await? {
+                    Packet::Data { tid: rtid, payload } => {
+                        check_tid(rtid, tid)?;
+                        data.extend_from_slice(&payload);
+                    }
+                    Packet::EndData { tid: rtid, payload } => {
+                        check_tid(rtid, tid)?;
+                        data.extend_from_slice(&payload);
+                        break;
+                    }
+                    other => {
+                        return Err(Error::Protocol(format!(
+                            "expected Data or EndData, got {other:?}"
+                        )))
+                    }
+                }
+            }
+            if total_len != UNKNOWN_LEN && data.len() as u64 != total_len {
+                return Err(Error::Protocol(format!(
+                    "data phase carried {} bytes, announced {total_len}",
+                    data.len()
+                )));
+            }
+            let p = recv(&mut self.reader).await?;
+            Ok((data, response(op, tid, p)?))
+        })
+        .await
+    }
+
+    /// Runs a transaction with a data phase to the camera; returns the
+    /// response parameters.
+    pub async fn command_data_out(
+        &mut self,
+        op: u16,
+        params: &[u32],
+        data: &[u8],
+    ) -> Result<Vec<u32>, Error> {
+        let tid = self.begin()?;
+        let limit = self.timeout;
+        with_timeout(limit, async {
+            self.send_request(DATA_PHASE_OUT, op, tid, params).await?;
+            send(
+                &mut self.writer,
+                &Packet::StartData {
+                    tid,
+                    total_len: data.len() as u64,
+                },
+            )
+            .await?;
+            send(
+                &mut self.writer,
+                &Packet::EndData {
+                    tid,
+                    payload: data.to_vec(),
+                },
+            )
+            .await?;
+            let p = recv(&mut self.reader).await?;
+            response(op, tid, p)
+        })
+        .await
+    }
+
+    async fn send_request(
+        &mut self,
+        data_phase: u32,
+        op: u16,
+        tid: u32,
+        params: &[u32],
+    ) -> Result<(), Error> {
+        send(
+            &mut self.writer,
+            &Packet::CmdRequest {
+                data_phase,
+                op,
+                tid,
+                params: params.to_vec(),
+            },
+        )
+        .await
+    }
+
+    /// Subscribes to camera events. Events sent before subscribing are not seen.
+    pub fn events(&self) -> broadcast::Receiver<PtpEvent> {
+        self.events.subscribe()
+    }
+
+    /// True once the event socket has closed; every later command fails with
+    /// [`Error::Disconnected`].
+    pub fn is_disconnected(&self) -> bool {
+        self.disconnected.load(Ordering::SeqCst)
+    }
+
+    /// Closes the PTP session and drops both sockets.
+    pub async fn close(mut self) -> Result<(), Error> {
+        self.command(OP_CLOSE_SESSION, &[]).await?;
+        Ok(())
+    }
+}
+
+impl std::fmt::Debug for PtpIpConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PtpIpConnection")
+            .field("next_tid", &self.next_tid)
+            .field("disconnected", &self.disconnected.load(Ordering::SeqCst))
+            .finish_non_exhaustive()
+    }
+}
+
+impl Drop for PtpIpConnection {
+    fn drop(&mut self) {
+        self.event_task.abort();
+    }
+}
