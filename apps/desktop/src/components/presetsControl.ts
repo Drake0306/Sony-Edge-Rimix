@@ -134,10 +134,12 @@ export function presetsControl(store: AppStore, actions: Actions): { el: HTMLEle
     if (preset) void actions.deletePreset(preset.id);
     anchor?.focus();
   });
-  // Focus leaving the menu (not moving between its items, nor back to its own button) closes it.
+  // Focus moving to something outside the menu (not its own button) closes it. A null
+  // relatedTarget stays open: WebKit does not focus a clicked button, so a click on
+  // another item blurs with no target, and outside clicks are handled by pointerdown.
   menu.addEventListener('focusout', (e) => {
     const next = e.relatedTarget as Node | null;
-    if (menu.hidden || (next && (menu.contains(next) || next === target?.anchor))) return;
+    if (menu.hidden || !next || menu.contains(next) || next === target?.anchor) return;
     close();
   });
   menu.addEventListener('keydown', (e) => {

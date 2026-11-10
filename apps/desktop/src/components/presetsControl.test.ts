@@ -144,6 +144,9 @@ describe('presets control', () => {
     const items = [...menu()!.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
     items[0].dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: items[1] }));
     expect(menu()!.hidden).toBe(false);
+    // WebKit does not focus a clicked button, so a click on another item blurs with no target.
+    items[0].dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+    expect(menu()!.hidden).toBe(false);
     items[1].dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: document.body }));
     expect(menu()!.hidden).toBe(true);
   });
