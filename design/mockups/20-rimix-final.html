@@ -1,0 +1,1052 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-layout="dock">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rimix — Final</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* =====================================================================
+     Tokens. Dark is the default (design 13). Light (design 16) is applied
+     by data-theme="light", or by data-theme="system" when the OS is light.
+     Every component below reads only these tokens; the two accents
+     (record red, focus-lock green) are the same in both themes.
+     ===================================================================== */
+  :root{
+    --font:"Inter",-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
+    --scheme:dark;
+    --bg:#0C0E12;
+    --ink:#FFFFFF;
+    --ink-2:rgba(255,255,255,.74);
+    --ink-3:rgba(255,255,255,.50);
+    --hair:rgba(255,255,255,.10);
+    --hair-2:rgba(255,255,255,.16);
+    --well:rgba(255,255,255,.08);
+    --well-2:rgba(255,255,255,.14);
+    --group-bg:rgba(255,255,255,.08);
+    --group-ring:rgba(255,255,255,.08);
+    --hov:rgba(255,255,255,.10);
+    --hov-2:rgba(255,255,255,.14);
+    --row-active:rgba(255,255,255,.12);
+    --chip:rgba(255,255,255,.07);
+    --chip-hov:rgba(255,255,255,.16);
+    --chip-open:rgba(255,255,255,.24);
+    --chip-open-shadow:inset 0 1px 0 rgba(255,255,255,.35);
+    --sel:rgba(255,255,255,.90);
+    --sel-ink:#1D1D1F;
+    --sel-ink-2:#6E6E73;
+    --sel-shadow:0 1px 3px rgba(0,0,0,.20);
+    --ctl:rgba(255,255,255,.12);
+    --ctl-hov:rgba(255,255,255,.24);
+    --ctl-ring:rgba(255,255,255,.10);
+    --shoot-well:rgba(255,255,255,.14);
+    --shoot-ring:#FFFFFF;
+    --switch:rgba(255,255,255,.18);
+    --switch-hov:rgba(255,255,255,.26);
+    --icon:rgba(255,255,255,.80);
+    --thumb-ring:rgba(255,255,255,.14);
+    --thumb-hov:rgba(255,255,255,.70);
+    --thumb-n:rgba(255,255,255,.06);
+    --glass:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.05)),rgba(18,20,24,.46);
+    --glass-primary:linear-gradient(180deg,rgba(255,255,255,.20),rgba(255,255,255,.08)),rgba(18,20,24,.42);
+    --glass-quiet:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03)),rgba(18,20,24,.40);
+    --glass-deep:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03)),rgba(18,20,24,.62);
+    --glass-pop:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,.07)),rgba(18,20,24,.50);
+    --spec:inset 0 1px 0 rgba(255,255,255,.35), inset 1px 0 0 rgba(255,255,255,.12), inset -1px 0 0 rgba(255,255,255,.04);
+    --lift:0 0 0 .5px rgba(255,255,255,.12), 0 1px 1px rgba(0,0,0,.14), 0 12px 32px rgba(0,0,0,.30);
+    --lift-quiet:0 0 0 .5px rgba(255,255,255,.09), 0 8px 24px rgba(0,0,0,.22);
+    --ts:0 1px 2px rgba(0,0,0,.40);
+    --ts-footage:0 1px 2px rgba(0,0,0,.40);
+    --focus:0 0 0 2px rgba(255,255,255,.85), 0 0 0 4px rgba(0,0,0,.35);
+    --lvl-1:rgba(255,255,255,.35);
+    --lvl-2:rgba(255,255,255,.60);
+    --lvl-3:rgba(255,255,255,.40);
+    --badge-bg:rgba(0,0,0,.72);
+    --badge-ring:none;
+    --connect-bg:#0B0D11;
+    --webcam:blur(26px) brightness(.38) saturate(.7);
+    --vignette:radial-gradient(80% 70% at 50% 45%,transparent 40%,rgba(0,0,0,.55) 100%);
+    --reticle:rgba(255,255,255,.70);
+    --headline-ts:0 1px 3px rgba(0,0,0,.50);
+    --input-bg:rgba(255,255,255,.08);
+    --input-hov:rgba(255,255,255,.14);
+    --input-ring:rgba(255,255,255,.16);
+    --ring-bg:linear-gradient(rgba(255,255,255,.07),rgba(255,255,255,.04)),rgba(14,16,20,.44);
+    --ring-shadow:inset 0 1px 0 rgba(255,255,255,.35), inset 1px 0 0 rgba(255,255,255,.12), inset 0 -1px 0 rgba(0,0,0,.25), 0 24px 60px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.30);
+    --tick:rgba(255,255,255,.45);
+    --seg:rgba(255,255,255,.07);
+    --seg-hov:rgba(255,255,255,.16);
+    --seg-on:rgba(255,255,255,.26);
+    --seg-on-hov:rgba(255,255,255,.30);
+    --seg-stroke:rgba(255,255,255,.16);
+    --seg-on-stroke:rgba(255,255,255,.45);
+    --act-fill:rgba(255,255,255,.11);
+    --act-hov:rgba(255,255,255,.20);
+    --act-stroke:rgba(255,255,255,.22);
+    --txt-stroke:rgba(0,0,0,.35);
+    --rec:#FF453A;
+    --lock:#30D158;
+  }
+  html[data-theme="light"]{
+    --scheme:light;
+    --bg:#E9EBEF;
+    --ink:#1D1D1F;
+    --ink-2:#4A4A4F;
+    --ink-3:#73737A;
+    --hair:rgba(0,0,0,.10);
+    --hair-2:rgba(0,0,0,.14);
+    --well:rgba(0,0,0,.05);
+    --well-2:rgba(0,0,0,.08);
+    --group-bg:rgba(255,255,255,.55);
+    --group-ring:rgba(0,0,0,.09);
+    --hov:rgba(0,0,0,.06);
+    --hov-2:rgba(0,0,0,.10);
+    --row-active:rgba(255,255,255,.88);
+    --chip:rgba(255,255,255,.45);
+    --chip-hov:rgba(255,255,255,.75);
+    --chip-open:rgba(255,255,255,.96);
+    --chip-open-shadow:0 1px 3px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.08);
+    --sel:#1D1D1F;
+    --sel-ink:#FFFFFF;
+    --sel-ink-2:rgba(255,255,255,.70);
+    --sel-shadow:none;
+    --ctl:rgba(255,255,255,.92);
+    --ctl-hov:#FFFFFF;
+    --ctl-ring:rgba(0,0,0,.12);
+    --shoot-well:rgba(0,0,0,.05);
+    --shoot-ring:#1D1D1F;
+    --switch:rgba(0,0,0,.16);
+    --switch-hov:rgba(0,0,0,.24);
+    --icon:#4A4A4F;
+    --thumb-ring:rgba(0,0,0,.16);
+    --thumb-hov:rgba(29,29,31,.80);
+    --thumb-n:rgba(255,255,255,.60);
+    --glass:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,.10)),rgba(255,255,255,.56);
+    --glass-primary:linear-gradient(180deg,rgba(255,255,255,.40),rgba(255,255,255,.15)),rgba(255,255,255,.68);
+    --glass-quiet:linear-gradient(180deg,rgba(255,255,255,.25),rgba(255,255,255,.08)),rgba(255,255,255,.52);
+    --glass-deep:linear-gradient(180deg,rgba(255,255,255,.30),rgba(255,255,255,.10)),rgba(255,255,255,.66);
+    --glass-pop:linear-gradient(180deg,rgba(255,255,255,.40),rgba(255,255,255,.15)),rgba(255,255,255,.78);
+    --spec:inset 0 1px 0 rgba(255,255,255,.95), inset 1px 0 0 rgba(255,255,255,.60), inset -1px 0 0 rgba(255,255,255,.30);
+    --lift:0 0 0 .5px rgba(0,0,0,.07), 0 1px 2px rgba(20,24,32,.10), 0 12px 32px rgba(20,24,32,.18);
+    --lift-quiet:0 0 0 .5px rgba(0,0,0,.06), 0 8px 24px rgba(20,24,32,.12);
+    --ts:none;
+    --focus:0 0 0 2px #1D1D1F, 0 0 0 4px rgba(255,255,255,.90);
+    --lvl-1:rgba(0,0,0,.25);
+    --lvl-2:rgba(0,0,0,.45);
+    --lvl-3:rgba(0,0,0,.30);
+    --badge-bg:rgba(255,255,255,.82);
+    --badge-ring:0 0 0 .5px rgba(0,0,0,.08);
+    --connect-bg:#DADDE3;
+    --webcam:blur(26px) brightness(1.08) saturate(.65);
+    --vignette:radial-gradient(80% 70% at 50% 45%,transparent 35%,rgba(20,24,32,.22) 100%);
+    --reticle:rgba(29,29,31,.60);
+    --headline-ts:none;
+    --input-bg:#FFFFFF;
+    --input-hov:#FFFFFF;
+    --input-ring:rgba(0,0,0,.16);
+    --ring-bg:linear-gradient(rgba(255,255,255,.35),rgba(255,255,255,.10)),rgba(255,255,255,.56);
+    --ring-shadow:inset 0 1px 0 rgba(255,255,255,.95), inset 1px 0 0 rgba(255,255,255,.60), 0 24px 60px rgba(20,24,32,.24), 0 1px 2px rgba(20,24,32,.10), 0 0 0 .5px rgba(0,0,0,.07);
+    --tick:rgba(0,0,0,.35);
+    --seg:rgba(255,255,255,.40);
+    --seg-hov:rgba(255,255,255,.72);
+    --seg-on:rgba(255,255,255,.94);
+    --seg-on-hov:#FFFFFF;
+    --seg-stroke:rgba(0,0,0,.08);
+    --seg-on-stroke:rgba(0,0,0,.18);
+    --act-fill:rgba(255,255,255,.55);
+    --act-hov:rgba(255,255,255,.85);
+    --act-stroke:rgba(0,0,0,.08);
+    --txt-stroke:transparent;
+  }
+  @media (prefers-color-scheme:light){
+    html[data-theme="system"]{
+      --scheme:light;
+      --bg:#E9EBEF;
+      --ink:#1D1D1F;
+      --ink-2:#4A4A4F;
+      --ink-3:#73737A;
+      --hair:rgba(0,0,0,.10);
+      --hair-2:rgba(0,0,0,.14);
+      --well:rgba(0,0,0,.05);
+      --well-2:rgba(0,0,0,.08);
+      --group-bg:rgba(255,255,255,.55);
+      --group-ring:rgba(0,0,0,.09);
+      --hov:rgba(0,0,0,.06);
+      --hov-2:rgba(0,0,0,.10);
+      --row-active:rgba(255,255,255,.88);
+      --chip:rgba(255,255,255,.45);
+      --chip-hov:rgba(255,255,255,.75);
+      --chip-open:rgba(255,255,255,.96);
+      --chip-open-shadow:0 1px 3px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.08);
+      --sel:#1D1D1F;
+      --sel-ink:#FFFFFF;
+      --sel-ink-2:rgba(255,255,255,.70);
+      --sel-shadow:none;
+      --ctl:rgba(255,255,255,.92);
+      --ctl-hov:#FFFFFF;
+      --ctl-ring:rgba(0,0,0,.12);
+      --shoot-well:rgba(0,0,0,.05);
+      --shoot-ring:#1D1D1F;
+      --switch:rgba(0,0,0,.16);
+      --switch-hov:rgba(0,0,0,.24);
+      --icon:#4A4A4F;
+      --thumb-ring:rgba(0,0,0,.16);
+      --thumb-hov:rgba(29,29,31,.80);
+      --thumb-n:rgba(255,255,255,.60);
+      --glass:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,.10)),rgba(255,255,255,.56);
+      --glass-primary:linear-gradient(180deg,rgba(255,255,255,.40),rgba(255,255,255,.15)),rgba(255,255,255,.68);
+      --glass-quiet:linear-gradient(180deg,rgba(255,255,255,.25),rgba(255,255,255,.08)),rgba(255,255,255,.52);
+      --glass-deep:linear-gradient(180deg,rgba(255,255,255,.30),rgba(255,255,255,.10)),rgba(255,255,255,.66);
+      --glass-pop:linear-gradient(180deg,rgba(255,255,255,.40),rgba(255,255,255,.15)),rgba(255,255,255,.78);
+      --spec:inset 0 1px 0 rgba(255,255,255,.95), inset 1px 0 0 rgba(255,255,255,.60), inset -1px 0 0 rgba(255,255,255,.30);
+      --lift:0 0 0 .5px rgba(0,0,0,.07), 0 1px 2px rgba(20,24,32,.10), 0 12px 32px rgba(20,24,32,.18);
+      --lift-quiet:0 0 0 .5px rgba(0,0,0,.06), 0 8px 24px rgba(20,24,32,.12);
+      --ts:none;
+      --focus:0 0 0 2px #1D1D1F, 0 0 0 4px rgba(255,255,255,.90);
+      --lvl-1:rgba(0,0,0,.25);
+      --lvl-2:rgba(0,0,0,.45);
+      --lvl-3:rgba(0,0,0,.30);
+      --badge-bg:rgba(255,255,255,.82);
+      --badge-ring:0 0 0 .5px rgba(0,0,0,.08);
+      --connect-bg:#DADDE3;
+      --webcam:blur(26px) brightness(1.08) saturate(.65);
+      --vignette:radial-gradient(80% 70% at 50% 45%,transparent 35%,rgba(20,24,32,.22) 100%);
+      --reticle:rgba(29,29,31,.60);
+      --headline-ts:none;
+      --input-bg:#FFFFFF;
+      --input-hov:#FFFFFF;
+      --input-ring:rgba(0,0,0,.16);
+      --ring-bg:linear-gradient(rgba(255,255,255,.35),rgba(255,255,255,.10)),rgba(255,255,255,.56);
+      --ring-shadow:inset 0 1px 0 rgba(255,255,255,.95), inset 1px 0 0 rgba(255,255,255,.60), 0 24px 60px rgba(20,24,32,.24), 0 1px 2px rgba(20,24,32,.10), 0 0 0 .5px rgba(0,0,0,.07);
+      --tick:rgba(0,0,0,.35);
+      --seg:rgba(255,255,255,.40);
+      --seg-hov:rgba(255,255,255,.72);
+      --seg-on:rgba(255,255,255,.94);
+      --seg-on-hov:#FFFFFF;
+      --seg-stroke:rgba(0,0,0,.08);
+      --seg-on-stroke:rgba(0,0,0,.18);
+      --act-fill:rgba(255,255,255,.55);
+      --act-hov:rgba(255,255,255,.85);
+      --act-stroke:rgba(0,0,0,.08);
+      --txt-stroke:transparent;
+    }
+  }
+
+  /* ---------- base ---------- */
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{color-scheme:var(--scheme)}
+  html,body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:13px;line-height:1.3;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  body,.glass,.ring,.pop,.badge{transition:background-color .18s,color .18s,box-shadow .18s}
+  button,input{font:inherit;color:inherit}
+  button{background:none;border:0;cursor:pointer;border-radius:8px;transition:background .12s,transform .12s,color .12s}
+  :focus{outline:none}
+  :focus-visible{box-shadow:var(--focus)!important}
+  svg{display:block}
+  [hidden]{display:none!important}
+  .num{font-variant-numeric:tabular-nums}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+  .badge{position:fixed;right:16px;bottom:16px;z-index:60;padding:6px 11px;border-radius:999px;background:var(--badge-bg);color:var(--ink);font-size:11.5px;font-weight:600;pointer-events:none;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);box-shadow:var(--badge-ring);white-space:nowrap}
+  html[data-layout="ring"] .badge{right:auto;bottom:auto;left:50%;top:60px;transform:translateX(-50%)}
+
+  /* ---------- glass material ---------- */
+  .glass{
+    position:relative;
+    background:var(--glass);
+    -webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);
+    box-shadow:var(--spec),var(--lift);
+    color:var(--ink);text-shadow:var(--ts);
+    border-radius:20px;
+  }
+  .glass.primary{background:var(--glass-primary)}
+  .glass.quiet{background:var(--glass-quiet);box-shadow:var(--spec),var(--lift-quiet)}
+  .glass.deep{background:var(--glass-deep)}
+  .capsule{border-radius:999px}
+
+  .screen{position:relative;height:clamp(640px,100vh,900px);overflow:hidden}
+
+  /* ---------- live view ---------- */
+  .scene{position:absolute;inset:0}
+  .scene svg{width:100%;height:100%}
+  .thirds{position:absolute;inset:0;pointer-events:none;
+    background:
+      linear-gradient(to right, rgba(255,255,255,.13) 1px, transparent 1px) 33.333% 0/33.333% 100% no-repeat,
+      linear-gradient(to right, rgba(255,255,255,.13) 1px, transparent 1px) 66.666% 0/33.333% 100% no-repeat,
+      linear-gradient(to bottom, rgba(255,255,255,.13) 1px, transparent 1px) 0 33.333%/100% 33.333% no-repeat,
+      linear-gradient(to bottom, rgba(255,255,255,.13) 1px, transparent 1px) 0 66.666%/100% 33.333% no-repeat}
+  .focus{position:absolute;left:37.4%;top:31%;width:12.2%;aspect-ratio:4/3;pointer-events:none}
+  .focus i{position:absolute;width:20px;height:20px;border:2px solid var(--lock);filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
+  .focus i:nth-child(1){left:0;top:0;border-right:0;border-bottom:0;border-radius:6px 0 0 0}
+  .focus i:nth-child(2){right:0;top:0;border-left:0;border-bottom:0;border-radius:0 6px 0 0}
+  .focus i:nth-child(3){left:0;bottom:0;border-right:0;border-top:0;border-radius:0 0 0 6px}
+  .focus i:nth-child(4){right:0;bottom:0;border-left:0;border-top:0;border-radius:0 0 6px 0}
+  .focus span{position:absolute;left:50%;top:-26px;transform:translateX(-50%);display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;background:rgba(48,209,88,.16);color:var(--lock);font-size:11px;font-weight:600;white-space:nowrap;text-shadow:var(--ts-footage)}
+  .focus span::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--lock)}
+
+  /* ---------- top: status capsule, gear, level, histogram ---------- */
+  .status{position:absolute;left:16px;top:16px;height:36px;display:flex;align-items:center;gap:14px;padding:0 16px 0 14px;font-size:12px;white-space:nowrap}
+  .status .brand{font-weight:700;font-size:13.5px;letter-spacing:-.01em;padding-right:14px;border-right:1px solid var(--hair-2)}
+  .status .cam{font-weight:600}
+  .status .pair{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2)}
+  .status .pair b{font-weight:600;color:var(--ink)}
+  .bars{display:inline-flex;align-items:flex-end;gap:1.5px;height:10px}
+  .bars i{display:block;width:2.5px;background:var(--ink);border-radius:1px}
+  .bars i:nth-child(1){height:3px}.bars i:nth-child(2){height:5.5px}.bars i:nth-child(3){height:8px}.bars i:nth-child(4){height:10px}
+  .batt{position:relative;width:20px;height:10px;border:1.5px solid var(--icon);border-radius:3px}
+  .batt::after{content:"";position:absolute;right:-4px;top:2px;width:2px;height:3px;background:var(--icon);border-radius:1px}
+  .batt i{position:absolute;left:1.5px;top:1.5px;bottom:1.5px;width:72%;background:var(--ink);border-radius:1px}
+  .sd{width:11px;height:13px;border:1.5px solid var(--icon);border-radius:2px 4px 2px 2px;position:relative}
+  .sd::after{content:"";position:absolute;left:1.5px;right:1.5px;top:2.5px;height:1.5px;background:var(--icon)}
+
+  .gear{position:absolute;right:174px;top:16px;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:var(--ink-2)}
+  .gear svg{width:17px;height:17px}
+  .gear:hover{color:var(--ink);background:var(--glass-primary)}
+  .gear[aria-expanded="true"]{color:var(--ink);background:var(--glass-primary)}
+
+  .level{position:absolute;left:50%;top:16px;transform:translateX(-50%);height:36px;display:flex;align-items:center;gap:10px;padding:0 14px;font-size:11.5px;font-weight:600}
+  .level svg{width:120px;height:16px}
+  .level .l1{stroke:var(--lvl-1)}
+  .level .l2{stroke:var(--lvl-2)}
+  .level .l3{stroke:var(--lvl-3)}
+  .level .bub{stroke:var(--ink)}
+  .hist{position:absolute;right:16px;top:16px;width:150px;padding:9px 10px 7px;border-radius:14px}
+  .hist svg{width:100%;height:42px}
+  .hist path{fill:var(--ink);opacity:.85}
+  .hist small{display:block;margin-top:4px;font-size:10.5px;color:var(--ink-2)}
+
+  /* ---------- settings list pattern (from 06) ---------- */
+  .sect{display:flex;flex-direction:column;gap:5px}
+  .sect + .sect{margin-top:10px}
+  .sect .h{display:flex;align-items:baseline;justify-content:space-between;font-size:11px;color:var(--ink-2);padding:0 4px}
+  .group{background:var(--group-bg);border-radius:12px;box-shadow:0 0 0 .5px var(--group-ring)}
+  .r{display:flex;align-items:center;height:28px;padding:0 5px 0 11px;gap:8px}
+  .r + .r{border-top:.5px solid var(--hair)}
+  .r .k{flex:1;color:var(--ink);white-space:nowrap}
+  .r .v{font-weight:600;font-variant-numeric:tabular-nums;min-width:66px;text-align:right;white-space:nowrap}
+  .r.active{background:var(--row-active);border-top-color:transparent}
+  .r.active + .r{border-top-color:transparent}
+  .r:first-child{border-radius:12px 12px 0 0}
+  .r:last-child{border-radius:0 0 12px 12px}
+  .step{display:inline-flex;background:var(--well-2);border-radius:7px;overflow:hidden;box-shadow:inset 0 0 0 .5px var(--group-ring)}
+  .step button{width:24px;height:20px;display:grid;place-items:center;border-radius:0}
+  .step button:hover{background:var(--hov-2)}
+  .step button + button{border-left:.5px solid var(--hair)}
+  .step svg{width:10px;height:10px}
+  .mini{display:inline-flex;background:var(--well-2);border-radius:7px;padding:2px;gap:1px}
+  .mini button{min-width:24px;height:18px;padding:0 6px;border-radius:5px;font-size:11.5px;font-weight:500}
+  .mini button:hover{background:var(--hov)}
+  .mini button.on{background:var(--sel);color:var(--sel-ink);font-weight:600;text-shadow:none}
+  .mini button.on:hover{background:var(--sel)}
+  .switch{position:relative;width:28px;height:16px;border-radius:8px;background:var(--switch);flex:none;margin-right:5px}
+  .switch::after{content:"";position:absolute;left:2px;top:2px;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+  .switch:hover{background:var(--switch-hov)}
+  .chev{width:12px;height:12px;color:var(--ink-3);margin-right:5px}
+  .check{width:14px;height:14px;margin-right:6px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--lock);display:inline-block;margin-right:2px}
+  .dot.off{background:var(--ink-3)}
+  .r.row-btn{padding:0;height:auto}
+  .r.row-btn > button{display:flex;align-items:center;gap:8px;width:100%;height:28px;padding:0 5px 0 11px;border-radius:0;text-align:left}
+  .r.row-btn:first-child > button{border-radius:12px 12px 0 0}
+  .r.row-btn:last-child > button{border-radius:0 0 12px 12px}
+  .r.row-btn > button:hover{background:var(--hov)}
+  .r.row-btn .k{flex:1}
+  .r.row-btn .v{font-weight:400;color:var(--ink-2);min-width:0}
+  .r .k.dim{color:var(--ink-2)}
+  .spacer14{width:14px;margin-right:6px;flex:none}
+
+  /* ---------- left column: tools + destination ---------- */
+  .leftcol{position:absolute;left:16px;top:68px;width:246px;display:flex;flex-direction:column;gap:12px}
+  .panel{padding:10px 10px 10px;border-radius:18px}
+  .path{display:flex;align-items:center;gap:7px;height:28px;padding:0 10px;font-size:12px;background:var(--group-bg);border-radius:12px;box-shadow:0 0 0 .5px var(--group-ring);font-variant-numeric:tabular-nums;margin-bottom:6px}
+  .path span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* ---------- right column: filmstrip ---------- */
+  .film{position:absolute;right:16px;top:110px;width:150px;padding:10px;border-radius:18px}
+  .film .h{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2);padding:0 2px 7px}
+  .strip{display:grid;grid-template-columns:1fr;gap:7px}
+  .thumb{position:relative;display:block;border-radius:9px;overflow:hidden;background:#3a3e44;box-shadow:0 0 0 .5px var(--thumb-ring);text-align:left;padding:0;color:var(--ink);text-decoration:none}
+  .thumb .pic{display:block;aspect-ratio:16/9;overflow:hidden}
+  .thumb svg{width:100%;height:100%}
+  .thumb .n{display:flex;justify-content:space-between;align-items:center;padding:4px 7px 5px;font-size:10.5px;font-weight:600;color:var(--ink);background:var(--thumb-n)}
+  .thumb .n span{font-weight:500;color:var(--ink-2);font-variant-numeric:tabular-nums}
+  .thumb .n.busy{flex-direction:column;align-items:flex-start;gap:1px;padding-bottom:6px}
+  .thumb:nth-child(1) svg{filter:saturate(.8) brightness(1.05)}
+  .thumb:nth-child(2) svg{filter:hue-rotate(-10deg) contrast(1.1)}
+  .thumb:nth-child(3) svg{filter:saturate(1.2) brightness(.95)}
+  .thumb:nth-child(4) svg{filter:sepia(.25)}
+  .thumb:nth-child(5) svg{filter:brightness(1.1) saturate(.6)}
+  .thumb:nth-child(6) svg{filter:grayscale(.5) brightness(.6)}
+  .thumb .pb{position:absolute;left:0;right:0;top:calc(56.25% - 3px);height:3px;background:rgba(255,255,255,.25)}
+  .thumb .pb i{display:block;width:64%;height:100%;background:#fff}
+  .thumb:hover{box-shadow:0 0 0 1.5px var(--thumb-hov)}
+  html[data-layout="ring"] .film{width:230px}
+  html[data-layout="ring"] .strip{grid-template-columns:1fr 1fr;gap:6px}
+
+  /* ---------- the dock (layout: dock) ---------- */
+  .dockwrap{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:30}
+  .dock{display:flex;flex-direction:column;gap:9px;padding:10px;border-radius:24px}
+  .chips{display:flex;gap:4px}
+  .chip{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:46px;height:44px;padding:0 10px;border-radius:14px;background:var(--chip);white-space:nowrap}
+  .chip small{font-size:10.5px;color:var(--ink-3);font-weight:500}
+  .chip b{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+  .chip:hover{background:var(--chip-hov)}
+  .chip.open{background:var(--chip-open);box-shadow:var(--chip-open-shadow)}
+  .chip.open small{color:var(--ink-2)}
+  .dockrow{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:0 4px}
+  .dockrow > *{flex:1 1 0;min-width:0}
+  .segc{display:inline-flex;background:var(--well);border-radius:12px;padding:3px;gap:2px;box-shadow:inset 0 0 0 .5px var(--group-ring);flex:none}
+  .segc button{height:28px;min-width:34px;padding:0 10px;border-radius:9px;font-size:12px;font-weight:500;white-space:nowrap}
+  .segc button:hover{background:var(--hov)}
+  .segc button.on{background:var(--sel);color:var(--sel-ink);font-weight:600;text-shadow:none;box-shadow:var(--sel-shadow)}
+  .segc button.on:hover{background:var(--sel)}
+  .segc button.on small{color:var(--sel-ink-2)}
+  .segc button small{font-weight:600;color:var(--ink-3);margin-right:6px;font-size:11px}
+  .segc button:not(.on) small{margin:0;font-size:12px;color:var(--ink)}
+  .dockrow .left{display:flex;justify-content:flex-start}
+  .dockrow .right{display:flex;justify-content:flex-end;color:var(--ink-2);font-size:11.5px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .actions{display:flex;align-items:flex-end;justify-content:center;gap:18px;flex:none!important}
+  .act{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;font-weight:600;color:var(--ink-2);border-radius:12px;padding:0 4px}
+  .act .c{width:40px;height:40px;border-radius:50%;background:var(--ctl);box-shadow:var(--spec),0 0 0 .5px var(--ctl-ring);display:grid;place-items:center;transition:background .12s,transform .12s}
+  .act:hover .c{background:var(--ctl-hov)}
+  .act:active .c{transform:scale(.94)}
+  .act .c .rec{width:15px;height:15px;border-radius:50%;background:var(--rec);box-shadow:0 0 10px rgba(255,69,58,.5)}
+  .act .c svg{width:18px;height:18px;color:var(--ink)}
+  .shoot{color:var(--ink)}
+  .shoot .c{width:56px;height:56px;background:var(--shoot-well);box-shadow:0 0 0 2px var(--shoot-ring),inset 0 0 0 .5px rgba(255,255,255,.3),0 4px 14px rgba(0,0,0,.25)}
+  .shoot .c::after{content:"";width:44px;height:44px;border-radius:50%;background:#fff;transition:transform .12s}
+  .shoot:hover .c::after{transform:scale(.92)}
+
+  /* ---------- camera settings popover (anchored to a chip) ---------- */
+  .pop{position:absolute;left:160px;bottom:calc(100% + 12px);width:312px;padding:8px;border-radius:18px;background:var(--glass-pop)}
+  .pop .sect + .sect{margin-top:8px}
+  .ttl{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 8px;font-size:12px;font-weight:600}
+  .ttl span{font-weight:400;color:var(--ink-2)}
+  .ttl .done{height:22px;padding:0 9px;border-radius:11px;font-size:11.5px;font-weight:500;color:var(--ink-2);background:var(--well)}
+  .ttl .done:hover{background:var(--hov-2);color:var(--ink)}
+  .arrow{position:absolute;left:160px;bottom:calc(100% + 2px);width:22px;height:11px;transform:translateX(-50%);clip-path:polygon(0 0,100% 0,50% 100%);background:var(--glass-pop);-webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%)}
+
+  /* ---------- app settings popover (from the gear) ---------- */
+  .apppop{position:absolute;right:174px;top:62px;width:296px;padding:8px;border-radius:18px;background:var(--glass-pop);z-index:40}
+  .apppop .sect + .sect{margin-top:8px}
+  .aparrow{position:absolute;right:181px;top:53px;width:22px;height:11px;clip-path:polygon(50% 0,100% 100%,0 100%);background:var(--glass-pop);-webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);z-index:40}
+  .hint{display:flex;align-items:center;gap:6px;padding:9px 4px 2px;font-size:11px;color:var(--ink-3)}
+  .hint svg{width:12px;height:12px;flex:none}
+
+  /* ---------- the ring (layout: ring), ported from 15 ---------- */
+  .ring{position:absolute;right:16px;bottom:16px;width:400px;height:400px;border-radius:50%;z-index:20;
+    background:var(--ring-bg);
+    -webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);
+    box-shadow:var(--ring-shadow)}
+  .ring svg{width:100%;height:100%;overflow:visible;font-family:var(--font)}
+  .ring .ticks line{stroke:var(--tick);stroke-width:1}
+  .ring .seg path{fill:var(--seg);stroke:var(--seg-stroke);stroke-width:.75;transition:fill .12s}
+  .ring .seg:hover path{fill:var(--seg-hov)}
+  .ring .seg.on path{fill:var(--seg-on);stroke:var(--seg-on-stroke)}
+  .ring .seg.on:hover path{fill:var(--seg-on-hov)}
+  .ring .seg,.ring .act,.ring .shoot{cursor:pointer;outline:none}
+  .ring .seg:focus-visible path,.ring .act:focus-visible path{stroke:var(--ink);stroke-width:2}
+  .ring .shoot:focus-visible .halo{stroke:var(--ink);stroke-width:3}
+  .ring text{fill:var(--ink);text-anchor:middle;paint-order:stroke;stroke:var(--txt-stroke);stroke-width:2px;stroke-linejoin:round}
+  .ring .seg .v{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+  .ring .seg .k{font-size:10.5px;font-weight:500;fill:var(--ink-2)}
+  .ring .seg.on .k{fill:var(--ink)}
+  .ring .act path{fill:var(--act-fill);stroke:var(--act-stroke);stroke-width:.75;transition:fill .12s}
+  .ring .act:hover path{fill:var(--act-hov)}
+  .ring .act text{font-size:13px;font-weight:600}
+  .ring .act .dot{fill:var(--rec)}
+  .ring .afg rect{fill:none;stroke:var(--ink);stroke-width:1.5}
+  .ring .afg circle{fill:var(--ink)}
+  .ring .shoot .halo{fill:none;stroke:var(--shoot-ring);stroke-width:2}
+  .ring .shoot .disc{fill:#fff;transition:transform .12s;transform-origin:200px 200px}
+  .ring .shoot:hover .disc{transform:scale(.95)}
+  .ring .shoot text{fill:#1D1D1F;stroke:none;font-size:14px;font-weight:600}
+
+  /* settings panel beside the ring: same list pattern as the popover */
+  .ringpanel{position:absolute;right:432px;bottom:16px;width:312px;padding:8px;border-radius:18px;background:var(--glass-pop);z-index:30}
+  .ringpanel .sect + .sect{margin-top:8px}
+
+  /* presets + live status in ring layout (they live in the dock otherwise) */
+  .ringbar{position:absolute;left:16px;bottom:16px;display:flex;align-items:center;gap:14px;padding:6px 16px 6px 6px;z-index:20}
+  .ringbar .live{color:var(--ink-2);font-size:11.5px;white-space:nowrap;font-variant-numeric:tabular-nums}
+
+  html:not([data-layout="ring"]) .ring,
+  html:not([data-layout="ring"]) .ringpanel,
+  html:not([data-layout="ring"]) .ringbar{display:none}
+  html[data-layout="ring"] .dockwrap{display:none}
+
+  /* ---------- connect ---------- */
+  .connect{background:var(--connect-bg)}
+  .webcam{position:absolute;inset:-6%;filter:var(--webcam)}
+  .webcam svg{width:100%;height:100%}
+  .vignette{position:absolute;inset:0;background:var(--vignette)}
+  .reticle{position:absolute;left:50%;top:calc(40% - 75px);width:150px;height:150px;transform:translateX(-50%);pointer-events:none}
+  .reticle i{position:absolute;width:26px;height:26px;border:1.5px solid var(--reticle)}
+  .reticle i:nth-child(1){left:0;top:0;border-right:0;border-bottom:0;border-radius:8px 0 0 0}
+  .reticle i:nth-child(2){right:0;top:0;border-left:0;border-bottom:0;border-radius:0 8px 0 0}
+  .reticle i:nth-child(3){left:0;bottom:0;border-right:0;border-top:0;border-radius:0 0 0 8px}
+  .reticle i:nth-child(4){right:0;bottom:0;border-left:0;border-top:0;border-radius:0 0 8px 0}
+  .reticle span{position:absolute;left:50%;bottom:-30px;transform:translateX(-50%);white-space:nowrap;font-size:11.5px;color:var(--ink-2);text-shadow:var(--ts)}
+  .connect .status .brand{border-right:0;padding-right:0}
+  .connect .status .quietword{color:var(--ink-2)}
+  .headline{position:absolute;left:24px;top:84px;text-shadow:var(--headline-ts)}
+  .headline h1{font-size:30px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
+  .headline p{margin-top:8px;color:var(--ink-2);font-size:14px;max-width:460px}
+  .ways{position:absolute;left:24px;right:24px;top:67%;transform:translateY(-50%);display:grid;grid-template-columns:repeat(3,1fr);gap:14px;max-width:1240px;margin:0 auto}
+  .way{padding:16px;display:flex;flex-direction:column;gap:12px}
+  .way h2{font-size:15px;font-weight:600}
+  .way p{color:var(--ink-2);line-height:1.45;font-size:12.5px}
+  .way .fill{flex:1}
+  .preview{position:relative;aspect-ratio:16/4.5;border-radius:12px;overflow:hidden;background:radial-gradient(60% 90% at 50% 70%,#2a3038,#171a1f 70%);box-shadow:0 0 0 .5px rgba(255,255,255,.14);color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+  .preview .brk{position:absolute;inset:14% 30%;border-radius:6px;background:
+      linear-gradient(#fff,#fff) top left/14px 1.5px no-repeat, linear-gradient(#fff,#fff) top left/1.5px 14px no-repeat,
+      linear-gradient(#fff,#fff) top right/14px 1.5px no-repeat, linear-gradient(#fff,#fff) top right/1.5px 14px no-repeat,
+      linear-gradient(#fff,#fff) bottom left/14px 1.5px no-repeat, linear-gradient(#fff,#fff) bottom left/1.5px 14px no-repeat,
+      linear-gradient(#fff,#fff) bottom right/14px 1.5px no-repeat, linear-gradient(#fff,#fff) bottom right/1.5px 14px no-repeat;opacity:.8}
+  .preview .tag{position:absolute;left:8px;top:8px;display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.14);font-size:10.5px;font-weight:600}
+  .preview .tag i{width:6px;height:6px;border-radius:50%;background:var(--lock)}
+  .device{display:flex;align-items:center;gap:10px;padding:8px 8px 8px 12px;background:var(--group-bg);border-radius:12px;box-shadow:0 0 0 .5px var(--group-ring)}
+  .device .t{flex:1;min-width:0}
+  .device .t b{display:block;font-weight:600}
+  .device .t span{display:block;color:var(--ink-2);font-size:12px;margin-top:1px}
+  .pbtn{height:30px;padding:0 14px;border-radius:9px;background:var(--sel);color:var(--sel-ink);font-weight:600;font-size:12.5px;text-shadow:none;flex:none;box-shadow:var(--sel-shadow)}
+  .pbtn:hover{filter:brightness(1.08)}
+  .field{display:flex;align-items:center;gap:8px}
+  .field input{flex:1;height:34px;border:0;border-radius:11px;background:var(--input-bg);box-shadow:inset 0 0 0 .5px var(--input-ring);padding:0 12px;font-size:13.5px;font-variant-numeric:tabular-nums;min-width:0;color:var(--ink)}
+  .field input:hover{background:var(--input-hov)}
+  .field input:focus-visible{box-shadow:var(--focus)!important}
+  .foot{position:absolute;left:24px;right:24px;bottom:28px;display:flex;justify-content:flex-start;align-items:flex-end;gap:16px;max-width:1240px;margin:0 auto}
+  .note{display:flex;gap:10px;align-items:center;padding:10px 16px 10px 12px;border-radius:999px;font-size:12.5px;max-width:560px;line-height:1.4}
+  .note svg{width:16px;height:16px;flex:none;color:var(--ink-2)}
+  .recent{width:300px;padding:8px 8px 8px;border-radius:16px}
+  .recent .h{font-size:11px;color:var(--ink-2);padding:0 4px 6px}
+  .camglyph{width:15px;height:15px;color:var(--ink)}
+  .camglyph .lens{fill:var(--sel-ink)}
+
+  /* ---------- breakpoints ---------- */
+  @media (max-width:1240px){
+    .chip{padding:0 7px;min-width:40px}
+    .chip small{font-size:10px}
+    .chip b{font-size:12.5px}
+    .dockrow{gap:12px}
+    .leftcol{width:232px}
+    .path{font-size:11.5px}
+    .status{gap:11px;padding-right:14px}
+    .level{top:62px}
+    .film{width:134px}
+    .headline h1{font-size:26px}
+    .ring{width:330px;height:330px}
+    .ringpanel{right:362px;width:290px}
+    .ringbar{flex-direction:column;align-items:stretch;gap:8px;padding:8px;border-radius:20px}
+    .ringbar .live{text-align:center}
+    html[data-layout="ring"] .badge{top:106px}
+  }
+  @media (max-height:760px){
+    .film{top:104px;width:230px}
+    .strip{grid-template-columns:1fr 1fr;gap:6px}
+    .leftcol{top:62px}
+    .hist{width:150px}
+    .reticle{top:calc(36% - 75px)}
+    .ways{top:63%}
+    .foot{bottom:20px}
+    .ringpanel .sect + .sect{margin-top:6px}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="badge">20 — Rimix final (dock + ring, dark + light)</div>
+
+<!-- hidden copy of the scene for filmstrip tiles and the webcam backdrop (the live view carries the one full inline scene) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="sky2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9fb7c9"/><stop offset="1" stop-color="#e3d9c6"/></linearGradient>
+    <linearGradient id="wall2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5c6168"/><stop offset="1" stop-color="#3a3e44"/></linearGradient>
+    <linearGradient id="desk2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8a6a4a"/><stop offset="1" stop-color="#5b4430"/></linearGradient>
+    <radialGradient id="face2" cx="0.4" cy="0.35" r="0.8"><stop offset="0" stop-color="#e8c3a6"/><stop offset="1" stop-color="#b98a6b"/></radialGradient>
+    <g id="scene-copy">
+      <rect width="1600" height="900" fill="url(#wall2)"/>
+      <rect x="980" y="80" width="460" height="520" rx="8" fill="url(#sky2)"/>
+      <rect x="1200" y="80" width="14" height="520" fill="#2b2e33"/>
+      <rect x="980" y="330" width="460" height="12" fill="#2b2e33"/>
+      <rect x="0" y="620" width="1600" height="280" fill="url(#desk2)"/>
+      <rect x="300" y="560" width="220" height="130" rx="10" fill="#1d1f23"/>
+      <rect x="312" y="572" width="196" height="106" rx="4" fill="#2f3f55"/>
+      <ellipse cx="700" cy="620" rx="150" ry="60" fill="#2a2d33"/>
+      <path d="M560 640 Q700 400 840 640 Z" fill="#2f5d8a"/>
+      <circle cx="700" cy="400" r="95" fill="url(#face2)"/>
+      <path d="M605 395 Q700 270 795 395 Q760 330 700 330 Q640 330 605 395 Z" fill="#2b2320"/>
+      <rect x="1120" y="520" width="120" height="140" rx="4" fill="#4b5563"/>
+      <circle cx="1180" cy="455" r="55" fill="#d8b36a" opacity="0.7"/>
+    </g>
+    <symbol id="minus" viewBox="0 0 10 10"><path d="M1.5 5h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="plus" viewBox="0 0 10 10"><path d="M1.5 5h7M5 1.5v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="chl" viewBox="0 0 10 10"><path d="M6.5 1.5 3 5l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="chr" viewBox="0 0 10 10"><path d="M3.5 1.5 7 5 3.5 8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="tick" viewBox="0 0 14 14"><path d="M3 7.5 6 10.5 11.5 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="cam" viewBox="0 0 20 20"><rect x="2" y="6" width="16" height="11" rx="3" fill="currentColor"/><rect x="6" y="3" width="6" height="4" rx="1.5" fill="currentColor"/><circle class="lens" cx="10" cy="11.5" r="3.4"/><circle cx="10" cy="11.5" r="1.7" fill="currentColor"/></symbol>
+    <symbol id="gearglyph" viewBox="0 0 20 20"><path d="M8.6 2.5h2.8l.4 2.1 1.6.7 1.8-1.2 2 2-1.2 1.8.7 1.6 2.1.4v2.8l-2.1.4-.7 1.6 1.2 1.8-2 2-1.8-1.2-1.6.7-.4 2.1H8.6l-.4-2.1-1.6-.7-1.8 1.2-2-2 1.2-1.8-.7-1.6-2.1-.4V8.6l2.1-.4.7-1.6-1.2-1.8 2-2 1.8 1.2 1.6-.7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+  </defs>
+</svg>
+
+<!-- ================= Screen 1: main ================= -->
+<section class="screen main" aria-label="Main screen">
+  <div class="scene">
+    <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Placeholder scene: a person at a desk by a window">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9fb7c9"/><stop offset="1" stop-color="#e3d9c6"/></linearGradient>
+        <linearGradient id="wall" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5c6168"/><stop offset="1" stop-color="#3a3e44"/></linearGradient>
+        <linearGradient id="desk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8a6a4a"/><stop offset="1" stop-color="#5b4430"/></linearGradient>
+        <radialGradient id="face" cx="0.4" cy="0.35" r="0.8"><stop offset="0" stop-color="#e8c3a6"/><stop offset="1" stop-color="#b98a6b"/></radialGradient>
+      </defs>
+      <rect width="1600" height="900" fill="url(#wall)"/>
+      <rect x="980" y="80" width="460" height="520" rx="8" fill="url(#sky)"/>
+      <rect x="1200" y="80" width="14" height="520" fill="#2b2e33"/>
+      <rect x="980" y="330" width="460" height="12" fill="#2b2e33"/>
+      <rect x="0" y="620" width="1600" height="280" fill="url(#desk)"/>
+      <rect x="300" y="560" width="220" height="130" rx="10" fill="#1d1f23"/>
+      <rect x="312" y="572" width="196" height="106" rx="4" fill="#2f3f55"/>
+      <ellipse cx="700" cy="620" rx="150" ry="60" fill="#2a2d33"/>
+      <path d="M560 640 Q700 400 840 640 Z" fill="#2f5d8a"/>
+      <circle cx="700" cy="400" r="95" fill="url(#face)"/>
+      <path d="M605 395 Q700 270 795 395 Q760 330 700 330 Q640 330 605 395 Z" fill="#2b2320"/>
+      <rect x="1120" y="520" width="120" height="140" rx="4" fill="#4b5563"/>
+      <circle cx="1180" cy="455" r="55" fill="#d8b36a" opacity="0.7"/>
+    </svg>
+  </div>
+  <div class="thirds" aria-hidden="true"></div>
+
+  <div class="focus" role="img" aria-label="Focus frame, locked">
+    <i></i><i></i><i></i><i></i>
+    <span>Focus locked</span>
+  </div>
+
+  <!-- status capsule -->
+  <header class="status glass capsule" aria-label="Camera status">
+    <span class="brand">Rimix</span>
+    <span class="cam">ZV-E10</span>
+    <span class="pair"><span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Wi-Fi Direct, <b>strong</b></span>
+    <span class="pair"><span class="batt" aria-hidden="true"><i></i></span><b class="num">72%</b></span>
+    <span class="pair"><span class="sd" aria-hidden="true"></span>Slot 1, <b class="num">238</b> shots left</span>
+    <span class="pair fw">Firmware <b class="num">2.00</b></span>
+  </header>
+
+  <!-- app settings: gear + popover (appearance and layout of Rimix itself, not the camera) -->
+  <button class="gear glass quiet" id="gear" aria-label="App settings" aria-haspopup="dialog" aria-expanded="false" aria-controls="apppop"><svg viewBox="0 0 20 20" aria-hidden="true"><use href="#gearglyph"/></svg></button>
+  <div class="aparrow" id="aparrow" aria-hidden="true" hidden></div>
+  <div class="apppop glass" id="apppop" role="dialog" aria-label="App settings" hidden>
+    <div class="ttl">App settings</div>
+    <div class="sect">
+      <div class="h"><span>Appearance</span></div>
+      <div class="group" role="list">
+        <div class="r" role="listitem"><span class="k">Theme</span>
+          <div class="mini" role="radiogroup" aria-label="Theme">
+            <button role="radio" aria-checked="true" class="on" data-set="theme" data-value="dark">Dark</button>
+            <button role="radio" aria-checked="false" data-set="theme" data-value="light">Light</button>
+            <button role="radio" aria-checked="false" data-set="theme" data-value="system">System</button>
+          </div></div>
+      </div>
+    </div>
+    <div class="sect">
+      <div class="h"><span>Layout</span></div>
+      <div class="group" role="list">
+        <div class="r" role="listitem"><span class="k">Controls</span>
+          <div class="mini" role="radiogroup" aria-label="Controls layout">
+            <button role="radio" aria-checked="true" class="on" data-set="layout" data-value="dock">Dock</button>
+            <button role="radio" aria-checked="false" data-set="layout" data-value="ring">Ring</button>
+          </div></div>
+      </div>
+    </div>
+    <div class="hint"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><rect x="1" y="2.5" width="10" height="7" rx="1.5"/><path d="M3.5 7.5h5" stroke-linecap="round"/></svg>Shortcut: ⌘, opens settings</div>
+  </div>
+
+  <!-- level -->
+  <div class="level glass capsule quiet" role="img" aria-label="Level: 1.2 degrees left">
+    <svg viewBox="0 0 120 16" aria-hidden="true">
+      <line class="l1" x1="0" y1="8" x2="120" y2="8" stroke-width="1"/>
+      <line class="l2" x1="60" y1="2" x2="60" y2="14" stroke-width="1.5"/>
+      <line class="l3" x1="30" y1="4" x2="30" y2="12" stroke-width="1"/>
+      <line class="l3" x1="90" y1="4" x2="90" y2="12" stroke-width="1"/>
+      <line class="bub" x1="40" y1="8" x2="80" y2="8" stroke-width="2.5" stroke-linecap="round" transform="rotate(-1.2 60 8)"/>
+    </svg>
+    <span class="num">1.2°</span>
+  </div>
+
+  <!-- histogram -->
+  <div class="hist glass deep" role="img" aria-label="Histogram">
+    <svg viewBox="0 0 120 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 L0 32 L8 28 L16 20 L24 14 L32 18 L40 10 L48 6 L56 12 L64 20 L72 24 L80 22 L88 26 L96 30 L104 34 L112 36 L120 38 L120 40 Z"/></svg>
+    <small>Histogram</small>
+  </div>
+
+  <!-- left column: quiet tools and destination -->
+  <aside class="leftcol" aria-label="Tools and destination">
+    <div class="panel glass quiet">
+      <div class="sect">
+        <div class="h"><span>Scopes and timer</span></div>
+        <div class="group" role="list">
+          <div class="r" role="listitem"><span class="k">Waveform</span><button class="switch" role="switch" aria-checked="false" aria-label="Waveform"></button></div>
+          <div class="r" role="listitem"><span class="k">False colour</span><button class="switch" role="switch" aria-checked="false" aria-label="False colour"></button></div>
+          <div class="r" role="listitem"><span class="k">Zebra</span><button class="switch" role="switch" aria-checked="false" aria-label="Zebra"></button></div>
+          <div class="r row-btn" role="listitem"><button><span class="k">Interval timer</span><span class="v">Off</span><svg class="chev" viewBox="0 0 10 10"><use href="#chr"/></svg></button></div>
+        </div>
+      </div>
+      <div class="sect">
+        <div class="h"><span>Cameras</span></div>
+        <div class="group" role="radiogroup" aria-label="Cameras">
+          <div class="r row-btn"><button role="radio" aria-checked="true"><i class="dot" aria-hidden="true"></i><span class="k">ZV-E10</span><span class="v">this</span><svg class="check" viewBox="0 0 14 14" aria-hidden="true"><use href="#tick"/></svg></button></div>
+          <div class="r row-btn"><button role="radio" aria-checked="false"><i class="dot off" aria-hidden="true"></i><span class="k dim">a7 IV</span><span class="v">offline</span><span class="spacer14"></span></button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel glass quiet">
+      <div class="sect">
+        <div class="h"><span>Save to</span></div>
+        <div class="path"><span>~/Pictures/Rimix/2026-11-10</span></div>
+        <div class="group" role="radiogroup" aria-label="Destination">
+          <div class="r row-btn"><button role="radio" aria-checked="false"><span class="k">Custom folder</span><span class="spacer14"></span></button></div>
+          <div class="r row-btn"><button role="radio" aria-checked="false"><span class="k">Lightroom watched folder</span><span class="spacer14"></span></button></div>
+          <div class="r row-btn"><button role="radio" aria-checked="true"><span class="k">New folder per date</span><svg class="check" viewBox="0 0 14 14" aria-hidden="true"><use href="#tick"/></svg></button></div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- right column: filmstrip -->
+  <aside class="film glass deep" aria-label="Last six captures">
+    <div class="h"><span>Last captures</span></div>
+    <div class="strip">
+      <a class="thumb" href="#" aria-label="DSC01231"><span class="pic"><svg viewBox="300 200 800 450" preserveAspectRatio="xMidYMid slice"><use href="#scene-copy"/></svg></span><span class="n">DSC01231</span></a>
+      <a class="thumb" href="#" aria-label="DSC01232"><span class="pic"><svg viewBox="500 250 700 400" preserveAspectRatio="xMidYMid slice"><use href="#scene-copy"/></svg></span><span class="n">DSC01232</span></a>
+      <a class="thumb" href="#" aria-label="DSC01233"><span class="pic"><svg viewBox="200 300 900 500" preserveAspectRatio="xMidYMid slice"><use href="#scene-copy"/></svg></span><span class="n">DSC01233</span></a>
+      <a class="thumb" href="#" aria-label="DSC01234"><span class="pic"><svg viewBox="700 100 800 450" preserveAspectRatio="xMidYMid slice"><use href="#scene-copy"/></svg></span><span class="n">DSC01234</span></a>
+      <a class="thumb" href="#" aria-label="DSC01235"><span class="pic"><svg viewBox="400 150 800 450" preserveAspectRatio="xMidYMid slice"><use href="#scene-copy"/></svg></span><span class="n">DSC01235</span></a>
+      <a class="thumb" href="#" aria-label="DSC01236, transferring 64%"><span class="pic"><svg viewBox="350 220 800 450" preserveAspectRatio="xMidYMid slice"><use href="#scene-copy"/></svg></span><span class="pb" aria-hidden="true"><i></i></span><span class="n busy">DSC01236<span>transferring 64%</span></span></a>
+    </div>
+  </aside>
+
+  <!-- ===== layout: dock ===== -->
+  <div class="dockwrap">
+    <div class="arrow" id="arrow" aria-hidden="true"></div>
+    <div class="pop glass" id="pop" role="dialog" aria-label="Camera settings">
+      <div class="ttl">Settings <span id="pop-from">opened from ISO</span></div>
+      <div class="sect">
+        <div class="h"><span>Exposure</span></div>
+        <div class="group" role="list">
+          <div class="r" role="listitem" data-key="mode"><span class="k">Mode</span>
+            <div class="mini" role="radiogroup" aria-label="Mode"><button role="radio" aria-checked="false">P</button><button role="radio" aria-checked="false">A</button><button role="radio" aria-checked="false">S</button><button role="radio" aria-checked="true" class="on">M</button></div></div>
+          <div class="r" role="listitem" data-key="shutter"><span class="k">Shutter</span><span class="v">1/125</span><div class="step"><button aria-label="Slower shutter"><svg><use href="#minus"/></svg></button><button aria-label="Faster shutter"><svg><use href="#plus"/></svg></button></div></div>
+          <div class="r" role="listitem" data-key="aperture"><span class="k">Aperture</span><span class="v">f/4.0</span><div class="step"><button aria-label="Open aperture"><svg><use href="#minus"/></svg></button><button aria-label="Close aperture"><svg><use href="#plus"/></svg></button></div></div>
+          <div class="r active" role="listitem" aria-current="true" data-key="iso"><span class="k">ISO</span><span class="v">800</span><div class="step"><button aria-label="Lower ISO"><svg><use href="#minus"/></svg></button><button aria-label="Raise ISO"><svg><use href="#plus"/></svg></button></div></div>
+          <div class="r" role="listitem" data-key="ec"><span class="k">Exposure comp</span><span class="v">+0.3</span><div class="step"><button aria-label="Darker"><svg><use href="#minus"/></svg></button><button aria-label="Brighter"><svg><use href="#plus"/></svg></button></div></div>
+          <div class="r" role="listitem" data-key="wb"><span class="k">White balance</span><span class="v">5200K</span><div class="step"><button aria-label="Cooler"><svg><use href="#minus"/></svg></button><button aria-label="Warmer"><svg><use href="#plus"/></svg></button></div></div>
+        </div>
+      </div>
+      <div class="sect">
+        <div class="h"><span>Image</span></div>
+        <div class="group" role="list">
+          <div class="r" role="listitem" data-key="format"><span class="k">Format</span><span class="v">RAW+JPEG</span><div class="step"><button aria-label="Previous format"><svg><use href="#chl"/></svg></button><button aria-label="Next format"><svg><use href="#chr"/></svg></button></div></div>
+          <div class="r" role="listitem" data-key="pp"><span class="k">Picture profile</span><span class="v">Off</span><div class="step"><button aria-label="Previous picture profile"><svg><use href="#chl"/></svg></button><button aria-label="Next picture profile"><svg><use href="#chr"/></svg></button></div></div>
+        </div>
+      </div>
+      <div class="sect">
+        <div class="h"><span>Focus and drive</span></div>
+        <div class="group" role="list">
+          <div class="r" role="listitem" data-key="focus"><span class="k">Focus</span><span class="v">AF-C</span><div class="step"><button aria-label="Previous focus mode"><svg><use href="#chl"/></svg></button><button aria-label="Next focus mode"><svg><use href="#chr"/></svg></button></div></div>
+          <div class="r" role="listitem" data-key="drive"><span class="k">Drive</span><span class="v">Single</span><div class="step"><button aria-label="Previous drive mode"><svg><use href="#chl"/></svg></button><button aria-label="Next drive mode"><svg><use href="#chr"/></svg></button></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dock glass primary" role="toolbar" aria-label="Camera controls">
+      <div class="chips" role="group" aria-label="Exposure values">
+        <button class="chip" data-key="mode" data-label="Mode" aria-expanded="false" aria-controls="pop"><small>Mode</small><b>M</b></button>
+        <button class="chip" data-key="shutter" data-label="Shutter" aria-expanded="false" aria-controls="pop"><small>Shutter</small><b>1/125</b></button>
+        <button class="chip" data-key="aperture" data-label="Aperture" aria-expanded="false" aria-controls="pop"><small>Aperture</small><b>f/4.0</b></button>
+        <button class="chip open" id="iso-chip" data-key="iso" data-label="ISO" aria-expanded="true" aria-controls="pop"><small>ISO</small><b>ISO 800</b></button>
+        <button class="chip" data-key="ec" data-label="Exposure comp" aria-expanded="false" aria-controls="pop"><small>Exposure comp</small><b>+0.3</b></button>
+        <button class="chip" data-key="wb" data-label="White balance" aria-expanded="false" aria-controls="pop"><small>White balance</small><b>5200K</b></button>
+        <button class="chip" data-key="focus" data-label="Focus" aria-expanded="false" aria-controls="pop"><small>Focus</small><b>AF-C</b></button>
+        <button class="chip" data-key="drive" data-label="Drive" aria-expanded="false" aria-controls="pop"><small>Drive</small><b>Single</b></button>
+        <button class="chip" data-key="format" data-label="Format" aria-expanded="false" aria-controls="pop"><small>Format</small><b>RAW+JPEG</b></button>
+        <button class="chip" data-key="pp" data-label="Picture profile" aria-expanded="false" aria-controls="pop"><small>Picture profile</small><b>Off</b></button>
+      </div>
+      <div class="dockrow">
+        <div class="left">
+          <div class="segc" role="radiogroup" aria-label="Presets">
+            <button role="radio" aria-checked="true" class="on"><small>C1</small>Talking head</button>
+            <button role="radio" aria-checked="false" aria-label="Preset C2, empty"><small>C2</small></button>
+            <button role="radio" aria-checked="false" aria-label="Preset C3, empty"><small>C3</small></button>
+            <button role="radio" aria-checked="false" aria-label="Preset C4, empty"><small>C4</small></button>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="act"><span class="c"><span class="rec" aria-hidden="true"></span></span>Record</button>
+          <button class="act shoot"><span class="c"></span>Shoot</button>
+          <button class="act"><span class="c"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M13 3h2a2 2 0 0 1 2 2v2M17 13v2a2 2 0 0 1-2 2h-2M7 17H5a2 2 0 0 1-2-2v-2"/><circle cx="10" cy="10" r="2.2"/></svg></span>Focus</button>
+        </div>
+        <div class="right">Live view 24 fps · last shot 0.8 s ago</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== layout: ring ===== -->
+  <div class="ringbar glass primary capsule" role="group" aria-label="Presets and live view status">
+    <div class="segc" role="radiogroup" aria-label="Presets">
+      <button role="radio" aria-checked="true" class="on"><small>C1</small>Talking head</button>
+      <button role="radio" aria-checked="false" aria-label="Preset C2, empty"><small>C2</small></button>
+      <button role="radio" aria-checked="false" aria-label="Preset C3, empty"><small>C3</small></button>
+      <button role="radio" aria-checked="false" aria-label="Preset C4, empty"><small>C4</small></button>
+    </div>
+    <span class="live">Live view 24 fps · last shot 0.8 s ago</span>
+  </div>
+
+  <aside class="ringpanel glass" id="ringpanel" role="dialog" aria-label="Camera settings">
+    <div class="ttl">Settings <span id="ring-from">opened from ISO</span><button class="done" id="ring-done">Done</button></div>
+    <div class="sect">
+      <div class="h"><span>Exposure</span></div>
+      <div class="group" role="list">
+        <div class="r" role="listitem" data-key="mode"><span class="k">Mode</span>
+          <div class="mini" role="radiogroup" aria-label="Mode"><button role="radio" aria-checked="false">P</button><button role="radio" aria-checked="false">A</button><button role="radio" aria-checked="false">S</button><button role="radio" aria-checked="true" class="on">M</button></div></div>
+        <div class="r" role="listitem" data-key="shutter"><span class="k">Shutter</span><span class="v">1/125</span><div class="step"><button aria-label="Slower shutter"><svg><use href="#minus"/></svg></button><button aria-label="Faster shutter"><svg><use href="#plus"/></svg></button></div></div>
+        <div class="r" role="listitem" data-key="aperture"><span class="k">Aperture</span><span class="v">f/4.0</span><div class="step"><button aria-label="Open aperture"><svg><use href="#minus"/></svg></button><button aria-label="Close aperture"><svg><use href="#plus"/></svg></button></div></div>
+        <div class="r active" role="listitem" aria-current="true" data-key="iso"><span class="k">ISO</span><span class="v">800</span><div class="step"><button aria-label="Lower ISO"><svg><use href="#minus"/></svg></button><button aria-label="Raise ISO"><svg><use href="#plus"/></svg></button></div></div>
+        <div class="r" role="listitem" data-key="ec"><span class="k">Exposure comp</span><span class="v">+0.3</span><div class="step"><button aria-label="Darker"><svg><use href="#minus"/></svg></button><button aria-label="Brighter"><svg><use href="#plus"/></svg></button></div></div>
+        <div class="r" role="listitem" data-key="wb"><span class="k">White balance</span><span class="v">5200K</span><div class="step"><button aria-label="Cooler"><svg><use href="#minus"/></svg></button><button aria-label="Warmer"><svg><use href="#plus"/></svg></button></div></div>
+      </div>
+    </div>
+    <div class="sect">
+      <div class="h"><span>Image</span></div>
+      <div class="group" role="list">
+        <div class="r" role="listitem" data-key="format"><span class="k">Format</span><span class="v">RAW+JPEG</span><div class="step"><button aria-label="Previous format"><svg><use href="#chl"/></svg></button><button aria-label="Next format"><svg><use href="#chr"/></svg></button></div></div>
+        <div class="r" role="listitem" data-key="pp"><span class="k">Picture profile</span><span class="v">Off</span><div class="step"><button aria-label="Previous picture profile"><svg><use href="#chl"/></svg></button><button aria-label="Next picture profile"><svg><use href="#chr"/></svg></button></div></div>
+      </div>
+    </div>
+    <div class="sect">
+      <div class="h"><span>Focus and drive</span></div>
+      <div class="group" role="list">
+        <div class="r" role="listitem" data-key="focus"><span class="k">Focus</span><span class="v">AF-C</span><div class="step"><button aria-label="Previous focus mode"><svg><use href="#chl"/></svg></button><button aria-label="Next focus mode"><svg><use href="#chr"/></svg></button></div></div>
+        <div class="r" role="listitem" data-key="drive"><span class="k">Drive</span><span class="v">Single</span><div class="step"><button aria-label="Previous drive mode"><svg><use href="#chl"/></svg></button><button aria-label="Next drive mode"><svg><use href="#chr"/></svg></button></div></div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="ring" role="group" aria-label="Control ring">
+    <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+<g class="ticks"><line x1="86.26" y1="356.54" x2="90.67" y2="350.48"/><line x1="15.97" y1="259.79" x2="23.10" y2="257.48"/><line x1="15.97" y1="140.21" x2="23.10" y2="142.52"/><line x1="86.26" y1="43.46" x2="90.67" y2="49.52"/><line x1="200.00" y1="6.50" x2="200.00" y2="14.00"/><line x1="313.74" y1="43.46" x2="309.33" y2="49.52"/><line x1="384.03" y1="140.21" x2="376.90" y2="142.52"/><line x1="384.03" y1="259.79" x2="376.90" y2="257.48"/><line x1="313.74" y1="356.54" x2="309.33" y2="350.48"/><line x1="200.00" y1="393.50" x2="200.00" y2="386.00"/></g>
+<g class="seg" role="button" tabindex="0" aria-pressed="false" aria-label="Mode, M" data-key="mode" data-label="Mode">
+  <path d="M84.99 353.74 A192 192 0 0 1 18.24 261.88 L93.98 236.09 A112 112 0 0 0 132.91 289.68 Z"/>
+  <text class="v" x="77.03" y="287.34">M</text>
+  <text class="k" x="77.03" y="302.34">Mode</text>
+</g>
+<g class="seg" role="button" tabindex="0" aria-pressed="false" aria-label="Shutter, 1/125" data-key="shutter" data-label="Shutter">
+  <path d="M16.59 256.78 A192 192 0 0 1 16.59 143.22 L93.01 166.88 A112 112 0 0 0 93.01 233.12 Z"/>
+  <text class="v" x="48.00" y="198.00">1/125</text>
+  <text class="k" x="48.00" y="213.00">Shutter</text>
+</g>
+<g class="seg" role="button" tabindex="0" aria-pressed="false" aria-label="Aperture, f/4.0" data-key="aperture" data-label="Aperture">
+  <path d="M18.24 138.12 A192 192 0 0 1 84.99 46.26 L132.91 110.32 A112 112 0 0 0 93.98 163.91 Z"/>
+  <text class="v" x="77.03" y="108.66">f/4.0</text>
+  <text class="k" x="77.03" y="123.66">Aperture</text>
+</g>
+<g class="seg on" role="button" tabindex="0" aria-pressed="true" aria-label="ISO, ISO 800" data-key="iso" data-label="ISO">
+  <path d="M89.32 43.11 A192 192 0 0 1 197.32 8.02 L198.44 88.01 A112 112 0 0 0 135.44 108.48 Z"/>
+  <text class="v" x="153.03" y="53.44">ISO 800</text>
+  <text class="k" x="153.03" y="68.44">ISO</text>
+</g>
+<g class="seg" role="button" tabindex="0" aria-pressed="false" aria-label="Exposure comp, +0.3" data-key="ec" data-label="Exposure comp">
+  <path d="M202.68 8.02 A192 192 0 0 1 310.68 43.11 L264.56 108.48 A112 112 0 0 0 201.56 88.01 Z"/>
+  <text class="v" x="246.97" y="53.44">+0.3</text>
+  <text class="k" x="246.97" y="68.44">Exposure comp</text>
+</g>
+<g class="seg" role="button" tabindex="0" aria-pressed="false" aria-label="White balance, 5200K" data-key="wb" data-label="White balance">
+  <path d="M315.01 46.26 A192 192 0 0 1 381.76 138.12 L306.02 163.91 A112 112 0 0 0 267.09 110.32 Z"/>
+  <text class="v" x="322.97" y="108.66">5200K</text>
+  <text class="k" x="322.97" y="123.66">White balance</text>
+</g>
+<g class="seg" role="button" tabindex="0" aria-pressed="false" aria-label="Focus, AF-C" data-key="focus" data-label="Focus">
+  <path d="M383.41 143.22 A192 192 0 0 1 383.41 256.78 L306.99 233.12 A112 112 0 0 0 306.99 166.88 Z"/>
+  <text class="v" x="352.00" y="198.00">AF-C</text>
+  <text class="k" x="352.00" y="213.00">Focus</text>
+</g>
+<g class="seg" role="button" tabindex="0" aria-pressed="false" aria-label="Drive, Single" data-key="drive" data-label="Drive">
+  <path d="M381.76 261.88 A192 192 0 0 1 315.01 353.74 L267.09 289.68 A112 112 0 0 0 306.02 236.09 Z"/>
+  <text class="v" x="322.97" y="287.34">Single</text>
+  <text class="k" x="322.97" y="302.34">Drive</text>
+</g>
+<g class="seg" role="button" tabindex="0" aria-pressed="false" aria-label="Format, RAW+JPEG" data-key="format" data-label="Format">
+  <path d="M310.68 356.89 A192 192 0 0 1 202.68 391.98 L201.56 311.99 A112 112 0 0 0 264.56 291.52 Z"/>
+  <text class="v" x="246.97" y="342.56">RAW+JPEG</text>
+  <text class="k" x="246.97" y="357.56">Format</text>
+</g>
+<g class="seg" role="button" tabindex="0" aria-pressed="false" aria-label="Picture profile, Off" data-key="pp" data-label="Picture profile">
+  <path d="M197.32 391.98 A192 192 0 0 1 89.32 356.89 L135.44 291.52 A112 112 0 0 0 198.44 311.99 Z"/>
+  <text class="v" x="153.03" y="342.56">Off</text>
+  <text class="k" x="153.03" y="357.56">Picture profile</text>
+</g>
+<g class="act rec" role="button" tabindex="0" aria-label="Record">
+  <path d="M97.58 181.94 A104 104 0 0 1 302.42 181.94 L261.06 189.23 A62 62 0 0 0 138.94 189.23 Z"/>
+  <circle class="dot" cx="176.00" cy="117.00" r="5"/>
+  <text x="206.00" y="121.50">Record</text>
+</g>
+<g class="act" role="button" tabindex="0" aria-label="Focus">
+  <path d="M302.42 218.06 A104 104 0 0 1 97.58 218.06 L138.94 210.77 A62 62 0 0 0 261.06 210.77 Z"/>
+  <g class="afg" transform="translate(174.00 276.00)"><rect x="0" y="0" width="14" height="14" rx="3"/><circle cx="7" cy="7" r="2.2"/></g>
+  <text x="206.00" y="287.50">Focus</text>
+</g>
+      <g class="shoot" role="button" tabindex="0" aria-label="Shoot">
+        <circle class="halo" cx="200" cy="200" r="52"/>
+        <circle class="disc" cx="200" cy="200" r="44"/>
+        <text x="200" y="205">Shoot</text>
+      </g>
+    </svg>
+  </div>
+</section>
+
+<!-- ================= Screen 2: connect ================= -->
+<section class="screen connect" aria-label="Connect screen">
+  <div class="webcam" aria-hidden="true"><svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice"><use href="#scene-copy"/></svg></div>
+  <div class="vignette" aria-hidden="true"></div>
+  <div class="reticle" aria-hidden="true"><i></i><i></i><i></i><i></i><span>Webcam preview, looking for a QR code</span></div>
+
+  <header class="status glass capsule" aria-label="Status">
+    <span class="brand">Rimix</span>
+    <span class="quietword">No camera connected</span>
+  </header>
+
+  <div class="headline">
+    <h1>Connect a camera</h1>
+    <p>Three ways in. Pick whichever is nearest to hand.</p>
+  </div>
+
+  <div class="ways">
+    <article class="way glass">
+      <h2>Scan the QR code</h2>
+      <div class="preview" aria-label="Webcam preview"><span class="tag"><i></i>Webcam</span><div class="brk"></div></div>
+      <p>On the camera: Menu, Network, Send to Smartphone, then show the QR code</p>
+    </article>
+    <article class="way glass">
+      <h2>Nearby over Bluetooth</h2>
+      <div class="device"><div class="t"><b>ZV-E10</b><span>pairing enabled · 2 m away</span></div><button class="pbtn">Connect</button></div>
+      <p>Cameras with pairing switched on appear here as soon as they are in range.</p>
+    </article>
+    <article class="way glass">
+      <h2>Enter the camera's address</h2>
+      <form class="field" onsubmit="return false">
+        <label class="sr" for="ip">Camera address</label>
+        <input id="ip" type="text" value="192.168.122.1" spellcheck="false">
+        <button class="pbtn" type="submit">Connect</button>
+      </form>
+      <p>Shown on the camera under Network, Wi-Fi, Display Wi-Fi info.</p>
+    </article>
+  </div>
+
+  <div class="foot">
+    <p class="note glass quiet"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 7v4M8 5v.2" stroke-linecap="round"/></svg>First time on this camera? Press OK on the camera screen when it asks to allow this computer.</p>
+    <div class="recent glass quiet">
+      <div class="h">Recently used</div>
+      <div class="group">
+        <div class="r row-btn"><button><svg class="camglyph" viewBox="0 0 20 20" aria-hidden="true"><use href="#cam"/></svg><span class="k">ZV-E10</span><span class="v">Wi-Fi Direct</span><svg class="chev" viewBox="0 0 10 10"><use href="#chr"/></svg></button></div>
+        <div class="r row-btn"><button><svg class="camglyph" viewBox="0 0 20 20" aria-hidden="true"><use href="#cam"/></svg><span class="k">a7 IV</span><span class="v">home router</span><svg class="chev" viewBox="0 0 10 10"><use href="#chr"/></svg></button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+(function(){
+  var html=document.documentElement, D=document;
+  var THEMES=['dark','light','system'], LAYOUTS=['dock','ring'];
+  function get(k){try{return localStorage.getItem(k)}catch(e){return null}}
+  function set(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+
+  /* ---- app settings: theme + layout, remembered in localStorage ---- */
+  var t=get('rimix.theme'); if(THEMES.indexOf(t)>-1) html.setAttribute('data-theme',t);
+  var l=get('rimix.layout'); if(LAYOUTS.indexOf(l)>-1) html.setAttribute('data-layout',l);
+  if(THEMES.indexOf(html.getAttribute('data-theme'))<0) html.setAttribute('data-theme','dark');
+  if(LAYOUTS.indexOf(html.getAttribute('data-layout'))<0) html.setAttribute('data-layout','dock');
+
+  var setters=[].slice.call(D.querySelectorAll('[data-set]'));
+  function sync(){
+    setters.forEach(function(b){
+      var on=html.getAttribute('data-'+b.getAttribute('data-set'))===b.getAttribute('data-value');
+      b.classList.toggle('on',on); b.setAttribute('aria-checked',on?'true':'false');
+    });
+  }
+  setters.forEach(function(b){
+    b.addEventListener('click',function(){
+      var k=b.getAttribute('data-set'), v=b.getAttribute('data-value');
+      html.setAttribute('data-'+k,v); set('rimix.'+k,v); sync(); placePop();
+    });
+  });
+  sync();
+
+  var gear=D.getElementById('gear'), app=D.getElementById('apppop'), aparrow=D.getElementById('aparrow');
+  function appOpen(o){
+    app.hidden=!o; aparrow.hidden=!o; gear.setAttribute('aria-expanded',o?'true':'false');
+    if(o){var f=app.querySelector('.mini .on');if(f)f.focus();}
+  }
+  gear.addEventListener('click',function(){appOpen(app.hidden)});
+  if(location.hash==='#app-settings') appOpen(true);
+
+  /* ---- camera settings popover, anchored to whichever chip is open ---- */
+  var pop=D.getElementById('pop'), arrow=D.getElementById('arrow'), popFrom=D.getElementById('pop-from');
+  var chips=[].slice.call(D.querySelectorAll('.chip')), openChip=D.querySelector('.chip.open');
+  function markRows(root,key){
+    [].slice.call(root.querySelectorAll('.r[data-key]')).forEach(function(r){
+      var on=r.getAttribute('data-key')===key; r.classList.toggle('active',on);
+      if(on)r.setAttribute('aria-current','true'); else r.removeAttribute('aria-current');
+    });
+  }
+  function placePop(){
+    if(!openChip||pop.hidden)return;
+    var wrap=pop.offsetParent; if(!wrap)return;
+    var cr=openChip.getBoundingClientRect(), wr=wrap.getBoundingClientRect(), cx=cr.left-wr.left+cr.width/2;
+    pop.style.left=Math.max(0,cx-pop.offsetWidth/2)+'px'; arrow.style.left=cx+'px';
+  }
+  function popOpen(chip){
+    chips.forEach(function(c){var on=c===chip;c.classList.toggle('open',on);c.setAttribute('aria-expanded',on?'true':'false');});
+    openChip=chip; pop.hidden=!chip; arrow.hidden=!chip;
+    if(chip){popFrom.textContent='opened from '+chip.getAttribute('data-label');markRows(pop,chip.getAttribute('data-key'));placePop();}
+  }
+  chips.forEach(function(c){c.addEventListener('click',function(){popOpen(c.classList.contains('open')?null:c)});});
+  placePop(); window.addEventListener('resize',placePop);
+  if(D.fonts&&D.fonts.ready)D.fonts.ready.then(placePop);
+
+  /* ---- ring: selected value opens the same list as a panel beside it ---- */
+  var ringpanel=D.getElementById('ringpanel'), ringFrom=D.getElementById('ring-from');
+  var segs=[].slice.call(D.querySelectorAll('.ring .seg'));
+  function ringOpen(seg){
+    segs.forEach(function(s){var on=s===seg;s.classList.toggle('on',on);s.setAttribute('aria-pressed',on?'true':'false');});
+    ringpanel.hidden=!seg;
+    if(seg){ringFrom.textContent='opened from '+seg.getAttribute('data-label');markRows(ringpanel,seg.getAttribute('data-key'));}
+  }
+  segs.forEach(function(s){
+    function go(){ringOpen(s.classList.contains('on')?null:s)}
+    s.addEventListener('click',go);
+    s.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();go();}});
+  });
+  D.getElementById('ring-done').addEventListener('click',function(){ringOpen(null)});
+
+  /* ---- keyboard: Escape closes whatever is open; Cmd/Ctrl+, toggles app settings ---- */
+  D.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){
+      if(!app.hidden){appOpen(false);gear.focus();}
+      else if(html.getAttribute('data-layout')==='ring'){if(!ringpanel.hidden)ringOpen(null);}
+      else if(!pop.hidden){popOpen(null);if(openChip)openChip.focus();}
+    }
+    if((e.metaKey||e.ctrlKey)&&e.key===','){e.preventDefault();appOpen(app.hidden);}
+  });
+})();
+</script>
+</body>
+</html>
+<!--
+Design 20, Rimix final (dock + ring, dark + light).
+Idea: design 13's floating glass dock is the base; the same page also carries design 15's lens-style control ring and design 16's frosted-white theme, switched at runtime from a small App settings popover (gear, top right) and remembered in localStorage, so one file is the whole design reference.
+Palette, dark: #0C0E12 body, glass rgba(255,255,255,.05-.20) over rgba(18,20,24,.40-.62) with blur(24px) saturate(180%), text #FFFFFF / rgba(255,255,255,.74) / .50, hairlines rgba(255,255,255,.10), selected rgba(255,255,255,.90) on #1D1D1F, connect backdrop #0B0D11.
+Palette, light: #E9EBEF body, frosted glass rgba(255,255,255,.52-.78) plus a white sheen, text #1D1D1F / #4A4A4F / #73737A, hairlines rgba(0,0,0,.10), wells rgba(0,0,0,.05), selected #1D1D1F on #FFFFFF, connect backdrop #DADDE3. Both themes: record #FF453A, focus lock #30D158.
+Typefaces: Inter 400-700 (Google Fonts) with -apple-system / SF Pro Text / Helvetica Neue fallbacks; tabular numerals on every value.
+Avoided: a colour accent for selection (hierarchy is brighter or more opaque glass only), uppercase labels, monospace values, identical cards with one radius (dock 24, panels 18, groups 12, steppers 7), load animations, arrows on buttons; the app settings and the camera settings are kept as two separate popovers so the two meanings of "settings" never share a panel.
+-->
