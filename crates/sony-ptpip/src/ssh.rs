@@ -272,18 +272,28 @@ async fn pump(mut tcp: TcpStream, mut ours: tokio::io::DuplexStream) {
 }
 
 /// Logs in: keyboard-interactive first, answering every prompt with the
-/// password, then plain password. The password is never logged.
+/// password, then plain password unless the camera already refused the
+/// answer. The password is never logged.
 async fn authenticate(handle: &mut Handle<HostKeyCheck>, cfg: &SshConfig) -> Result<(), Error> {
     match handle
         .authenticate_keyboard_interactive_start(cfg.user.clone(), None)
         .await
     {
         Ok(mut reply) => {
+            let mut answered = false;
             for _ in 0..=MAX_PROMPT_ROUNDS {
                 match reply {
                     KeyboardInteractiveAuthResponse::Success => return Ok(()),
+                    // The camera refused the answer: trying the same
+                    // secret as a password would only count twice
+                    // towards its lockout.
+                    KeyboardInteractiveAuthResponse::Failure { .. } if answered => {
+                        return Err(Error::SshAuth)
+                    }
+                    // Refused before any prompt: the method is unavailable.
                     KeyboardInteractiveAuthResponse::Failure { .. } => break,
                     KeyboardInteractiveAuthResponse::InfoRequest { prompts, .. } => {
+                        answered = true;
                         let answers = vec![cfg.password.clone(); prompts.len()];
                         reply = match handle
                             .authenticate_keyboard_interactive_respond(answers)

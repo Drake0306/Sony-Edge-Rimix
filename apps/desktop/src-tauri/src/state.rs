@@ -7,8 +7,11 @@ use std::sync::{Arc, Mutex as StdMutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sony_ptpip::discovery::{DiscoverySource, PTP_PORT};
+use sony_ptpip::error::Error;
 use sony_ptpip::ptp::PtpValue;
-use sony_ptpip::{Camera, CameraConfig, CameraEvent, CameraState, DiscoveredCamera, ReconnectHook};
+use sony_ptpip::{
+    Camera, CameraConfig, CameraEvent, CameraState, DiscoveredCamera, ReconnectHook, SshConfig,
+};
 use tokio::sync::broadcast::{self, error::RecvError};
 
 use crate::settings::{self, AppSettings, PresetValue};
@@ -176,16 +179,61 @@ fn rejoin_hook(wifi: Wifi, ssid: String) -> ReconnectHook {
     })
 }
 
+/// The Access Authentication login the user typed. The password only
+/// travels into [`SshConfig`]; it is never stored, logged or shown, so this
+/// type has no `Debug`.
+#[derive(serde::Deserialize)]
+pub struct SshLogin {
+    pub user: String,
+    pub password: String,
+    /// The fingerprint the user confirmed; `None` on a first connect.
+    pub fingerprint: Option<String>,
+}
+
+/// How the `connect` error starts when the camera's fingerprint needs
+/// confirming: `HOSTKEY <sha256> <md5>`, parsed by the front end.
+pub const HOSTKEY_PREFIX: &str = "HOSTKEY ";
+
+/// The camera's SSH port: 22, or `RIMIX_SSH_PORT` (a development override
+/// for the simulator) when it holds a port number.
+fn ssh_port_from(var: Option<String>) -> u16 {
+    var.and_then(|v| v.trim().parse().ok()).unwrap_or(22)
+}
+
 /// Connects to the camera at `ip`, replacing any camera already connected,
 /// and remembers it in the settings with its Wi-Fi name (`ssid`, never a
-/// password) when known. Returns its state and a subscription
-/// to its events for [`forward_events`].
+/// password) when known. With `ssh`, the session runs through the camera's
+/// Access Authentication tunnel and the username and confirmed fingerprint
+/// are remembered too. Returns its state and a subscription to its events
+/// for [`forward_events`].
 pub async fn connect(
     state: &AppState,
     ip: &str,
     ssid: Option<&str>,
+    ssh: Option<SshLogin>,
+) -> Result<(CameraState, broadcast::Receiver<CameraEvent>), String> {
+    let port = ssh_port_from(std::env::var("RIMIX_SSH_PORT").ok());
+    connect_via(state, ip, ssid, ssh, port).await
+}
+
+/// [`connect`] with the camera's SSH port given.
+pub(crate) async fn connect_via(
+    state: &AppState,
+    ip: &str,
+    ssid: Option<&str>,
+    ssh: Option<SshLogin>,
+    ssh_port: u16,
 ) -> Result<(CameraState, broadcast::Receiver<CameraEvent>), String> {
     let addr = parse_addr(ip)?;
+    let remembered_login = ssh
+        .as_ref()
+        .and_then(|l| Some((l.user.clone(), l.fingerprint.clone()?)));
+    let ssh = ssh.map(|login| SshConfig {
+        user: login.user,
+        password: login.password,
+        expected_fingerprint: login.fingerprint,
+        port: ssh_port,
+    });
     let previous = state.camera.lock().await.take();
     if let Some(old) = previous {
         old.disconnect().await;
@@ -200,10 +248,13 @@ pub async fn connect(
         auto_receive: true,
         reconnect: true,
         before_reconnect,
-        ssh: None,
+        ssh,
     })
     .await
-    .map_err(|e| format!("Cannot connect to {addr}: {e}"))?;
+    .map_err(|e| match e {
+        Error::HostKeyUnknown { sha256, md5 } => format!("{HOSTKEY_PREFIX}{sha256} {md5}"),
+        e => format!("Cannot connect to {addr}: {e}"),
+    })?;
     let events = camera.subscribe();
     let camera_state = camera.state();
     // Another connect may have finished while this one waited.
@@ -213,7 +264,10 @@ pub async fn connect(
     }
     let snapshot = {
         let mut s = lock(&state.settings);
-        s.remember_camera(ip.trim(), &camera_state.model, ssid, now_millis());
+        let login = remembered_login
+            .as_ref()
+            .map(|(user, fp)| (user.as_str(), fp.as_str()));
+        s.remember_camera(ip.trim(), &camera_state.model, ssid, login, now_millis());
         s.clone()
     };
     if let Err(e) = settings::save(&state.settings_path, &snapshot) {
@@ -442,7 +496,7 @@ mod tests {
     use sony_ptpip::capture::DestinationMode;
     use sony_ptpip::ptp::codes::{PROP_F_NUMBER, PROP_ISO, PROP_SHUTTER_SPEED};
     use sony_ptpip::{Choice, PropertySummary};
-    use sony_ptpip_sim::{spawn, SimCommand, SimConfig, SimHandle};
+    use sony_ptpip_sim::{spawn, SimCommand, SimConfig, SimHandle, SshSimConfig};
     use std::time::Duration;
     use tokio::time::timeout;
 
@@ -467,11 +521,11 @@ mod tests {
         let sim = spawn(SimConfig::default()).await;
         let state = app_state(dir.path());
         let ip = sim.addr.to_string();
-        connect(&state, &ip, Some("DIRECT-x")).await.unwrap();
+        connect(&state, &ip, Some("DIRECT-x"), None).await.unwrap();
         let camera = state.camera.lock().await.clone().unwrap();
         assert!(camera.has_reconnect_hook());
         drop(camera);
-        connect(&state, &ip, None).await.unwrap();
+        connect(&state, &ip, None, None).await.unwrap();
         let camera = state.camera.lock().await.clone().unwrap();
         assert!(!camera.has_reconnect_hook());
         drop(camera);
@@ -481,7 +535,9 @@ mod tests {
     async fn connected(dir: &Path) -> (SimHandle, AppState, CameraState) {
         let sim = spawn(SimConfig::default()).await;
         let state = app_state(dir);
-        let (camera_state, _rx) = connect(&state, &sim.addr.to_string(), None).await.unwrap();
+        let (camera_state, _rx) = connect(&state, &sim.addr.to_string(), None, None)
+            .await
+            .unwrap();
         (sim, state, camera_state)
     }
 
@@ -514,7 +570,7 @@ mod tests {
         let sim = spawn(SimConfig::default()).await;
         let state = app_state(tmp.path());
         let ip = sim.addr.to_string();
-        let (camera_state, _rx) = connect(&state, &ip, Some("DIRECT-abc1:ZV-E10"))
+        let (camera_state, _rx) = connect(&state, &ip, Some("DIRECT-abc1:ZV-E10"), None)
             .await
             .unwrap();
         assert!(camera_state.connected);
@@ -531,6 +587,99 @@ mod tests {
         assert!(get_state(&state).await.unwrap().connected);
         stop(sim, &state).await;
         assert_eq!(get_state(&state).await, None);
+    }
+
+    const SSH_USER: &str = "cam";
+    const SSH_PASSWORD: &str = "12345678";
+
+    async fn ssh_sim() -> SimHandle {
+        spawn(SimConfig {
+            ssh: Some(SshSimConfig {
+                user: SSH_USER.into(),
+                password: SSH_PASSWORD.into(),
+            }),
+            ..SimConfig::default()
+        })
+        .await
+    }
+
+    fn login(password: &str, fingerprint: Option<String>) -> SshLogin {
+        SshLogin {
+            user: SSH_USER.into(),
+            password: password.into(),
+            fingerprint,
+        }
+    }
+
+    #[tokio::test]
+    async fn connect_through_ssh_asks_for_the_fingerprint_then_is_secured() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sim = ssh_sim().await;
+        let state = app_state(tmp.path());
+        let port = sim.ssh_addr.unwrap().port();
+        // Through SSH the camera's own PTP/IP port is the default one.
+        let ip = sim.addr.ip().to_string();
+        let sha256 = sim.fingerprint_sha256.clone().unwrap();
+        let md5 = sim.fingerprint_md5.clone().unwrap();
+
+        // No fingerprint confirmed yet: the exact line the front end parses.
+        let err = connect_via(&state, &ip, None, Some(login(SSH_PASSWORD, None)), port)
+            .await
+            .unwrap_err();
+        assert_eq!(err, format!("HOSTKEY {sha256} {md5}"));
+        assert!(settings::load(&state.settings_path)
+            .recent_cameras
+            .is_empty());
+
+        let (camera_state, _rx) = connect_via(
+            &state,
+            &ip,
+            None,
+            Some(login(SSH_PASSWORD, Some(sha256.clone()))),
+            port,
+        )
+        .await
+        .unwrap();
+        assert!(
+            camera_state.connected && camera_state.secured,
+            "{camera_state:?}"
+        );
+        let saved = settings::load(&state.settings_path);
+        assert_eq!(saved.recent_cameras[0].ssh_user.as_deref(), Some(SSH_USER));
+        assert_eq!(
+            saved.recent_cameras[0].ssh_fingerprint.as_deref(),
+            Some(sha256.as_str())
+        );
+        // The password is never written down.
+        let text = std::fs::read_to_string(&state.settings_path).unwrap();
+        assert!(!text.contains(SSH_PASSWORD), "{text}");
+        stop(sim, &state).await;
+    }
+
+    #[tokio::test]
+    async fn a_refused_ssh_login_keeps_the_plain_error_text() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sim = ssh_sim().await;
+        let state = app_state(tmp.path());
+        let port = sim.ssh_addr.unwrap().port();
+        let ip = sim.addr.ip().to_string();
+        let fp = sim.fingerprint_sha256.clone();
+        let err = connect_via(&state, &ip, None, Some(login("wrong", fp)), port)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err,
+            format!("Cannot connect to {ip}:15740: the camera refused the username or password")
+        );
+        assert!(!err.contains("wrong"));
+        sim.events.send(SimCommand::Shutdown).await.unwrap();
+    }
+
+    #[test]
+    fn the_ssh_port_is_22_unless_the_dev_override_names_one() {
+        assert_eq!(ssh_port_from(None), 22);
+        assert_eq!(ssh_port_from(Some("2222".into())), 2222);
+        assert_eq!(ssh_port_from(Some("nope".into())), 22);
     }
 
     #[tokio::test]
@@ -746,7 +895,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let sim = spawn(SimConfig::default()).await;
         let state = app_state(tmp.path());
-        let (_, rx) = connect(&state, &sim.addr.to_string(), None).await.unwrap();
+        let (_, rx) = connect(&state, &sim.addr.to_string(), None, None)
+            .await
+            .unwrap();
         let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink = seen.clone();
         let forwarder = tokio::spawn(forward_events(rx, move |ev| {

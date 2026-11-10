@@ -192,6 +192,16 @@ async fn wrong_password_is_ssh_auth() {
         err.to_string(),
         "the camera refused the username or password"
     );
+    // A refused keyboard-interactive answer is not tried again as a
+    // password: each try counts towards the camera's lockout.
+    let refused: Vec<_> = auth_lines(&sim)
+        .into_iter()
+        .filter(|l| l.ends_with("refused"))
+        .collect();
+    assert_eq!(
+        refused,
+        vec!["ssh auth keyboard-interactive cam refused".to_string()]
+    );
     sim.events.send(SimCommand::Shutdown).await.unwrap();
 }
 

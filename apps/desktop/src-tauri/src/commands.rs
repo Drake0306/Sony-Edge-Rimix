@@ -7,7 +7,7 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::settings::{AppSettings, PresetValue};
-use crate::state::{self, AppState, ApplyOutcome};
+use crate::state::{self, AppState, ApplyOutcome, SshLogin};
 
 /// The Tauri event that carries each `CameraEvent` (except `Frame`) as JSON.
 pub const CAMERA_EVENT: &str = "camera-event";
@@ -17,16 +17,18 @@ pub async fn discover(timeout_ms: u64) -> Result<Vec<DiscoveredCamera>, String> 
     state::discover(timeout_ms).await
 }
 
-/// Connects and forwards the camera's events to the webview until it is
-/// disconnected or replaced.
+/// Connects (through the camera's SSH tunnel when `ssh` is given) and
+/// forwards the camera's events to the webview until it is disconnected or
+/// replaced.
 #[tauri::command]
 pub async fn connect(
     app: AppHandle,
     state: State<'_, AppState>,
     ip: String,
     ssid: Option<String>,
+    ssh: Option<SshLogin>,
 ) -> Result<CameraState, String> {
-    let (camera_state, events) = state::connect(&state, &ip, ssid.as_deref()).await?;
+    let (camera_state, events) = state::connect(&state, &ip, ssid.as_deref(), ssh).await?;
     tauri::async_runtime::spawn(state::forward_events(events, move |event| {
         if let Err(e) = app.emit(CAMERA_EVENT, event) {
             tracing::warn!(error = %e, "cannot send a camera event to the window");

@@ -65,6 +65,13 @@ pub struct RecentCamera {
     /// The camera's Wi-Fi network name, when known. Never its password.
     #[serde(default)]
     pub ssid: Option<String>,
+    /// The Access Authentication username, for cameras reached through SSH.
+    /// Never the password.
+    #[serde(default)]
+    pub ssh_user: Option<String>,
+    /// The SSH host key fingerprint the user confirmed for this camera.
+    #[serde(default)]
+    pub ssh_fingerprint: Option<String>,
 }
 
 /// Everything the app remembers between runs. Missing fields take their
@@ -129,7 +136,18 @@ impl AppSettings {
     /// replaces the entry with that ssid. A connect by address alone replaces
     /// an entry at that ip with no ssid, or one at that ip of the same model,
     /// which keeps its ssid.
-    pub fn remember_camera(&mut self, ip: &str, model: &str, ssid: Option<&str>, now_millis: u64) {
+    ///
+    /// `ssh` is the Access Authentication (username, confirmed fingerprint)
+    /// when the camera was reached through SSH; without it the replaced
+    /// entry's login is kept. No password is ever stored.
+    pub fn remember_camera(
+        &mut self,
+        ip: &str,
+        model: &str,
+        ssid: Option<&str>,
+        ssh: Option<(&str, &str)>,
+        now_millis: u64,
+    ) {
         let older = self.recent_cameras.iter().position(|c| match ssid {
             Some(ssid) => c.ssid.as_deref() == Some(ssid),
             None => c.ip == ip && (c.ssid.is_none() || c.model == model),
@@ -139,9 +157,14 @@ impl AppSettings {
             (None, Some(i)) => self.recent_cameras[i].ssid.clone(),
             (None, None) => None,
         };
-        if let Some(i) = older {
-            self.recent_cameras.remove(i);
-        }
+        let replaced = older.map(|i| self.recent_cameras.remove(i));
+        let (ssh_user, ssh_fingerprint) = match (ssh, replaced) {
+            (Some((user, fingerprint)), _) => {
+                (Some(user.to_string()), Some(fingerprint.to_string()))
+            }
+            (None, Some(old)) => (old.ssh_user, old.ssh_fingerprint),
+            (None, None) => (None, None),
+        };
         self.recent_cameras.insert(
             0,
             RecentCamera {
@@ -149,6 +172,8 @@ impl AppSettings {
                 model: model.to_string(),
                 last_used: now_millis,
                 ssid: kept_ssid,
+                ssh_user,
+                ssh_fingerprint,
             },
         );
         self.recent_cameras.truncate(MAX_RECENT);
@@ -244,7 +269,7 @@ mod tests {
             destination_base: tmp.path().join("shots"),
             ..AppSettings::default()
         };
-        s.remember_camera("192.168.122.1", "ZV-E10", None, 1_000);
+        s.remember_camera("192.168.122.1", "ZV-E10", None, None, 1_000);
         save(&path, &s).unwrap();
         assert_eq!(load(&path), s);
         // Only the settings file is left behind, not a temporary one.
@@ -272,9 +297,9 @@ mod tests {
     fn recent_cameras_are_newest_first_unique_and_capped() {
         let mut s = AppSettings::default();
         for n in 0..10 {
-            s.remember_camera(&format!("10.0.0.{n}"), "ILCE-7M4", None, n);
+            s.remember_camera(&format!("10.0.0.{n}"), "ILCE-7M4", None, None, n);
         }
-        s.remember_camera("10.0.0.5", "ILCE-7M4", None, 99);
+        s.remember_camera("10.0.0.5", "ILCE-7M4", None, None, 99);
         assert_eq!(s.recent_cameras.len(), MAX_RECENT);
         assert_eq!(s.recent_cameras[0].ip, "10.0.0.5");
         assert_eq!(s.recent_cameras[0].last_used, 99);
@@ -310,15 +335,15 @@ mod tests {
     #[test]
     fn remember_camera_keeps_the_network_for_an_address_only_reconnect() {
         let mut s = AppSettings::default();
-        s.remember_camera(WD, "ZV-E10", Some("DIRECT-abc1:ZV-E10"), 1);
-        s.remember_camera(WD, "ZV-E10", None, 2); // same model, same ip, no ssid known
+        s.remember_camera(WD, "ZV-E10", Some("DIRECT-abc1:ZV-E10"), None, 1);
+        s.remember_camera(WD, "ZV-E10", None, None, 2); // same model, same ip, no ssid known
         assert_eq!(s.recent_cameras.len(), 1);
         assert_eq!(
             s.recent_cameras[0].ssid.as_deref(),
             Some("DIRECT-abc1:ZV-E10")
         );
         assert_eq!(s.recent_cameras[0].last_used, 2);
-        s.remember_camera("10.0.0.9", "ZV-E10", Some("DIRECT-abc1:ZV-E10"), 3); // same network, router ip
+        s.remember_camera("10.0.0.9", "ZV-E10", Some("DIRECT-abc1:ZV-E10"), None, 3); // same network, router ip
         assert_eq!(s.recent_cameras.len(), 1);
         assert_eq!(s.recent_cameras[0].ip, "10.0.0.9");
     }
@@ -326,8 +351,8 @@ mod tests {
     #[test]
     fn two_cameras_at_the_wifi_direct_address_are_both_kept() {
         let mut s = AppSettings::default();
-        s.remember_camera(WD, "ZV-E10", Some("DIRECT-abc1:ZV-E10"), 1);
-        s.remember_camera(WD, "ILCE-7M4", Some("DIRECT-zz99:ILCE-7M4"), 2);
+        s.remember_camera(WD, "ZV-E10", Some("DIRECT-abc1:ZV-E10"), None, 1);
+        s.remember_camera(WD, "ILCE-7M4", Some("DIRECT-zz99:ILCE-7M4"), None, 2);
         let nets: Vec<_> = s
             .recent_cameras
             .iter()
@@ -345,8 +370,8 @@ mod tests {
     #[test]
     fn an_address_only_connect_to_another_model_does_not_take_its_network() {
         let mut s = AppSettings::default();
-        s.remember_camera(WD, "ZV-E10", Some("DIRECT-abc1:ZV-E10"), 1);
-        s.remember_camera(WD, "ILCE-7M4", None, 2);
+        s.remember_camera(WD, "ZV-E10", Some("DIRECT-abc1:ZV-E10"), None, 1);
+        s.remember_camera(WD, "ILCE-7M4", None, None, 2);
         assert_eq!(s.recent_cameras.len(), 2);
         assert_eq!(s.recent_cameras[0].model, "ILCE-7M4");
         assert_eq!(s.recent_cameras[0].ssid, None);
@@ -355,16 +380,16 @@ mod tests {
             Some("DIRECT-abc1:ZV-E10")
         );
         // Address-only entries still merge with each other.
-        s.remember_camera(WD, "ILCE-7M4", None, 3);
+        s.remember_camera(WD, "ILCE-7M4", None, None, 3);
         assert_eq!(s.recent_cameras.len(), 2);
     }
 
     #[test]
     fn forget_camera_removes_the_entry_with_that_network_or_address() {
         let mut s = AppSettings::default();
-        s.remember_camera(WD, "ZV-E10", Some("DIRECT-abc1:ZV-E10"), 1);
-        s.remember_camera(WD, "ILCE-7M4", Some("DIRECT-zz99:ILCE-7M4"), 2);
-        s.remember_camera("10.0.0.7", "A7 IV", None, 3);
+        s.remember_camera(WD, "ZV-E10", Some("DIRECT-abc1:ZV-E10"), None, 1);
+        s.remember_camera(WD, "ILCE-7M4", Some("DIRECT-zz99:ILCE-7M4"), None, 2);
+        s.remember_camera("10.0.0.7", "A7 IV", None, None, 3);
         s.forget_camera(Some("DIRECT-abc1:ZV-E10"), WD);
         let left: Vec<_> = s.recent_cameras.iter().map(|c| c.model.as_str()).collect();
         assert_eq!(left, vec!["A7 IV", "ILCE-7M4"]);
@@ -377,6 +402,55 @@ mod tests {
         s.forget_camera(Some("DIRECT-zz99:ILCE-7M4"), WD);
         assert!(s.recent_cameras.is_empty());
         assert_eq!(s.last_ip, None);
+    }
+
+    #[test]
+    fn ssh_fields_default_to_none_and_round_trip() {
+        let old: RecentCamera =
+            serde_json::from_str(r#"{"ip":"1.2.3.4","model":"ZV-E10","lastUsed":1}"#).unwrap();
+        assert_eq!(old.ssh_user, None);
+        assert_eq!(old.ssh_fingerprint, None);
+        let mut s = AppSettings::default();
+        s.remember_camera(WD, "ILCE-7M4", None, Some(("cam", "SHA256:abc")), 1);
+        let rc = &s.recent_cameras[0];
+        assert_eq!(rc.ssh_user.as_deref(), Some("cam"));
+        assert_eq!(rc.ssh_fingerprint.as_deref(), Some("SHA256:abc"));
+        let text = serde_json::to_string(&s).unwrap();
+        assert!(text.contains(r#""sshUser":"cam""#), "{text}");
+        assert!(text.contains(r#""sshFingerprint":"SHA256:abc""#), "{text}");
+        let back: AppSettings = serde_json::from_str(&text).unwrap();
+        assert_eq!(back, s);
+    }
+
+    #[test]
+    fn a_connect_without_ssh_keeps_the_remembered_login() {
+        let mut s = AppSettings::default();
+        s.remember_camera(
+            WD,
+            "ILCE-7M4",
+            Some("DIRECT-zz"),
+            Some(("cam", "SHA256:abc")),
+            1,
+        );
+        s.remember_camera(WD, "ILCE-7M4", Some("DIRECT-zz"), None, 2);
+        assert_eq!(s.recent_cameras.len(), 1);
+        assert_eq!(s.recent_cameras[0].ssh_user.as_deref(), Some("cam"));
+        assert_eq!(
+            s.recent_cameras[0].ssh_fingerprint.as_deref(),
+            Some("SHA256:abc")
+        );
+        s.remember_camera(
+            WD,
+            "ILCE-7M4",
+            Some("DIRECT-zz"),
+            Some(("ops", "SHA256:new")),
+            3,
+        );
+        assert_eq!(s.recent_cameras[0].ssh_user.as_deref(), Some("ops"));
+        assert_eq!(
+            s.recent_cameras[0].ssh_fingerprint.as_deref(),
+            Some("SHA256:new")
+        );
     }
 
     #[test]
