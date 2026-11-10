@@ -72,8 +72,8 @@ pub(crate) fn encode_utf16z(s: &str) -> Vec<u8> {
 /// (terminator included).
 pub(crate) fn decode_utf16z(b: &[u8]) -> Result<(String, usize), Error> {
     let mut units = Vec::new();
-    for (i, c) in b.chunks_exact(2).enumerate() {
-        let u = u16::from_le_bytes([c[0], c[1]]);
+    for (i, &c) in b.as_chunks::<2>().0.iter().enumerate() {
+        let u = u16::from_le_bytes(c);
         if u == 0 {
             let s = String::from_utf16(&units)
                 .map_err(|_| Error::Protocol("invalid UTF-16 string".into()))?;

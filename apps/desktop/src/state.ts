@@ -165,13 +165,14 @@ export function applyEvent(state: AppState, event: CameraEvent): Partial<AppStat
   }
   if ('Reconnecting' in event) return { reconnecting: event.Reconnecting.attempt };
   if ('Disconnected' in event) {
-    // Any lost link stops the interval timer.
-    const stop: Partial<AppState> = state.interval ? { interval: null } : {};
+    // A plain link loss keeps the interval timer: its ticks count as missed
+    // until the camera is back. Only a final failure, where reconnecting has
+    // stopped, ends the run.
     // The camera refused the login or its fingerprint changed: reconnecting
     // has stopped, so say why and leave the camera shown as disconnected.
     const error = sshErrorMessage(event.Disconnected.reason);
-    if (!error) return stop;
-    return { ...stop, reconnecting: null, error, camera: state.camera && { ...state.camera, connected: false } };
+    if (!error) return {};
+    return { interval: null, reconnecting: null, error, camera: state.camera && { ...state.camera, connected: false } };
   }
   if ('CaptureProgress' in event) {
     const { filename, received, total } = event.CaptureProgress;

@@ -168,4 +168,22 @@ describe('interval ticker', () => {
       vi.useRealTimers();
     }
   });
+
+  test('a link loss misses shots without ending the run, and the run picks up on reconnect', () => {
+    vi.useFakeTimers();
+    try {
+      const { store, actions, stop } = setup();
+      store.set({ interval: start({ everyS: 2, count: null }, Date.now()) });
+      store.set({ camera: { ...camera, connected: false }, reconnecting: 1 });
+      vi.advanceTimersByTime(2000);
+      expect(actions.shoot).not.toHaveBeenCalled();
+      expect(store.get().interval).toMatchObject({ taken: 0, missed: 1 });
+      store.set({ camera, reconnecting: null });
+      vi.advanceTimersByTime(2000);
+      expect(actions.shoot).toHaveBeenCalledTimes(1);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

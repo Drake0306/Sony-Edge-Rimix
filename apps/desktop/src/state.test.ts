@@ -86,9 +86,12 @@ describe('store', () => {
     expect(applyEvent(s, { Disconnected: { reason: 'connection reset' } })).toEqual({});
   });
 
-  test('a lost link stops a running interval', () => {
-    const s = { ...initialState(), screen: 'main' as const, interval: start({ everyS: 5, count: null }, 0) };
-    expect(applyEvent(s, { Disconnected: { reason: 'connection reset' } })).toEqual({ interval: null });
+  test('a plain link loss keeps a running interval, a final SSH failure ends it', () => {
+    const camera = (fixture as unknown as { StateChanged: CameraState }).StateChanged;
+    const s = { ...initialState(), screen: 'main' as const, camera, interval: start({ everyS: 5, count: null }, 0) };
+    expect(applyEvent(s, { Disconnected: { reason: 'connection reset' } })).toEqual({});
+    const final = applyEvent(s, { Disconnected: { reason: 'the camera refused the username or password' } });
+    expect(final.interval).toBeNull();
   });
 
   test('events without state changes leave the state alone', () => {

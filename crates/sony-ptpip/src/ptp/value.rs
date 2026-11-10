@@ -63,8 +63,10 @@ impl PtpValue {
                 let count = take(buf, pos, 1)?[0] as usize;
                 let raw = take(buf, pos, count * 2)?;
                 let units: Vec<u16> = raw
-                    .chunks_exact(2)
-                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|&c| u16::from_le_bytes(c))
                     .take_while(|&u| u != 0)
                     .collect();
                 PtpValue::Str(String::from_utf16_lossy(&units))
