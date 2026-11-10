@@ -350,6 +350,8 @@ export const cardMode = (cameraId: CameraId | null = null) => onCamera<CardMode>
 export const liveViewFrame = (cameraId: CameraId | null = null) => onCamera<ArrayBuffer>('live_view_frame', cameraId);
 export const liveViewMeta = (cameraId: CameraId | null = null) => onCamera<LiveViewMeta>('live_view_meta', cameraId);
 export const getSettings = () => invoke<AppSettings>('get_settings');
+/** Development switches for this run; `webcam` is false with `RIMIX_WEBCAM=off`. */
+export const devFlags = () => invoke<{ webcam: boolean }>('dev_flags');
 export const saveSettings = (settings: AppSettings) =>
   invoke<void>('save_settings', { settings });
 /** A saved JPEG's bytes for the filmstrip; rejects for RAW files and files over 25 MB. */

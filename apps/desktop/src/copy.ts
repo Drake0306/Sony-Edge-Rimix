@@ -64,6 +64,9 @@ export const fingerprintText = (sha256: string, md5: string) =>
 export const fingerprintChangedText = (expected: string, actual: string) =>
   `This camera's fingerprint changed. Stored: ${expected}. Camera now: ${actual}. If you reset the camera, forget it in App settings and connect again; otherwise do not connect.`;
 
+/** The scan card's line when `RIMIX_WEBCAM=off` keeps the webcam off. */
+export const WEBCAM_OFF = 'Webcam off for this run';
+
 /** The connect screen's message for a webcam error (a DOMException name from getUserMedia). */
 export function webcamErrorMessage(e: unknown): string {
   const name = e instanceof Error ? e.name : '';

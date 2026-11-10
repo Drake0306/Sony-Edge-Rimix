@@ -59,6 +59,7 @@ pub fn run() {
             commands::current_network,
             commands::wait_for_camera,
             commands::open_logs,
+            commands::dev_flags,
             commands::sftp_status,
             commands::sftp_set_enabled,
             commands::sftp_regenerate_password,

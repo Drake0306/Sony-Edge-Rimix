@@ -16,6 +16,7 @@ import {
   NOT_A_WIFI_CODE,
   PAIRING_OFF,
   PAIRING_OPEN,
+  WEBCAM_OFF,
   webcamErrorMessage,
 } from '../copy';
 import { button, el, icon } from '../dom';
@@ -37,6 +38,7 @@ const RESCAN_MS = 3000;
 const NOTE = 'First time on this camera? Press OK on the camera screen when it asks to allow this computer.';
 const SCANNING = "Hold the camera's QR code up to the webcam.";
 export const SSH_PASSWORD_NEEDED = 'Enter the password shown under Access Authen. Info.';
+export const SSH_LOGIN_NEEDED = 'Enter the username and password shown under Access Authen. Info.';
 const INFO_GLYPH =
   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 7v4M8 5v.2" stroke-linecap="round"/></svg>';
 
@@ -253,6 +255,11 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     createScanner({ deviceId, onResult: (text) => void useCode(text, true) });
   let scanner = newScanner(store.get().settings?.webcamId);
   const startScanner = () => {
+    // `RIMIX_WEBCAM=off`: the webcam is never opened on this run.
+    if (!store.get().webcam) {
+      scanStatus.textContent = WEBCAM_OFF;
+      return;
+    }
     scanStatus.textContent = SCANNING;
     scanner.start(video, canvas).catch((e) => {
       if (!stopped) scanStatus.textContent = webcamErrorMessage(e);
@@ -283,11 +290,17 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   };
 
   /**
-   * False, with the password field focused and the reason shown, while the
-   * Access Authentication box is open without a password.
+   * False, with the missing field focused and the reason shown, while the
+   * Access Authentication box is open without a password (or without both
+   * the username and the password).
    */
   const loginReady = (): boolean => {
     if (ssh.hidden || sshPw.value) return true;
+    if (!sshUser.value.trim()) {
+      store.set({ error: SSH_LOGIN_NEEDED });
+      sshUser.focus();
+      return false;
+    }
     store.set({ error: SSH_PASSWORD_NEEDED });
     sshPw.focus();
     return false;
@@ -349,7 +362,9 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     area.value = text;
     showPaste();
     if (!loginReady()) {
-      rescan();
+      // The login box is open and being typed into: the scanner stays off
+      // (no rescan loop over a half-typed password); Scan again restarts it.
+      scanAgain.hidden = false;
       return;
     }
     const ok = await actions.connectWithWifi(wifi, login());
@@ -533,7 +548,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     }),
   ];
 
-  if (webcamSupported()) startScanner();
+  if (!store.get().webcam || webcamSupported()) startScanner();
   else scanStatus.textContent = webcamErrorMessage(new Error('unsupported'));
   scannerStarted = true;
 

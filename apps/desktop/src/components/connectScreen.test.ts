@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Actions } from '../actions';
 import { invoke } from '@tauri-apps/api/core';
-import { NOT_A_WIFI_CODE } from '../copy';
+import { NOT_A_WIFI_CODE, WEBCAM_OFF } from '../copy';
 import type { AppSettings, CameraState, Found, RecentCamera } from '../ipc';
 import { createStore, defaultSettings, initialState, type AppStore } from '../state';
 import { createScanner, webcamSupported } from '../qr/scanner';
-import { mount, SSH_PASSWORD_NEEDED } from './connectScreen';
+import { mount, SSH_LOGIN_NEEDED, SSH_PASSWORD_NEEDED } from './connectScreen';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(() => Promise.resolve([])) }));
 vi.mock('../qr/scanner', () => ({
@@ -28,11 +28,11 @@ let store: AppStore;
 let actions: Actions;
 let unmount: () => void;
 
-function setup(settings: Partial<AppSettings> = {}) {
+function setup(settings: Partial<AppSettings> = {}, webcam = true) {
   document.body.innerHTML = '';
   root = document.createElement('section');
   document.body.append(root);
-  store = createStore({ ...initialState(), settings: { ...defaultSettings('/tmp'), ...settings } });
+  store = createStore({ ...initialState(), settings: { ...defaultSettings('/tmp'), ...settings }, webcam });
   actions = fakeActions();
   unmount = mount(root, store, actions);
 }
@@ -291,6 +291,21 @@ describe('Access Authentication', () => {
   });
 });
 
+describe('Access Authentication with nothing typed', () => {
+  beforeEach(() => setup());
+  afterEach(() => unmount());
+
+  test('an open login with no username and no password names the username field', () => {
+    byText('This camera uses Access Authentication').click();
+    root.querySelector<HTMLInputElement>('#ssid')!.value = 'DIRECT-zz:ILCE-7M4';
+    root.querySelector<HTMLInputElement>('#pw')!.closest('form')!.requestSubmit();
+    expect(actions.connectWithWifi).not.toHaveBeenCalled();
+    expect(message().textContent).toBe(SSH_LOGIN_NEEDED);
+    expect(SSH_LOGIN_NEEDED).toBe('Enter the username and password shown under Access Authen. Info.');
+    expect(document.activeElement).toBe(root.querySelector('#ssh-user'));
+  });
+});
+
 describe('recently used', () => {
   afterEach(() => unmount());
 
@@ -457,6 +472,34 @@ describe('scanning', () => {
     report(SONY);
     await vi.advanceTimersByTimeAsync(0);
     expect(actions.connectWithWifi).toHaveBeenCalledTimes(2);
+  });
+
+  test('a scanned code with the login open and no password does not scan again', async () => {
+    const { start, report } = scanning();
+    setup();
+    byText('This camera uses Access Authentication').click();
+    root.querySelector<HTMLInputElement>('#ssh-user')!.value = 'cam';
+    report(SONY);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(actions.connectWithWifi).not.toHaveBeenCalled();
+    expect(message().textContent).toBe(SSH_PASSWORD_NEEDED);
+    expect(document.activeElement).toBe(root.querySelector('#ssh-pw'));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(start).toHaveBeenCalledTimes(1);
+    // The fields hold the code; Scan again is there to look once more.
+    expect(root.querySelector<HTMLInputElement>('#ssid')!.value).toBe('DIRECT-abc1:ZV-E10');
+    expect(byText('Scan again').hidden).toBe(false);
+  });
+
+  test('with the webcam off for this run the scanner never starts', async () => {
+    const { start } = scanning();
+    setup({ webcamId: 'cam-a' }, false);
+    expect(start).not.toHaveBeenCalled();
+    expect(root.querySelector('.scanstatus')!.textContent).toBe(WEBCAM_OFF);
+    expect(WEBCAM_OFF).toBe('Webcam off for this run');
+    store.set({ settings: { ...store.get().settings!, webcamId: 'cam-b' } });
+    expect(start).not.toHaveBeenCalled();
+    expect(root.querySelector('.scanstatus')!.textContent).toBe(WEBCAM_OFF);
   });
 
   test('the scanner follows the webcam chosen in App settings', async () => {

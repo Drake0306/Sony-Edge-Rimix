@@ -15,7 +15,7 @@ import * as sidePanels from './components/sidePanels';
 import * as topbar from './components/topbar';
 import { el, isTyping } from './dom';
 import { tick } from './interval';
-import { getSettings, getState, listCameras, onCameraEvent, type CameraEvent, type CameraState } from './ipc';
+import { devFlags, getSettings, getState, listCameras, onCameraEvent, type CameraEvent, type CameraState } from './ipc';
 import {
   applyEvent,
   cameraBusy,
@@ -167,7 +167,9 @@ export async function startApp(root: HTMLElement): Promise<void> {
     settingsError = e;
     return defaultSettings();
   });
-  const store: AppStore = createStore<AppState>({ ...initialState(), settings, unsaved: settingsError !== null });
+  // Only an explicit `false` turns the webcam off.
+  const webcam = (await devFlags().catch(() => null))?.webcam !== false;
+  const store: AppStore = createStore<AppState>({ ...initialState(), settings, unsaved: settingsError !== null, webcam });
   // Theme and layout go on <html> before anything renders (Dark and Dock
   // when settings fail to load) and follow the settings from then on.
   watch(store, (s) => s.settings?.appearance ?? 'Dark', (a) => applyAppearance(a));

@@ -501,6 +501,21 @@ describe('connect clears a stale link state', () => {
     expect(atJoin).toEqual({ reconnecting: null, interval: null, camera: null });
   });
 
+  test('a second click during the pre-join disconnect does not start a second join', async () => {
+    let release: () => void = () => {};
+    vi.mocked(ipc.disconnect).mockImplementation(() => new Promise<void>((r) => (release = r)));
+    const store = storeWith('Automatic', {}, { screen: 'main', camera, cameras: { [SSID]: camera }, activeId: SSID });
+    const actions = createActions(store);
+    const first = actions.connectWithWifi({ ssid: 'DIRECT-new:ILCE-7M4', password: 'pw' });
+    await Promise.resolve();
+    expect(store.get().connecting).not.toBeNull();
+    expect(await actions.connectWithWifi({ ssid: 'DIRECT-new:ILCE-7M4', password: 'pw' })).toBe(false);
+    release();
+    expect(await first).toBe(true);
+    expect(ipc.disconnect).toHaveBeenCalledTimes(1);
+    expect(ipc.joinNetwork).toHaveBeenCalledTimes(1);
+  });
+
   test('joining a network keeps cameras reached by address and the one on that network', async () => {
     const store = storeWith('Automatic', {}, { screen: 'main', camera, cameras: { [A]: camera }, activeId: A });
     vi.mocked(ipc.connect).mockResolvedValue({ id: B, state: a7 });

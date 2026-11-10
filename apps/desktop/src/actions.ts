@@ -310,6 +310,14 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
 
   async function connectWithWifi({ ssid, password }: WifiCredentials, ssh: SshLogin | null = null): Promise<boolean> {
     if (store.get().connecting) return false;
+    const ask = store.get().settings?.wifiJoin === 'Ask';
+    // Busy from here on, so a second click during the disconnects below
+    // cannot start a second join.
+    store.set({
+      error: null,
+      pendingFingerprint: null,
+      connecting: ask ? { phase: 'finding', text: askToJoinText(ssid) } : { phase: 'joining', text: joiningText(ssid) },
+    });
     // A camera reached through another Wi-Fi network rejoins it before each
     // reconnect attempt, racing this join: drop those first. Cameras reached
     // by address (on a shared router) stay.
@@ -317,14 +325,11 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     const elsewhere = Object.keys(cameras).filter((id) => id !== ssid && !isAddressId(id));
     for (const id of elsewhere) await disconnect(id);
     if (activeId === null && current) await disconnect();
-    store.set({ pendingFingerprint: null });
     const fail = (step: 'join' | 'find' | 'wait', e: unknown) => {
       store.set({ connecting: null, error: wifiErrorMessage(step, ssid, message(e)) });
       return false;
     };
-    const ask = store.get().settings?.wifiJoin === 'Ask';
     if (!ask) {
-      store.set({ error: null, connecting: { phase: 'joining', text: joiningText(ssid) } });
       try {
         await ipc.joinNetwork(ssid, password || null);
       } catch (e) {

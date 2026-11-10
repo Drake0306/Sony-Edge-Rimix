@@ -130,6 +130,8 @@ export interface AppState {
   cardOpen: boolean;
   /** Receive from camera, as last read; null until the settings popover asks. */
   sftp: SftpStatus | null;
+  /** False when `RIMIX_WEBCAM=off`: the connect screen leaves the webcam alone. */
+  webcam: boolean;
 }
 
 export interface PendingFingerprint {
@@ -183,6 +185,7 @@ export const initialState = (): AppState => ({
   card: emptyCard(),
   cardOpen: false,
   sftp: null,
+  webcam: true,
 });
 
 /** What the app uses when the settings file cannot be read. */

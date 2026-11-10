@@ -337,6 +337,26 @@ pub struct SshLogin {
 /// confirming: `HOSTKEY <sha256> <md5>`, parsed by the front end.
 pub const HOSTKEY_PREFIX: &str = "HOSTKEY ";
 
+/// Development switches read from the environment, for `dev_flags`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct DevFlags {
+    /// False with `RIMIX_WEBCAM=off`: the connect screen leaves the webcam
+    /// (the QR scanner) alone, for smoke tests on machines without one.
+    pub webcam: bool,
+}
+
+/// [`DevFlags`] from the value of `RIMIX_WEBCAM`.
+fn dev_flags_from(webcam: Option<String>) -> DevFlags {
+    DevFlags {
+        webcam: !webcam.is_some_and(|v| v.trim().eq_ignore_ascii_case("off")),
+    }
+}
+
+/// The development switches for this run.
+pub fn dev_flags() -> DevFlags {
+    dev_flags_from(std::env::var("RIMIX_WEBCAM").ok())
+}
+
 /// How the `connect` error starts when the camera's fingerprint differs
 /// from the confirmed one: `HOSTKEY_CHANGED <expected> <actual_sha256>`.
 pub const HOSTKEY_CHANGED_PREFIX: &str = "HOSTKEY_CHANGED ";
@@ -2300,6 +2320,19 @@ mod tests {
         // Stopped: a new day starts nothing.
         assert!(!crate::sftp::restart_if_day_changed(&state, day(2031, 1, 3)).await);
         assert!(!crate::sftp::status(&state).await.running);
+    }
+
+    #[test]
+    fn rimix_webcam_off_turns_the_webcam_off() {
+        assert!(dev_flags_from(None).webcam);
+        assert!(dev_flags_from(Some("on".into())).webcam);
+        assert!(dev_flags_from(Some("".into())).webcam);
+        assert!(!dev_flags_from(Some("off".into())).webcam);
+        assert!(!dev_flags_from(Some(" OFF ".into())).webcam);
+        assert_eq!(
+            serde_json::to_string(&dev_flags_from(Some("off".into()))).unwrap(),
+            r#"{"webcam":false}"#
+        );
     }
 
     #[tokio::test]
