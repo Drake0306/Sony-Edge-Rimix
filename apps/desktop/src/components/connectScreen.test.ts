@@ -3,11 +3,12 @@ import type { Actions } from '../actions';
 import { NOT_A_WIFI_CODE } from '../copy';
 import type { AppSettings, RecentCamera } from '../ipc';
 import { createStore, defaultSettings, initialState, type AppStore } from '../state';
+import { createScanner, webcamSupported } from '../qr/scanner';
 import { mount } from './connectScreen';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(() => Promise.resolve([])) }));
 vi.mock('../qr/scanner', () => ({
-  webcamSupported: () => false,
+  webcamSupported: vi.fn(() => false),
   createScanner: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
 }));
 
@@ -148,5 +149,48 @@ describe('recently used', () => {
   test('a camera without a network shows its address', () => {
     setup({ recentCameras: [{ ip: '10.0.0.5', model: 'A7 IV', ssid: null, lastUsed: 1 }] });
     expect(root.querySelector('.recent .v')!.textContent).toBe('10.0.0.5');
+  });
+});
+
+describe('scanning', () => {
+  afterEach(() => {
+    unmount();
+    vi.useRealTimers();
+    vi.mocked(webcamSupported).mockReturnValue(false);
+  });
+
+  test('a code that is not a Wi-Fi code is explained and scanning carries on', async () => {
+    vi.useFakeTimers();
+    vi.mocked(webcamSupported).mockReturnValue(true);
+    const start = vi.fn(() => Promise.resolve());
+    let report: (text: string) => void = () => {};
+    vi.mocked(createScanner).mockImplementation((opts) => {
+      report = opts.onResult;
+      return { start, stop: vi.fn() };
+    });
+    setup();
+    expect(start).toHaveBeenCalledTimes(1);
+
+    report('https://sony.net/app');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(message().textContent).toBe(NOT_A_WIFI_CODE);
+    const area = root.querySelector('textarea')!;
+    expect(area.value).toBe('https://sony.net/app');
+    expect(area.closest('[hidden]')).toBeNull();
+    expect(document.activeElement).toBe(root.querySelector('#ssid'));
+    expect(actions.connectWithWifi).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(start).toHaveBeenCalledTimes(2);
+
+    // The user edits the text; another unrelated code leaves it and the focus alone.
+    area.value = 'W01:S:DIRECT-ab';
+    area.focus();
+    report('https://example.com');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(area.value).toBe('W01:S:DIRECT-ab');
+    expect(document.activeElement).toBe(area);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(start).toHaveBeenCalledTimes(3);
   });
 });

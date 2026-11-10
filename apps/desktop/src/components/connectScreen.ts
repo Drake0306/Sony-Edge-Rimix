@@ -169,18 +169,32 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     pasteBox.hidden = false;
   };
 
+  const rescan = () => {
+    if (!stopped) rescanTimer = window.setTimeout(startScanner, RESCAN_MS);
+  };
+
+  // The webcam may read another QR code first (Sony's app link, say); the
+  // name field takes focus only the first time, so typing is not interrupted.
+  let focusedForCode = false;
+
   /** Connects with a code's text, or explains why it is not a Wi-Fi code. */
   async function useCode(text: string, fromScanner: boolean): Promise<void> {
     const wifi = parseWifiQr(text);
     if (!wifi) {
-      area.value = text;
-      showPaste();
       store.set({ error: NOT_A_WIFI_CODE });
-      ssid.focus();
+      showPaste();
+      if (!fromScanner) {
+        ssid.focus();
+        return;
+      }
+      if (!area.value) area.value = text;
+      if (!focusedForCode) ssid.focus();
+      focusedForCode = true;
+      rescan();
       return;
     }
     const ok = store.get().connecting === null && (await actions.connectWithWifi(wifi));
-    if (!ok && fromScanner && !stopped) rescanTimer = window.setTimeout(startScanner, RESCAN_MS);
+    if (!ok && fromScanner) rescan();
   }
 
   pasteToggle.addEventListener('click', () => {

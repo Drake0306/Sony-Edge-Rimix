@@ -53,8 +53,15 @@ export const connectingText = (name: string) => `Connecting to ${name}. If the c
 /** The Rust side's `WifiError::NoWifi` Display text. */
 const NO_WIFI = 'This computer has no Wi-Fi';
 
-/** The connect screen's message when joining the camera's network or finding the camera on it fails. */
-export function wifiErrorMessage(step: 'join' | 'find', ssid: string, detail: string): string {
+/**
+ * The connect screen's message when joining the camera's network or finding
+ * the camera on it fails. `wait` is finding it after the user was asked to
+ * join the network themselves.
+ */
+export function wifiErrorMessage(step: 'join' | 'find' | 'wait', ssid: string, detail: string): string {
+  if (step === 'wait') {
+    return `No camera answered on ${ssid}. Check this computer is on that network, then on the camera open Menu, Network, PC Remote Function, and stay on that screen.`;
+  }
   if (step === 'find') {
     return `Joined ${ssid} but no camera answered. On the camera, open Menu, Network, PC Remote Function, and stay on that screen.`;
   }

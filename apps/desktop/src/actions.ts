@@ -81,7 +81,7 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
   }
 
   async function connectWithWifi({ ssid, password }: WifiCredentials): Promise<boolean> {
-    const fail = (step: 'join' | 'find', e: unknown) => {
+    const fail = (step: 'join' | 'find' | 'wait', e: unknown) => {
       store.set({ connecting: null, error: wifiErrorMessage(step, ssid, message(e)) });
       return false;
     };
@@ -100,7 +100,7 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     try {
       camera = await ipc.waitForCamera(ask ? ASK_FIND_MS : FIND_MS);
     } catch (e) {
-      return fail('find', e);
+      return fail(ask ? 'wait' : 'find', e);
     }
     return connectTo(camera.ip, ssid, camera.model || ssid);
   }

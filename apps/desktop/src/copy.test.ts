@@ -90,6 +90,12 @@ describe('Wi-Fi connect copy', () => {
     );
   });
 
+  test('a silent network after asking to join does not claim Rimix joined it', () => {
+    expect(wifiErrorMessage('wait', ssid, 'No camera answered on this network')).toBe(
+      'No camera answered on DIRECT-abc1:ZV-E10. Check this computer is on that network, then on the camera open Menu, Network, PC Remote Function, and stay on that screen.',
+    );
+  });
+
   test('text that is not a Wi-Fi code', () => {
     expect(NOT_A_WIFI_CODE).toBe(
       "This code isn't a camera Wi-Fi code. Check the text below, or type the name and password.",

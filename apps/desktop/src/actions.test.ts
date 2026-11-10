@@ -115,6 +115,15 @@ describe('connect over Wi-Fi', () => {
     expect(texts[0]).toContain('from the Wi-Fi menu');
   });
 
+  test('Ask mode explains a silent network without claiming Rimix joined it', async () => {
+    vi.mocked(ipc.waitForCamera).mockRejectedValue('No camera answered on this network');
+    const store = storeWith('Ask');
+    expect(await createActions(store).connectWithWifi({ ssid: SSID, password: 'x' })).toBe(false);
+    expect(store.get().connecting).toBeNull();
+    expect(store.get().error).toMatch(/^No camera answered on DIRECT-abc1:ZV-E10\./);
+    expect(store.get().error).not.toMatch(/^Joined/);
+  });
+
   test('connectRecent uses the network when known and the address otherwise', async () => {
     const store = storeWith('Automatic');
     const actions = createActions(store);
