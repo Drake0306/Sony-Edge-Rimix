@@ -30,3 +30,15 @@ export function connectErrorMessage(err: string, ip: string): string {
   const detail = err.replace(/^Cannot connect to [^:]+(:\d+)?: /, '');
   return `Could not connect to the camera at ${ip}: ${detail}`;
 }
+
+/** The connect screen's message for a webcam error (a DOMException name from getUserMedia). */
+export function webcamErrorMessage(e: unknown): string {
+  const name = e instanceof Error ? e.name : '';
+  if (name === 'NotAllowedError') {
+    return 'Rimix needs permission to use the webcam. Allow it in System Settings, Privacy & Security, Camera, then try again.';
+  }
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+    return "No webcam found. Paste the code's text or type the name and password instead.";
+  }
+  return "The webcam isn't available here. Paste the code's text or type the name and password instead.";
+}
