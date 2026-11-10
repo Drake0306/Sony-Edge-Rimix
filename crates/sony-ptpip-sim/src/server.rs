@@ -16,6 +16,7 @@ use tokio::task::JoinSet;
 use crate::controls::{Controls, Outcome};
 use crate::frames::{self, LiveView};
 use crate::props::{load_fixture, PropStore};
+use crate::ssdp;
 use crate::{SimCommand, SimConfig, SimHandle};
 
 const PROTOCOL_VERSION: u32 = 0x0001_0000;
@@ -80,18 +81,33 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
         controls: Mutex::default(),
         live_view: Mutex::default(),
     });
+    // Dropping the set when `run` exits aborts every connection, session and
+    // discovery task.
+    let mut tasks = JoinSet::new();
+    let (ssdp_addr, http_addr) = match shared.config.ssdp_port {
+        Some(port) => {
+            let (ssdp, http) = ssdp::start(port, &mut tasks).await;
+            (Some(ssdp), Some(http))
+        }
+        None => (None, None),
+    };
     let (tx, rx) = mpsc::channel(16);
-    tokio::spawn(run(listener, shared, rx));
+    tokio::spawn(run(listener, shared, rx, tasks));
     SimHandle {
         addr,
         events: tx,
         log,
+        http_addr,
+        ssdp_addr,
     }
 }
 
-async fn run(listener: TcpListener, shared: Arc<Shared>, mut control: mpsc::Receiver<SimCommand>) {
-    // Dropping the set on exit aborts every connection and session task.
-    let mut tasks = JoinSet::new();
+async fn run(
+    listener: TcpListener,
+    shared: Arc<Shared>,
+    mut control: mpsc::Receiver<SimCommand>,
+    mut tasks: JoinSet<()>,
+) {
     loop {
         tokio::select! {
             accepted = listener.accept() => match accepted {

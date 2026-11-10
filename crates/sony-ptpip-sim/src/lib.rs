@@ -13,6 +13,7 @@ mod controls;
 mod frames;
 mod props;
 mod server;
+mod ssdp;
 
 pub use props::load_fixture;
 pub use server::spawn;
@@ -39,6 +40,9 @@ pub struct SimConfig {
     /// Cut GetObject on the captured still handle short: send StartData and
     /// the first half of the picture, then close both sockets.
     pub drop_during_capture: bool,
+    /// Answer SSDP M-SEARCH requests on this 127.0.0.1 UDP port (0 picks
+    /// one) and serve the UPnP descriptions over HTTP; `None` disables both.
+    pub ssdp_port: Option<u16>,
 }
 
 impl Default for SimConfig {
@@ -52,6 +56,7 @@ impl Default for SimConfig {
             write_mode_step: false,
             live_view_busy_every: None,
             drop_during_capture: false,
+            ssdp_port: None,
         }
     }
 }
@@ -74,4 +79,8 @@ pub struct SimHandle {
     pub events: mpsc::Sender<SimCommand>,
     /// One line per handled operation, e.g. `op 0x1002 tid 1`.
     pub log: Arc<Mutex<Vec<String>>>,
+    /// Where the UPnP descriptions are served, when `ssdp_port` is set.
+    pub http_addr: Option<SocketAddr>,
+    /// Where the SSDP responder listens, when `ssdp_port` is set.
+    pub ssdp_addr: Option<SocketAddr>,
 }

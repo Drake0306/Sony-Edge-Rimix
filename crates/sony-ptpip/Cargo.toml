@@ -10,9 +10,12 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
+url = { workspace = true }
+quick-xml = { workspace = true }
 
 [dev-dependencies]
 sony-ptpip-sim = { path = "../sony-ptpip-sim" }
 tokio = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 tempfile = "3"
+url = { workspace = true }
