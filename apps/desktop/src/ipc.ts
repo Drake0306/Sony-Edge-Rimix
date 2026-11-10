@@ -174,6 +174,14 @@ export interface AppSettings {
 
 export const discover = (timeoutMs: number) =>
   invoke<DiscoveredCamera[]>('discover', { timeoutMs });
+/** Joins a Wi-Fi network and waits until it is up. The password is never stored. */
+export const joinNetwork = (ssid: string, password: string | null) =>
+  invoke<void>('join_network', { ssid, password });
+/** The Wi-Fi network this computer is on, or null. */
+export const currentNetwork = () => invoke<string | null>('current_network');
+/** Waits up to `timeoutMs` for a camera to answer on the network. */
+export const waitForCamera = (timeoutMs: number) =>
+  invoke<DiscoveredCamera>('wait_for_camera', { timeoutMs });
 /** `ip` is an IP address (port 15740) or `ip:port`. */
 export const connect = (ip: string) => invoke<CameraState>('connect', { ip });
 export const disconnect = () => invoke<void>('disconnect');

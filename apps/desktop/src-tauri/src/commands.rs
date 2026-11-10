@@ -123,3 +123,22 @@ pub async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
         .transpose()
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn join_network(
+    state: State<'_, AppState>,
+    ssid: String,
+    password: Option<String>,
+) -> Result<(), String> {
+    state::join_network(&state, &ssid, password.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn current_network(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    state::current_network(&state).await
+}
+
+#[tauri::command]
+pub async fn wait_for_camera(timeout_ms: u64) -> Result<DiscoveredCamera, String> {
+    state::wait_for_camera(std::time::Duration::from_millis(timeout_ms)).await
+}

@@ -6,12 +6,13 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use sony_ptpip::discovery::PTP_PORT;
+use sony_ptpip::discovery::{DiscoverySource, PTP_PORT};
 use sony_ptpip::ptp::PtpValue;
 use sony_ptpip::{Camera, CameraConfig, CameraEvent, CameraState, DiscoveredCamera};
 use tokio::sync::broadcast::{self, error::RecvError};
 
 use crate::settings::{self, AppSettings};
+use crate::wifi::{SystemRunner, Wifi};
 
 /// The error every camera command gives while no camera is connected.
 pub const NOT_CONNECTED: &str = "Not connected to a camera";
@@ -24,6 +25,7 @@ pub struct AppState {
     pub settings: StdMutex<AppSettings>,
     pub guid: [u8; 16],
     pub settings_path: PathBuf,
+    pub wifi: Wifi,
 }
 
 /// Locks a std mutex, carrying on if a panicking holder poisoned it.
@@ -47,6 +49,7 @@ impl AppState {
             settings: StdMutex::new(settings),
             guid,
             settings_path,
+            wifi: Wifi::from_env(Arc::new(SystemRunner)),
         }
     }
 
@@ -75,6 +78,67 @@ pub async fn discover(timeout_ms: u64) -> Result<Vec<DiscoveredCamera>, String> 
     sony_ptpip::discover(Duration::from_millis(timeout_ms))
         .await
         .map_err(|e| e.to_string())
+}
+
+/// The error [`wait_for_camera`] gives when nothing answered in time.
+pub const NO_CAMERA: &str = "No camera answered on this network";
+
+/// Joins the Wi-Fi network `ssid`, waiting until it is up.
+pub async fn join_network(
+    state: &AppState,
+    ssid: &str,
+    password: Option<&str>,
+) -> Result<(), String> {
+    let ssid = ssid.to_string();
+    let password = password.map(str::to_string);
+    let wifi = state.wifi.clone();
+    tokio::task::spawn_blocking(move || wifi.join(&ssid, password.as_deref()))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+/// The Wi-Fi network this computer is on, if any.
+pub async fn current_network(state: &AppState) -> Result<Option<String>, String> {
+    let wifi = state.wifi.clone();
+    tokio::task::spawn_blocking(move || wifi.current_network())
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+/// Waits up to `timeout` for a camera to answer. `RIMIX_CAMERA_ADDR`
+/// (`host:port`, port 15740 by default) stands in for one during development.
+pub async fn wait_for_camera(timeout: Duration) -> Result<DiscoveredCamera, String> {
+    if let Ok(addr) = std::env::var("RIMIX_CAMERA_ADDR") {
+        let addr = parse_addr(&addr)?;
+        return Ok(DiscoveredCamera {
+            model: "Simulator".to_string(),
+            friendly_name: "Simulator".to_string(),
+            ip: addr.ip(),
+            ptp_port: addr.port(),
+            ptp_version: None,
+            pairing_required: None,
+            ssh_supported: None,
+            source: DiscoverySource::Manual,
+        });
+    }
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let found = sony_ptpip::discover(Duration::from_millis(1500))
+            .await
+            .unwrap_or_default();
+        let pick = found
+            .iter()
+            .position(|c| c.source == DiscoverySource::Gateway)
+            .unwrap_or(0);
+        if let Some(camera) = found.into_iter().nth(pick) {
+            return Ok(camera);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(NO_CAMERA.to_string());
+        }
+    }
 }
 
 /// Connects to the camera at `ip`, replacing any camera already connected,
@@ -524,4 +588,33 @@ mod tests {
     }
 
     const CAPTURE_SAVED_FIXTURE: &str = include_str!("../../src/fixtures/capture-saved.json");
+
+    /// Serialises the tests that set `RIMIX_CAMERA_ADDR`.
+    static CAMERA_ADDR: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    #[tokio::test]
+    async fn wait_for_camera_honours_the_dev_override_and_times_out_otherwise() {
+        let _guard = CAMERA_ADDR.lock().await;
+        std::env::set_var("RIMIX_CAMERA_ADDR", "127.0.0.1:15740");
+        let cam = wait_for_camera(Duration::from_millis(10)).await.unwrap();
+        assert_eq!(cam.ip, "127.0.0.1".parse::<IpAddr>().unwrap());
+        assert_eq!(cam.ptp_port, 15740);
+        std::env::remove_var("RIMIX_CAMERA_ADDR");
+        let err = wait_for_camera(Duration::from_millis(1)).await.unwrap_err();
+        assert_eq!(err, NO_CAMERA);
+    }
+
+    #[tokio::test]
+    async fn join_network_goes_through_the_wifi_and_current_network_reports_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = app_state(dir.path());
+        state.wifi = crate::wifi::Wifi::fake();
+        join_network(&state, "DIRECT-abc1:ZV-E10", Some("12345678"))
+            .await
+            .unwrap();
+        assert_eq!(
+            current_network(&state).await.unwrap().as_deref(),
+            Some("DIRECT-abc1:ZV-E10")
+        );
+    }
 }

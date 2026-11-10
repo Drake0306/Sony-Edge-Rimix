@@ -3,6 +3,7 @@
 pub mod commands;
 pub mod settings;
 pub mod state;
+pub mod wifi;
 
 use tauri::Manager;
 
@@ -32,6 +33,9 @@ pub fn run() {
             commands::save_settings,
             commands::pick_folder,
             commands::read_thumbnail,
+            commands::join_network,
+            commands::current_network,
+            commands::wait_for_camera,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Rimix");
