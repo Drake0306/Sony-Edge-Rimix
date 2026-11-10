@@ -295,13 +295,43 @@ pub fn save(path: &Path, settings: &AppSettings) -> std::io::Result<()> {
     }
     let json = serde_json::to_string_pretty(settings)?;
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, json)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    // The file holds the SFTP receiver's password: owner only.
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let mut file = options.open(&tmp)?;
+    // A temp file left by a crash kept its old mode when reopened.
+    #[cfg(unix)]
+    file.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+    std::io::Write::write_all(&mut file, json.as_bytes())?;
+    file.sync_all()?;
+    drop(file);
     std::fs::rename(&tmp, path)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn saved_settings_are_for_the_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("settings.json");
+        // An older file, and a temp file a crash left, both world readable.
+        std::fs::write(&path, "{}").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let stale = path.with_extension("json.tmp");
+        std::fs::write(&stale, "{}").unwrap();
+        std::fs::set_permissions(&stale, std::fs::Permissions::from_mode(0o644)).unwrap();
+        save(&path, &AppSettings::default()).unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "{mode:o}");
+        assert!(!stale.exists());
+        assert_eq!(load(&path), AppSettings::default());
+    }
 
     #[test]
     fn defaults_when_missing() {

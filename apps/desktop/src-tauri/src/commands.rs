@@ -269,13 +269,13 @@ pub async fn open_logs(app: AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Whether Receive from camera runs, its address, login and fingerprint.
 /// Development switches for this run (`RIMIX_WEBCAM=off`).
 #[tauri::command]
 pub fn dev_flags() -> state::DevFlags {
     state::dev_flags()
 }
 
+/// Whether Receive from camera runs, its address, login and fingerprint.
 #[tauri::command]
 pub async fn sftp_status(state: State<'_, AppState>) -> Result<crate::sftp::SftpStatus, String> {
     Ok(crate::sftp::status(&state).await)
