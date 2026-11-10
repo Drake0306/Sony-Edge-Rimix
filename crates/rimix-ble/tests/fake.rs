@@ -105,3 +105,23 @@ async fn a_failed_full_press_still_lets_go_of_the_shutter() {
         vec![vec![0x01, 0x07], vec![0x01, 0x08], vec![0x01, 0x06]]
     );
 }
+
+fn timed_out() -> BleError {
+    BleError::Io("timed out after 5000 ms waiting to disconnect".into())
+}
+
+#[tokio::test]
+async fn a_failed_disconnect_does_not_spoil_a_handoff() {
+    let fake = camera(b"DIRECT-abc1:ZV-E10", b"12345678").fail_disconnect(timed_out());
+    let creds = handoff(&fake, ZV).await.unwrap();
+    assert_eq!(creds.ssid, "DIRECT-abc1:ZV-E10");
+}
+
+#[tokio::test]
+async fn a_failed_disconnect_does_not_hide_the_real_error() {
+    let fake = camera(b"", b"").fail_write(0).fail_disconnect(timed_out());
+    assert_eq!(
+        shoot(&fake, ZV).await,
+        Err(BleError::Io("scripted write failure".into()))
+    );
+}

@@ -130,6 +130,7 @@ pub struct FakeAdapter {
     values: HashMap<(String, Uuid), Vec<u8>>,
     writes: Mutex<Vec<(String, Uuid, Vec<u8>)>>,
     fail_write: Option<usize>,
+    fail_disconnect: Option<BleError>,
     attempts: Mutex<usize>,
 }
 
@@ -175,6 +176,12 @@ impl FakeAdapter {
     /// Makes write attempt number `n` (counting from 0) fail.
     pub fn fail_write(mut self, n: usize) -> FakeAdapter {
         self.fail_write = Some(n);
+        self
+    }
+
+    /// Makes every disconnect fail with `err` (a timeout, say).
+    pub fn fail_disconnect(mut self, err: BleError) -> FakeAdapter {
+        self.fail_disconnect = Some(err);
         self
     }
 
@@ -226,5 +233,9 @@ impl BleAdapter for FakeAdapter {
                 .push((device.to_string(), char, data.to_vec()));
             Ok(())
         })
+    }
+
+    fn disconnect<'a>(&'a self, _device: &'a str) -> BoxFuture<'a, Result<(), BleError>> {
+        Box::pin(async move { self.fail_disconnect.clone().map_or(Ok(()), Err) })
     }
 }

@@ -122,8 +122,16 @@ fn text(bytes: &[u8]) -> String {
 /// so the owner can report it.
 pub async fn handoff(adapter: &dyn BleAdapter, device: &str) -> Result<WifiCredentials, BleError> {
     let result = read_credentials(adapter, device).await;
-    let _ = adapter.disconnect(device).await;
+    hang_up(adapter, device).await;
     result
+}
+
+/// Disconnects after a flow. A failure (a timeout included) is logged and
+/// swallowed so it never hides the flow's own outcome.
+async fn hang_up(adapter: &dyn BleAdapter, device: &str) {
+    if let Err(e) = adapter.disconnect(device).await {
+        tracing::warn!(device, error = %e, "could not disconnect from the camera");
+    }
 }
 
 async fn read_credentials(
@@ -149,7 +157,7 @@ async fn read_credentials(
 /// characteristic, [`SHUTTER_GAP`] apart.
 pub async fn shoot(adapter: &dyn BleAdapter, device: &str) -> Result<(), BleError> {
     let result = press(adapter, device).await;
-    let _ = adapter.disconnect(device).await;
+    hang_up(adapter, device).await;
     result
 }
 

@@ -4112,6 +4112,7 @@ version = "0.1.0"
 dependencies = [
  "btleplug",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
