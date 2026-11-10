@@ -3,17 +3,19 @@
 //! profile file, which is deleted as soon as `netsh` has read it and is
 //! never logged; no command line carries it.
 
-use crate::run::{run_logged, run_with_log};
+use crate::run::{run_kv_logged, run_with_log};
 use crate::{
     parse_interfaces, parse_ipconfig_address, profile_xml, with_profile_file, Interface,
     JoinReport, Runner, Wifi, WifiError, FIND_RETRIES, FIND_RETRY_WAIT, JOIN_POLL, JOIN_WAIT,
 };
 
 /// What `netsh wlan connect` prints when Windows cannot see the network yet
-/// or has no profile for it.
+/// or has no profile for it. `is not available` covers both
+/// `The network specified is not available` and, once a profile exists,
+/// `The network specified by profile "<name>" is not available to connect.`
 const NOT_VISIBLE: &[&str] = &[
     "There is no profile",
-    "The network specified is not available",
+    "is not available",
     "There is no such wireless network interface",
 ];
 
@@ -41,21 +43,15 @@ impl Wifi {
         if let Some(password) = password.filter(|p| !p.is_empty()) {
             add_profile(runner, ssid, password)?;
         }
-        let name = format!("name={ssid}");
-        let ssid_arg = format!("ssid={ssid}");
-        let interface = format!("interface={}", wifi.name);
         let connect = [
-            "netsh",
-            "wlan",
-            "connect",
-            name.as_str(),
-            ssid_arg.as_str(),
-            interface.as_str(),
+            ("name", ssid),
+            ("ssid", ssid),
+            ("interface", wifi.name.as_str()),
         ];
         let mut attempts = 0;
         loop {
             attempts += 1;
-            let out = run_logged(runner, &connect, &[])?;
+            let out = run_kv_logged(runner, &["netsh", "wlan", "connect"], &connect)?;
             let text = format!("{}{}", out.stdout, out.stderr);
             if NOT_VISIBLE.iter().any(|t| text.contains(t)) {
                 if attempts >= FIND_RETRIES {
@@ -107,11 +103,11 @@ impl Wifi {
 /// deleted again whether or not `netsh` accepted it.
 fn add_profile(runner: &dyn Runner, ssid: &str, password: &str) -> Result<(), WifiError> {
     with_profile_file(&profile_xml(ssid, password), |path| {
-        let filename = format!("filename={}", path.display());
-        let out = run_logged(
+        let filename = path.to_string_lossy();
+        let out = run_kv_logged(
             runner,
-            &["netsh", "wlan", "add", "profile", &filename, "user=current"],
-            &[],
+            &["netsh", "wlan", "add", "profile"],
+            &[("filename", &filename), ("user", "current")],
         )?;
         if out.success {
             Ok(())
@@ -220,7 +216,7 @@ mod tests {
     }
 
     fn not_visible() -> Output {
-        failed("The network specified is not available. Please check the network name.\r\n")
+        failed("The network specified by profile \"DIRECT-abc1:ZV-E10\" is not available to connect.\r\n")
     }
 
     fn argv(parts: &[&str]) -> Vec<String> {
@@ -375,8 +371,12 @@ mod tests {
 
     #[test]
     fn join_gives_not_visible_after_the_last_retry() {
-        let mut script = vec![off()];
-        script.extend((0..FIND_RETRIES).map(|_| not_visible()));
+        // Both wordings: without a usable profile, and with one.
+        let mut script = vec![
+            off(),
+            failed("The network specified is not available. Please check the network name.\r\n"),
+        ];
+        script.extend((1..FIND_RETRIES).map(|_| not_visible()));
         let runner = FakeRunner::scripted(script);
         let slept = Arc::new(Mutex::new(Vec::new()));
         let record = slept.clone();

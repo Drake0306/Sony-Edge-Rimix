@@ -46,7 +46,7 @@ fn a_join_never_logs_the_password() {
     let runner = Arc::new(Scripted(Mutex::new(VecDeque::from([
         "    Name                   : Wi-Fi\r\n    State                  : disconnected\r\n",
         "Profile DIRECT-abc1:ZV-E10 is added on interface Wi-Fi.\r\n",
-        "The network specified is not available.\r\n",
+        "The network specified by profile \"DIRECT-abc1:ZV-E10\" is not available to connect.\r\n",
         "Connection request was completed successfully.\r\n",
         "    Name                   : Wi-Fi\r\n    State                  : connected\r\n    SSID                   : DIRECT-abc1:ZV-E10\r\n",
     ]))));

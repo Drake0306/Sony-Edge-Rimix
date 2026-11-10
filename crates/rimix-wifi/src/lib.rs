@@ -65,7 +65,40 @@ pub struct Output {
 /// Runs a program; a trait so tests can script the answers.
 pub trait Runner: Send + Sync {
     fn run(&self, program: &str, args: &[&str]) -> std::io::Result<Output>;
+
+    /// Runs `program` with `args`, then one `key=value` argument per pair
+    /// (`netsh` style). By default the pairs are joined as plain
+    /// `key=value` strings and handed to [`Runner::run`]; on Windows the
+    /// system runner passes them as `key="value"` on the raw command line.
+    fn run_kv(
+        &self,
+        program: &str,
+        args: &[&str],
+        pairs: &[(&str, &str)],
+    ) -> std::io::Result<Output> {
+        let joined: Vec<String> = pairs.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        let mut all: Vec<&str> = args.to_vec();
+        all.extend(joined.iter().map(String::as_str));
+        self.run(program, &all)
+    }
 }
+
+/// One `netsh` argument in its documented `key="value"` form: the value is
+/// quoted only when it holds a space or a tab, and any `"` in it becomes
+/// `\"`. Windows' usual argument quoting would wrap the whole `key=value`
+/// in quotes instead, which `netsh` does not document.
+pub fn netsh_kv(key: &str, value: &str) -> String {
+    let escaped = value.replace('"', "\\\"");
+    if value.contains([' ', '\t']) {
+        format!("{key}=\"{escaped}\"")
+    } else {
+        format!("{key}={escaped}")
+    }
+}
+
+/// Keeps a console window from flashing up for every `netsh` in the app.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Runs real programs with `std::process::Command`.
 pub struct SystemRunner;
@@ -74,20 +107,38 @@ impl Runner for SystemRunner {
     fn run(&self, program: &str, args: &[&str]) -> std::io::Result<Output> {
         let mut command = std::process::Command::new(program);
         command.args(args);
-        #[cfg(target_os = "windows")]
+        #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            /// Keeps a console window from flashing up for every `netsh` in the app.
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             command.creation_flags(CREATE_NO_WINDOW);
         }
-        let out = command.output()?;
-        Ok(Output {
-            success: out.status.success(),
-            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
-        })
+        output(command)
     }
+
+    #[cfg(windows)]
+    fn run_kv(
+        &self,
+        program: &str,
+        args: &[&str],
+        pairs: &[(&str, &str)],
+    ) -> std::io::Result<Output> {
+        use std::os::windows::process::CommandExt;
+        let mut command = std::process::Command::new(program);
+        command.args(args).creation_flags(CREATE_NO_WINDOW);
+        for (key, value) in pairs {
+            command.raw_arg(netsh_kv(key, value));
+        }
+        output(command)
+    }
+}
+
+fn output(mut command: std::process::Command) -> std::io::Result<Output> {
+    let out = command.output()?;
+    Ok(Output {
+        success: out.status.success(),
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    })
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -418,9 +469,11 @@ pub(crate) fn with_profile_file<T>(
         .map_err(failed)?;
     file.write_all(xml.as_bytes()).map_err(failed)?;
     file.flush().map_err(failed)?;
-    let result = use_file(file.path());
-    // Dropping the NamedTempFile deletes it; done explicitly so the order is plain.
-    drop(file);
+    // Close our handle before `netsh` opens the file, so its sharing mode
+    // cannot clash with an open writer; the TempPath still deletes on drop.
+    let path = file.into_temp_path();
+    let result = use_file(&path);
+    drop(path);
     result
 }
 
@@ -887,6 +940,39 @@ There is 1 interface on the system:\r
     fn the_profile_file_is_deleted_after_success_too() {
         let path = with_profile_file("<x/>", |path| Ok(path.to_path_buf())).unwrap();
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn netsh_key_value_arguments_quote_only_values_with_blanks() {
+        assert_eq!(netsh_kv("interface", "Wi-Fi"), "interface=Wi-Fi");
+        assert_eq!(netsh_kv("interface", "Wi-Fi 2"), "interface=\"Wi-Fi 2\"");
+        assert_eq!(
+            netsh_kv("filename", "C:\\Users\\John Smith\\rimix.xml"),
+            "filename=\"C:\\Users\\John Smith\\rimix.xml\""
+        );
+        assert_eq!(netsh_kv("name", "tab\there"), "name=\"tab\there\"");
+        assert_eq!(netsh_kv("name", "a\"b"), "name=a\\\"b");
+        assert_eq!(netsh_kv("name", "a \"b"), "name=\"a \\\"b\"");
+    }
+
+    #[test]
+    fn the_default_run_kv_passes_plain_key_value_arguments() {
+        let runner = FakeRunner::scripted([Output {
+            success: true,
+            stdout: String::new(),
+            stderr: String::new(),
+        }]);
+        runner
+            .run_kv(
+                "netsh",
+                &["wlan", "connect"],
+                &[("name", "My Cam"), ("ssid", "x")],
+            )
+            .unwrap();
+        assert_eq!(
+            runner.calls.lock().unwrap().clone(),
+            vec![vec!["netsh", "wlan", "connect", "name=My Cam", "ssid=x"]]
+        );
     }
 
     #[test]
