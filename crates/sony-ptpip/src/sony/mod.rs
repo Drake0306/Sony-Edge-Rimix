@@ -1,9 +1,11 @@
 //! Sony vendor extensions on top of PTP.
 
+pub mod control;
 pub mod decode;
 pub mod handshake;
 pub mod property;
 
+pub use control::{control, focus, set_value, shoot, toggle_record};
 pub use decode::{label_for, Labeled};
 pub use handshake::{sdio_connect, ExtDeviceInfo};
 pub use property::{

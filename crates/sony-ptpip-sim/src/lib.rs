@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use sony_ptpip::ptp::PtpValue;
 use tokio::sync::mpsc;
 
+mod controls;
 mod props;
 mod server;
 
@@ -28,6 +29,9 @@ pub struct SimConfig {
     pub fixture: PathBuf,
     /// Hold back the response to this operation for this long (for timeout tests).
     pub delay_op: Option<(u16, Duration)>,
+    /// Refuse every 0x9205 write with InvalidParameter, as cameras that only
+    /// take stepped writes do.
+    pub write_mode_step: bool,
 }
 
 impl Default for SimConfig {
@@ -38,6 +42,7 @@ impl Default for SimConfig {
             pairing_delay: Duration::ZERO,
             fixture: PathBuf::from("fixtures/zv-e10.json"),
             delay_op: None,
+            write_mode_step: false,
         }
     }
 }

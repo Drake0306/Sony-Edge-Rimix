@@ -158,6 +158,10 @@ impl PropStore {
         self.props.keys().copied().collect()
     }
 
+    pub fn get(&self, code: u16) -> Option<&PropertyDesc> {
+        self.props.get(&code)
+    }
+
     /// 0x9209 mode 0: every property.
     pub fn encode_all(&self) -> Vec<u8> {
         encode_all_props(&self.props.values().cloned().collect::<Vec<_>>())

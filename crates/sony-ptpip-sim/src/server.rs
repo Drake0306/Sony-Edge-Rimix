@@ -13,6 +13,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 
+use crate::controls::{Controls, Outcome};
 use crate::props::{load_fixture, PropStore};
 use crate::{SimCommand, SimConfig, SimHandle};
 
@@ -24,6 +25,8 @@ const VENDOR_EXT_ID: u32 = 0x11;
 const EVENT_SOCKET_WAIT: Duration = Duration::from_secs(10);
 const EXT_CONTROLS: [u16; 3] = [0xD2C1, 0xD2C2, 0xD2C8];
 const EXT_VERSION: u16 = 0x012C;
+/// How long a held half press takes to find focus.
+const FOCUS_DELAY: Duration = Duration::from_millis(200);
 const SUPPORTED_OPS: [u16; 11] = [
     OP_GET_DEVICE_INFO,
     OP_OPEN_SESSION,
@@ -51,6 +54,8 @@ struct Shared {
     current: Mutex<Option<mpsc::Sender<SimCommand>>>,
     /// Camera properties, kept across sessions like a real camera's settings.
     props: Mutex<PropStore>,
+    /// Button state and the capture queue; lock before `props` when both are needed.
+    controls: Mutex<Controls>,
 }
 
 /// Starts the simulator on 127.0.0.1 with an OS-chosen port.
@@ -70,6 +75,7 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
         pending: Mutex::default(),
         current: Mutex::default(),
         props: Mutex::new(PropStore::new(props)),
+        controls: Mutex::default(),
     });
     let (tx, rx) = mpsc::channel(16);
     tokio::spawn(run(listener, shared, rx));
@@ -413,6 +419,7 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
                 None => RC_INVALID_PARAMETER,
             }
         }
+        OP_SDIO_SET_EXT_DEVICE_PROP_VALUE if shared.config.write_mode_step => RC_INVALID_PARAMETER,
         OP_SDIO_SET_EXT_DEVICE_PROP_VALUE => match (prop_code(&params), &data) {
             (Some(prop), Some(value)) => {
                 let result = shared.props.lock().unwrap().write(prop, value);
@@ -424,6 +431,16 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
                     Err(e) => e.response_code(),
                 }
             }
+            _ => RC_INVALID_PARAMETER,
+        },
+        OP_SDIO_CONTROL_DEVICE => match (prop_code(&params), &data) {
+            (Some(control), Some(value)) => match apply_control(shared, control, value) {
+                Ok(changed) => {
+                    changed_prop = changed;
+                    RC_OK
+                }
+                Err(rc) => rc,
+            },
             _ => RC_INVALID_PARAMETER,
         },
         _ => RC_OPERATION_NOT_SUPPORTED,
@@ -441,6 +458,34 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
         send_prop_changed(ctx.event, prop).await?;
     }
     Ok(())
+}
+
+/// Runs one 0x9207 control and returns the property it changed, if any.
+fn apply_control(shared: &Shared, code: u16, data: &[u8]) -> Result<Option<u16>, u16> {
+    let mut controls = shared.controls.lock().unwrap();
+    let mut props = shared.props.lock().unwrap();
+    match controls.apply(&mut props, code, data)? {
+        Outcome::Unchanged => Ok(None),
+        Outcome::Changed(prop) => Ok(Some(prop)),
+        Outcome::StartFocus => {
+            // The session applies the change and emits the event when the
+            // timer fires, as if the camera found focus by itself.
+            let session = shared.current.lock().unwrap().clone();
+            if let (Some(session), Some(value)) = (session, Controls::focus_found_value(&props)) {
+                let timer = tokio::spawn(async move {
+                    tokio::time::sleep(FOCUS_DELAY).await;
+                    let _ = session
+                        .send(SimCommand::SetProperty {
+                            code: PROP_FOCUS_FOUND,
+                            value,
+                        })
+                        .await;
+                });
+                controls.set_focus_timer(timer.abort_handle());
+            }
+            Ok(None)
+        }
+    }
 }
 
 /// The property code in a command's first parameter.
