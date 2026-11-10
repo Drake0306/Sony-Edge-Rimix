@@ -745,7 +745,7 @@ pub async fn save_settings(state: &AppState, mut s: AppSettings) -> Result<(), S
     let moved = {
         let current = lock(&state.settings);
         s.sftp = current.sftp.clone();
-        current.destination_base != s.destination_base
+        current.destination() != s.destination()
     };
     settings::save(&state.settings_path, &s).map_err(|e| format!("Cannot save settings: {e}"))?;
     let destination = s.destination();
@@ -2233,6 +2233,86 @@ mod tests {
         assert!(sftp_login(new.port, "rimix", &old.password).await.is_none());
         assert!(sftp_login(new.port, "rimix", &new.password).await.is_some());
         crate::sftp::stop(&state).await;
+    }
+
+    fn day(y: i32, m: u32, d: u32) -> chrono::NaiveDate {
+        chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    #[tokio::test]
+    async fn with_a_folder_per_date_uploads_land_in_todays_folder_and_follow_the_day() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, seen) = sftp_state(tmp.path());
+        lock(&state.settings).destination_mode = DestinationMode::FolderPerDate;
+        crate::sftp::set_enabled(&state, true).await.unwrap();
+        let st = crate::sftp::status(&state).await;
+        assert!(st.running, "{:?}", st.error);
+        upload(st.port, &st.user, &st.password, "/A.JPG", b"a").await;
+        let today = chrono::Local::now()
+            .date_naive()
+            .format("%Y-%m-%d")
+            .to_string();
+        let saved = tmp.path().join("shots").join(&today).join("A.JPG");
+        wait_for("not saved in today's folder", || saved.exists()).await;
+        wait_for("no event", || !lock(&seen).is_empty()).await;
+        assert!(lock(&seen)[0].contains(&today), "{:?}", lock(&seen));
+
+        // The same day changes nothing; a new day moves the receiver.
+        assert!(
+            !crate::sftp::restart_if_day_changed(&state, chrono::Local::now().date_naive()).await
+        );
+        let next = day(2031, 1, 2);
+        assert!(crate::sftp::restart_if_day_changed(&state, next).await);
+        let st = crate::sftp::status(&state).await;
+        assert!(st.running);
+        upload(st.port, &st.user, &st.password, "/B.JPG", b"b").await;
+        let moved = tmp.path().join("shots").join("2031-01-02").join("B.JPG");
+        wait_for("not saved in the new day's folder", || moved.exists()).await;
+        crate::sftp::stop(&state).await;
+        // Stopped: a new day starts nothing.
+        assert!(!crate::sftp::restart_if_day_changed(&state, day(2031, 1, 3)).await);
+        assert!(!crate::sftp::status(&state).await.running);
+    }
+
+    #[tokio::test]
+    async fn changing_the_save_mode_restarts_the_receiver_into_the_new_layout() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _) = sftp_state(tmp.path());
+        crate::sftp::set_enabled(&state, true).await.unwrap();
+        let mut s = get_settings(&state);
+        s.destination_mode = DestinationMode::FolderPerDate;
+        save_settings(&state, s).await.unwrap();
+        let st = crate::sftp::status(&state).await;
+        upload(st.port, &st.user, &st.password, "/C.JPG", b"c").await;
+        let today = chrono::Local::now()
+            .date_naive()
+            .format("%Y-%m-%d")
+            .to_string();
+        let saved = tmp.path().join("shots").join(today).join("C.JPG");
+        wait_for("not saved in today's folder", || saved.exists()).await;
+        crate::sftp::stop(&state).await;
+    }
+
+    #[tokio::test]
+    async fn the_fingerprint_shows_even_when_the_port_is_in_use() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _) = sftp_state(tmp.path());
+        assert_eq!(
+            crate::sftp::status(&state).await.fingerprint,
+            None,
+            "no key yet"
+        );
+        crate::sftp::set_enabled(&state, true).await.unwrap();
+        let running = crate::sftp::status(&state).await.fingerprint.unwrap();
+        crate::sftp::stop(&state).await;
+        let taken = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
+        lock(&state.settings).sftp.port = taken.local_addr().unwrap().port();
+        crate::sftp::set_enabled(&state, true).await.unwrap();
+        let st = crate::sftp::status(&state).await;
+        assert!(!st.running);
+        assert!(st.error.is_some());
+        assert_eq!(st.fingerprint.as_deref(), Some(running.as_str()));
+        crate::sftp::set_enabled(&state, false).await.unwrap();
     }
 
     #[test]

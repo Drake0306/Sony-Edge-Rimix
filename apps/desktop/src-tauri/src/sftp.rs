@@ -7,6 +7,8 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard};
 
+use chrono::NaiveDate;
+
 use rimix_sftp::{ReceivedFile, Receiver, ReceiverConfig};
 use sony_ptpip::capture::Received;
 use sony_ptpip::CameraEvent;
@@ -24,6 +26,8 @@ pub type Emit = Arc<dyn Fn(TaggedEvent<'_>) + Send + Sync>;
 #[derive(Default)]
 pub struct SftpService {
     receiver: tokio::sync::Mutex<Option<Receiver>>,
+    /// The day the running receiver's folder was chosen for.
+    started_on: StdMutex<Option<NaiveDate>>,
     last_error: StdMutex<Option<String>>,
     emit: StdMutex<Option<Emit>>,
 }
@@ -86,6 +90,17 @@ fn host_key_path(state: &AppState) -> PathBuf {
     state.settings_path.with_file_name("sftp_host_key")
 }
 
+/// The fingerprint of the host key on disk, once one has been made.
+fn saved_fingerprint(state: &AppState) -> Option<String> {
+    let path = host_key_path(state);
+    if !path.exists() {
+        return None;
+    }
+    rimix_sftp::load_or_create_host_key(&path)
+        .ok()
+        .map(|key| rimix_sftp::host_key_fingerprint(&key))
+}
+
 /// The event a received file becomes.
 fn captured(file: ReceivedFile) -> CameraEvent {
     let filename = file
@@ -101,15 +116,26 @@ fn captured(file: ReceivedFile) -> CameraEvent {
     })
 }
 
-/// (Re)starts the receiver with the current settings and destination,
-/// recording a failure for [`status`].
+fn today() -> NaiveDate {
+    chrono::Local::now().date_naive()
+}
+
+/// (Re)starts the receiver with the current settings, writing where shots
+/// go today, and records a failure for [`status`].
 async fn start(state: &AppState) {
+    start_on(state, today()).await;
+}
+
+/// [`start`] for the day `day`: with a folder per date, files go into that
+/// day's folder.
+async fn start_on(state: &AppState, day: NaiveDate) {
     let mut slot = state.sftp.receiver.lock().await;
     if let Some(old) = slot.take() {
         old.stop().await;
     }
+    *lock(&state.sftp.started_on) = None;
     let cfg = sftp_settings(state);
-    let destination = lock(&state.settings).destination_base.clone();
+    let target = lock(&state.settings).destination();
     let emit = lock(&state.sftp.emit).clone();
     let on_file = move |file: ReceivedFile| {
         tracing::info!(path = %file.path.display(), bytes = file.bytes, "received a file over SFTP");
@@ -122,6 +148,9 @@ async fn start(state: &AppState) {
         }
     };
     let result = async {
+        let destination = target
+            .ensure_writable(day)
+            .map_err(|e| format!("Cannot save to {}: {e}", target.target_dir(day).display()))?;
         let host_key = rimix_sftp::load_or_create_host_key(&host_key_path(state))
             .map_err(|e| format!("Cannot read the host key: {e}"))?;
         let bind = SocketAddr::from((Ipv4Addr::UNSPECIFIED, cfg.port));
@@ -147,6 +176,7 @@ async fn start(state: &AppState) {
     match result {
         Ok(receiver) => {
             *slot = Some(receiver);
+            *lock(&state.sftp.started_on) = Some(day);
             *lock(&state.sftp.last_error) = None;
         }
         Err(e) => {
@@ -161,6 +191,7 @@ pub async fn stop(state: &AppState) {
     if let Some(receiver) = state.sftp.receiver.lock().await.take() {
         receiver.stop().await;
     }
+    *lock(&state.sftp.started_on) = None;
     *lock(&state.sftp.last_error) = None;
 }
 
@@ -175,6 +206,32 @@ pub async fn start_if_enabled(state: &AppState) {
 /// into the new destination.
 pub async fn restart_if_enabled(state: &AppState) {
     start_if_enabled(state).await;
+}
+
+/// When the running receiver's folder was chosen on another day than
+/// `day`, restarts it so files go into `day`'s folder (with a folder per
+/// date). True when it restarted. The app calls this every minute, which
+/// also catches a computer waking from sleep after midnight.
+pub async fn restart_if_day_changed(state: &AppState, day: NaiveDate) -> bool {
+    let started = *lock(&state.sftp.started_on);
+    match started {
+        Some(on) if on != day => {
+            start_on(state, day).await;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Every minute, moves a running receiver to the new day's folder after
+/// midnight. Runs until the app quits.
+pub async fn follow_the_day(state: &AppState) {
+    let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tick.tick().await;
+        restart_if_day_changed(state, today()).await;
+    }
 }
 
 /// Turns receiving on or off and remembers it. A receiver that cannot
@@ -202,7 +259,7 @@ pub async fn status(state: &AppState) -> SftpStatus {
     let cfg = sftp_settings(state);
     let (running, port, fingerprint) = match &*state.sftp.receiver.lock().await {
         Some(r) => (true, r.local_addr().port(), Some(r.fingerprint_sha256())),
-        None => (false, cfg.port, None),
+        None => (false, cfg.port, saved_fingerprint(state)),
     };
     let wifi = state.wifi.clone();
     let ip = tokio::task::spawn_blocking(move || wifi.current_address())

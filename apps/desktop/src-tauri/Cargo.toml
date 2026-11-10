@@ -27,6 +27,7 @@ tracing = { workspace = true }
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 directories = { workspace = true }
+chrono = { workspace = true }
 
 [dev-dependencies]
 sony-ptpip-sim = { path = "../../../crates/sony-ptpip-sim" }

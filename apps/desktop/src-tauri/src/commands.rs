@@ -289,7 +289,8 @@ pub async fn sftp_regenerate_password(state: State<'_, AppState>) -> Result<(), 
 }
 
 /// Sends received files to the webview as `CaptureSaved` events tagged
-/// `sftp`, then starts the receiver if it is on.
+/// `sftp`, starts the receiver if it is on and moves it to each new
+/// day's folder after midnight.
 pub fn start_sftp(app: &AppHandle) {
     let handle = app.clone();
     let state = app.state::<AppState>();
@@ -300,6 +301,8 @@ pub fn start_sftp(app: &AppHandle) {
     }));
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        crate::sftp::start_if_enabled(&app.state::<AppState>()).await;
+        let state = app.state::<AppState>();
+        crate::sftp::start_if_enabled(&state).await;
+        crate::sftp::follow_the_day(&state).await;
     });
 }

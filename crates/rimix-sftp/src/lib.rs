@@ -94,11 +94,7 @@ impl Receiver {
         let destination = std::path::absolute(&cfg.destination)?;
         let root = std::fs::canonicalize(&destination)?;
         handler::clean_stale_parts(&root);
-        let fingerprint = cfg
-            .host_key
-            .public_key()
-            .fingerprint(HashAlg::Sha256)
-            .to_string();
+        let fingerprint = host_key_fingerprint(&cfg.host_key);
         let config = Arc::new(server::Config {
             methods: MethodSet::from(&[MethodKind::Password, MethodKind::KeyboardInteractive][..]),
             auth_rejection_time: Duration::from_millis(250),
@@ -147,6 +143,12 @@ impl Drop for Receiver {
     fn drop(&mut self) {
         self.task.abort();
     }
+}
+
+/// The key's `SHA256:<base64 without padding>` fingerprint, as clients
+/// show it.
+pub fn host_key_fingerprint(key: &PrivateKey) -> String {
+    key.public_key().fingerprint(HashAlg::Sha256).to_string()
 }
 
 /// Loads the ed25519 host key at `path` (OpenSSH PEM), or makes one and
