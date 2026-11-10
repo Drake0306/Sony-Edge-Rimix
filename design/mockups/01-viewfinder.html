@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rimix — Viewfinder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=Barlow:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#08090B;
+    --ink:#F3F2EC;
+    --ink-2:rgba(243,242,236,.70);
+    --ink-3:rgba(243,242,236,.44);
+    --line:rgba(243,242,236,.22);
+    --line-2:rgba(243,242,236,.12);
+    --scrim:rgba(8,9,11,.55);
+    --scrim-2:rgba(8,9,11,.72);
+    --focus:#4CE07A;
+    --rec:#FF4530;
+    --cond:"Barlow Condensed","Avenir Next Condensed","Roboto Condensed","Arial Narrow",sans-serif;
+    --sans:"Barlow","Avenir Next","Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13px;line-height:1.3;overflow-x:hidden}
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+  button:hover{background:rgba(243,242,236,.14)}
+  :focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  input{font:inherit;color:inherit}
+  .cond{font-family:var(--cond)}
+  .num{font-variant-numeric:tabular-nums}
+
+  .badge{position:fixed;top:12px;left:12px;z-index:50;padding:3px 8px;border:1px solid var(--line);border-radius:3px;background:var(--scrim-2);font-size:11px;letter-spacing:.02em;color:var(--ink-2)}
+
+  .screen{position:relative;height:clamp(640px,100vh,900px);overflow:hidden}
+
+  /* ---------- live view ---------- */
+  .scene{position:absolute;inset:0}
+  .scene svg{display:block;width:100%;height:100%}
+  .thirds{position:absolute;inset:0;pointer-events:none;
+    background:
+      linear-gradient(to right, transparent calc(33.333% - .5px), rgba(243,242,236,.16) calc(33.333% - .5px), rgba(243,242,236,.16) calc(33.333% + .5px), transparent calc(33.333% + .5px)),
+      linear-gradient(to right, transparent calc(66.666% - .5px), rgba(243,242,236,.16) calc(66.666% - .5px), rgba(243,242,236,.16) calc(66.666% + .5px), transparent calc(66.666% + .5px)),
+      linear-gradient(to bottom, transparent calc(33.333% - .5px), rgba(243,242,236,.16) calc(33.333% - .5px), rgba(243,242,236,.16) calc(33.333% + .5px), transparent calc(33.333% + .5px)),
+      linear-gradient(to bottom, transparent calc(66.666% - .5px), rgba(243,242,236,.16) calc(66.666% - .5px), rgba(243,242,236,.16) calc(66.666% + .5px), transparent calc(66.666% + .5px));
+  }
+  .focus{position:absolute;left:37%;top:30%;width:13%;aspect-ratio:4/3;pointer-events:none}
+  .focus i{position:absolute;width:22px;height:22px;border:2px solid var(--focus)}
+  .focus i:nth-child(1){left:-1px;top:-1px;border-right:0;border-bottom:0}
+  .focus i:nth-child(2){right:-1px;top:-1px;border-left:0;border-bottom:0}
+  .focus i:nth-child(3){left:-1px;bottom:-1px;border-right:0;border-top:0}
+  .focus i:nth-child(4){right:-1px;bottom:-1px;border-left:0;border-top:0}
+  .focus span{position:absolute;left:0;top:-24px;color:var(--focus);font-size:12px;white-space:nowrap}
+  .focus span::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--focus);margin-right:6px;vertical-align:1px}
+
+  /* ---------- top rail ---------- */
+  .rail{position:absolute;left:0;right:0;top:0;height:46px;display:flex;align-items:center;gap:22px;padding:0 20px 0 132px;background:linear-gradient(to bottom,var(--scrim-2),rgba(8,9,11,0));}
+  .wordmark{font-family:var(--cond);font-weight:600;font-size:20px;letter-spacing:.04em}
+  .rail .status{color:var(--ink-2);font-size:12.5px}
+  .rail .spacer{flex:1}
+  .cam{display:flex;align-items:center;gap:18px;font-size:12.5px}
+  .cam .name{font-family:var(--cond);font-size:17px;font-weight:600}
+  .cam .pair{display:flex;align-items:center;gap:7px;color:var(--ink-2)}
+  .cam .pair b{color:var(--ink);font-weight:500}
+  .bars{display:inline-flex;align-items:flex-end;gap:2px;height:12px}
+  .bars i{width:3px;background:var(--ink);border-radius:1px}
+  .bars i:nth-child(1){height:4px}.bars i:nth-child(2){height:7px}.bars i:nth-child(3){height:10px}.bars i:nth-child(4){height:12px}
+  .batt{position:relative;width:24px;height:11px;border:1.5px solid var(--ink);border-radius:2px}
+  .batt::after{content:"";position:absolute;right:-4px;top:2.5px;width:2px;height:4px;background:var(--ink)}
+  .batt i{position:absolute;left:1.5px;top:1.5px;bottom:1.5px;width:72%;background:var(--ink)}
+  .card{width:13px;height:16px;border:1.5px solid var(--ink);border-radius:2px 4px 2px 2px;position:relative}
+  .card::after{content:"";position:absolute;left:2px;right:2px;top:3px;height:2px;background:var(--ink)}
+
+  /* ---------- histogram + level ---------- */
+  .hist{position:absolute;right:20px;top:60px;width:132px;padding:6px 8px 4px;background:var(--scrim);border-radius:3px}
+  .hist svg{display:block;width:100%;height:46px}
+  .hist small{display:block;margin-top:3px;color:var(--ink-3);font-size:11px}
+  .level{position:absolute;left:50%;top:58%;transform:translateX(-50%);width:240px;height:28px;pointer-events:none}
+  .level .axis{position:absolute;left:0;right:0;top:50%;height:1px;background:var(--ink-3)}
+  .level .tick{position:absolute;top:8px;width:1px;height:12px;background:var(--ink-2)}
+  .level .tick.l{left:0}.level .tick.r{right:0}
+  .level .mid{position:absolute;left:50%;top:6px;width:56px;height:16px;transform:translateX(-50%);border:1.5px solid var(--ink);border-radius:1px;background:rgba(8,9,11,.35)}
+  .level .bubble{position:absolute;left:50%;top:50%;width:46px;height:3px;transform:translate(-50%,-50%) rotate(-1.2deg);background:var(--ink)}
+  .level small{position:absolute;left:50%;top:-16px;transform:translateX(-50%);color:var(--ink-3);font-size:11px;white-space:nowrap}
+
+  /* ---------- clusters ---------- */
+  .cluster{position:absolute;display:flex;flex-direction:column;gap:14px}
+  .cluster-left{left:20px;top:50%;transform:translateY(-50%);width:200px}
+  .cluster-right{right:20px;top:50%;transform:translateY(-50%);align-items:center;width:176px}
+  .group{background:var(--scrim);border-radius:4px;padding:10px 12px}
+  .group h3{font-size:11.5px;font-weight:500;color:var(--ink-3);margin-bottom:8px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{padding:5px 9px;border:1px solid var(--line);border-radius:3px;font-size:12px;color:var(--ink-2)}
+  .chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  .rowlist{display:flex;flex-direction:column;gap:2px}
+  .rowlist button{display:flex;justify-content:space-between;align-items:center;width:100%;padding:6px 7px;border-radius:3px;text-align:left;font-size:12.5px}
+  .rowlist button span{color:var(--ink-3);font-size:11.5px}
+  .rowlist button.on{background:rgba(243,242,236,.12)}
+  .rowlist .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ink);margin-right:7px;vertical-align:1px}
+  .rowlist .dot.off{background:none;border:1px solid var(--ink-3)}
+
+  .actions{display:flex;flex-direction:column;align-items:center;gap:12px;width:100%;padding:14px 10px 12px;background:var(--scrim);border-radius:4px}
+  .shoot{width:84px;height:84px;border-radius:50%;border:3px solid var(--ink);background:rgba(8,9,11,.35);display:grid;place-items:center;transition:background .12s}
+  .shoot i{width:62px;height:62px;border-radius:50%;background:var(--ink);display:block}
+  .shoot:hover{background:rgba(243,242,236,.28)}
+  .shoot:hover i{transform:scale(.94)}
+  .actions .lbl{font-family:var(--cond);font-weight:600;font-size:15px;letter-spacing:.03em;margin-top:-4px}
+  .duo{display:flex;gap:12px}
+  .round{width:52px;height:52px;border-radius:50%;background:var(--scrim);border:1.5px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;color:var(--ink-2)}
+  .round .rec{width:14px;height:14px;border-radius:50%;background:var(--rec)}
+  .round .af{width:16px;height:12px;border:1.5px solid var(--ink);border-radius:2px;position:relative}
+  .round .af::after{content:"";position:absolute;left:5px;top:3px;width:4px;height:4px;background:var(--ink);border-radius:50%}
+  .presets{width:100%;background:var(--scrim);border-radius:4px;padding:8px}
+  .presets h3{font-size:11.5px;font-weight:500;color:var(--ink-3);margin:0 4px 6px}
+  .presets .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+  .preset{height:34px;border-radius:3px;border:1px solid var(--line);font-family:var(--cond);font-weight:600;font-size:15px}
+  .preset.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  .presets .pname{margin:7px 4px 0;font-size:12px;color:var(--ink-2)}
+  .presets .pname b{color:var(--ink);font-weight:500}
+
+  /* ---------- exposure row ---------- */
+  .exposure{position:absolute;left:0;right:0;bottom:168px;display:flex;align-items:flex-end;gap:0;padding:14px 24px 30px;background:linear-gradient(to top,rgba(8,9,11,.80),rgba(8,9,11,.38))}
+  .exposure .live{flex:1;align-self:flex-end;color:var(--ink-2);font-size:12.5px;padding-bottom:6px}
+  .ev{display:flex;flex-direction:column;align-items:flex-start;padding:0 22px;border-left:1px solid var(--line-2)}
+  .ev:first-of-type{border-left:0;padding-left:0}
+  .ev .v{font-family:var(--cond);font-weight:600;font-size:30px;line-height:1;letter-spacing:.01em;padding:4px 6px 2px;margin:0 -6px;border-radius:3px}
+  .ev .v.small{font-size:24px;padding-top:9px}
+  .ev .k{font-size:11.5px;color:var(--ink-3);margin-top:3px}
+  .ev.hero .v{font-size:38px}
+
+  /* ---------- tray ---------- */
+  .tray{position:absolute;left:0;right:0;bottom:0;height:168px;background:var(--scrim-2);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line-2);display:flex;gap:28px;padding:18px 24px 14px}
+  .handle{position:absolute;left:50%;top:-22px;transform:translateX(-50%);height:22px;padding:0 14px;background:var(--scrim-2);border:1px solid var(--line-2);border-bottom:0;border-radius:5px 5px 0 0;font-size:11.5px;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+  .handle i{width:7px;height:7px;border-left:1.5px solid var(--ink-2);border-top:1.5px solid var(--ink-2);transform:translateY(2px) rotate(45deg)}
+  .film{flex:1;min-width:0}
+  .film h3,.dest h3{font-size:11.5px;font-weight:500;color:var(--ink-3);margin-bottom:8px}
+  .strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;max-width:760px}
+  .tile{display:block;width:100%;padding:0;border-radius:3px;overflow:hidden;text-align:left}
+  .tile .img{display:block;aspect-ratio:16/9;border-radius:3px;position:relative;overflow:hidden;
+    background:
+      radial-gradient(circle at 44% 48%, #d9b89c 0 9%, transparent 10%),
+      linear-gradient(135deg, transparent 0 36%, #2f5d8a 36% 54%, transparent 54%) no-repeat,
+      linear-gradient(90deg, transparent 0 62%, #b9c8d3 62% 88%, transparent 88%) 0 0 / 100% 68% no-repeat,
+      linear-gradient(180deg, #5c6168 0 68%, #7a5c40 68%);
+  }
+  .tile .img.a{filter:saturate(.9) brightness(.95)}
+  .tile .img.b{filter:saturate(1.05) brightness(1.02) hue-rotate(-4deg)}
+  .tile .img.c{filter:saturate(.8) brightness(.9) contrast(1.05)}
+  .tile .img.d{filter:saturate(1) brightness(1.06)}
+  .tile .img.e{filter:saturate(.95) brightness(.97) hue-rotate(5deg)}
+  .tile .img.f{filter:saturate(.7) brightness(.8)}
+  .tile .img .bar{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(8,9,11,.5)}
+  .tile .img .bar i{display:block;height:100%;width:64%;background:var(--ink)}
+  .tile .meta{display:block;margin-top:5px;font-size:11.5px;color:var(--ink-2);white-space:nowrap}
+  .tile .meta span{display:block;color:var(--ink);font-size:11px;margin-top:1px}
+  .tile:hover{background:rgba(243,242,236,.08)}
+  .dest{width:380px;flex:none}
+  .dest .path{font-size:13px;color:var(--ink);margin-bottom:10px}
+  .dest .path span{color:var(--ink-3);margin-right:6px}
+  .seg{display:flex;border:1px solid var(--line);border-radius:3px;overflow:hidden}
+  .seg button{flex:1;padding:8px 6px;font-size:12px;color:var(--ink-2);border-left:1px solid var(--line-2)}
+  .seg button:first-child{border-left:0}
+  .seg button.on{background:var(--ink);color:var(--bg)}
+  .seg button.on:hover{background:var(--ink)}
+
+  /* ---------- connect ---------- */
+  .connect{background:#0B0D11}
+  .webcam{position:absolute;inset:0;background:
+      radial-gradient(ellipse 60% 70% at 50% 60%, #2a3038 0, #171a1f 55%, #0b0d11 100%)}
+  .webcam::before{content:"";position:absolute;left:50%;top:62%;width:34vw;height:34vw;max-width:460px;max-height:460px;transform:translate(-50%,-10%);border-radius:50% 50% 40% 40%;background:radial-gradient(circle at 50% 30%, #3a4149, #1d2127 70%);opacity:.55;filter:blur(18px)}
+  .webcam::after{content:"";position:absolute;left:50%;top:40%;width:150px;height:150px;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle at 45% 40%, #434a52, #22262c 75%);opacity:.5;filter:blur(14px)}
+  .reticle{position:absolute;left:50%;top:40%;width:260px;height:260px;transform:translate(-50%,-50%);pointer-events:none}
+  .reticle i{position:absolute;width:34px;height:34px;border:1.5px solid var(--ink-2)}
+  .reticle i:nth-child(1){left:0;top:0;border-right:0;border-bottom:0}
+  .reticle i:nth-child(2){right:0;top:0;border-left:0;border-bottom:0}
+  .reticle i:nth-child(3){left:0;bottom:0;border-right:0;border-top:0}
+  .reticle i:nth-child(4){right:0;bottom:0;border-left:0;border-top:0}
+  .reticle span{position:absolute;left:50%;bottom:-28px;transform:translateX(-50%);color:var(--ink-3);font-size:12px;white-space:nowrap}
+  .connect .rail{padding-left:132px}
+  .connect h1{position:absolute;left:24px;top:76px;font-family:var(--cond);font-weight:600;font-size:56px;line-height:1;letter-spacing:.01em}
+  .connect .sub{position:absolute;left:24px;top:142px;color:var(--ink-2);font-size:14px;max-width:420px}
+  .ways{position:absolute;left:24px;right:24px;bottom:120px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .way{background:var(--scrim-2);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--line-2);border-radius:4px;padding:16px 16px 14px;display:flex;flex-direction:column;gap:12px;min-height:188px}
+  .way h2{font-family:var(--cond);font-weight:600;font-size:22px;line-height:1.05}
+  .way p{color:var(--ink-2);font-size:13px;line-height:1.45}
+  .way .fill{flex:1}
+  .preview{height:70px;border:1px solid var(--line-2);border-radius:3px;background:linear-gradient(135deg,#1c2026,#2a3038);display:flex;align-items:center;justify-content:space-between;padding:0 12px;color:var(--ink-3);font-size:12px}
+  .preview b{font-weight:500;color:var(--ink-2)}
+  .preview .live-dot{width:7px;height:7px;border-radius:50%;background:var(--ink);display:inline-block;margin-right:7px}
+  .device{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line-2);border-radius:3px}
+  .device .d{display:flex;flex-direction:column;gap:3px}
+  .device .d b{font-weight:500;font-size:13.5px}
+  .device .d span{color:var(--ink-3);font-size:12px}
+  .btn{padding:8px 16px;border:1px solid var(--ink);border-radius:3px;font-weight:500;font-size:13px;background:var(--ink);color:var(--bg)}
+  .btn:hover{background:rgba(243,242,236,.86)}
+  .field{display:flex;gap:8px}
+  .field input{flex:1;min-width:0;padding:8px 10px;background:rgba(8,9,11,.5);border:1px solid var(--line);border-radius:3px;font-size:14px;font-variant-numeric:tabular-nums}
+  .field input:hover{border-color:var(--ink-2)}
+  .field label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .foot{position:absolute;left:24px;right:24px;bottom:28px;display:flex;justify-content:space-between;align-items:flex-end;gap:24px}
+  .note{color:var(--ink-2);font-size:13px;max-width:520px;padding-left:12px;border-left:2px solid var(--line)}
+  .recent{display:flex;align-items:center;gap:8px;color:var(--ink-3);font-size:12.5px}
+  .recent button{padding:5px 10px;border:1px solid var(--line);border-radius:3px;color:var(--ink-2);font-size:12.5px}
+
+  @media (max-width:1180px){
+    .cluster-left{width:176px}
+    .ev{padding:0 14px}
+    .ev .v{font-size:26px}
+    .ev.hero .v{font-size:32px}
+    .ev .v.small{font-size:21px}
+    .dest{width:320px}
+    .strip{gap:6px}
+    .connect h1{font-size:46px}
+    .way{min-height:176px}
+  }
+  @media (max-height:760px){
+    .tray{height:150px;padding-top:14px}
+    .exposure{bottom:150px;padding-bottom:26px}
+    .cluster-right{top:52%}
+    .level{top:54%}
+    .hist{top:56px;right:216px}
+    .cluster-left{top:60px;transform:none}
+    .cluster-right{top:56px;transform:none}
+    .ways{bottom:104px}
+    .foot{bottom:22px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{transition:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="badge" aria-label="Design 01, Viewfinder">01 Viewfinder</div>
+
+<!-- ============ Screen 1: main ============ -->
+<section class="screen main" aria-label="Main screen">
+  <div class="scene" aria-hidden="false">
+    <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Placeholder scene: a person at a desk by a window">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9fb7c9"/><stop offset="1" stop-color="#e3d9c6"/></linearGradient>
+        <linearGradient id="wall" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5c6168"/><stop offset="1" stop-color="#3a3e44"/></linearGradient>
+        <linearGradient id="desk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8a6a4a"/><stop offset="1" stop-color="#5b4430"/></linearGradient>
+        <radialGradient id="face" cx="0.4" cy="0.35" r="0.8"><stop offset="0" stop-color="#e8c3a6"/><stop offset="1" stop-color="#b98a6b"/></radialGradient>
+      </defs>
+      <rect width="1600" height="900" fill="url(#wall)"/>
+      <rect x="980" y="80" width="460" height="520" rx="8" fill="url(#sky)"/>
+      <rect x="1200" y="80" width="14" height="520" fill="#2b2e33"/>
+      <rect x="980" y="330" width="460" height="12" fill="#2b2e33"/>
+      <rect x="0" y="620" width="1600" height="280" fill="url(#desk)"/>
+      <rect x="300" y="560" width="220" height="130" rx="10" fill="#1d1f23"/>
+      <rect x="312" y="572" width="196" height="106" rx="4" fill="#2f3f55"/>
+      <ellipse cx="700" cy="620" rx="150" ry="60" fill="#2a2d33"/>
+      <path d="M560 640 Q700 400 840 640 Z" fill="#2f5d8a"/>
+      <circle cx="700" cy="400" r="95" fill="url(#face)"/>
+      <path d="M605 395 Q700 270 795 395 Q760 330 700 330 Q640 330 605 395 Z" fill="#2b2320"/>
+      <rect x="1120" y="520" width="120" height="140" rx="4" fill="#4b5563"/>
+      <circle cx="1180" cy="455" r="55" fill="#d8b36a" opacity="0.7"/>
+    </svg>
+  </div>
+  <div class="thirds" aria-hidden="true"></div>
+
+  <div class="focus" role="img" aria-label="Focus frame, locked">
+    <i></i><i></i><i></i><i></i>
+    <span>Focus locked</span>
+  </div>
+
+  <header class="rail">
+    <div class="wordmark">Rimix</div>
+    <div class="status">Live view 24 fps · last shot 0.8 s ago</div>
+    <div class="spacer"></div>
+    <div class="cam">
+      <span class="name">ZV-E10</span>
+      <span class="pair"><span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Wi-Fi Direct, <b>strong</b></span>
+      <span class="pair"><span class="batt" aria-hidden="true"><i></i></span><b class="num">72%</b></span>
+      <span class="pair"><span class="card" aria-hidden="true"></span>Slot 1, <b class="num">238</b> shots left</span>
+      <span class="pair">Firmware <b class="num">2.00</b></span>
+    </div>
+  </header>
+
+  <div class="hist" role="img" aria-label="Histogram">
+    <svg viewBox="0 0 120 40" preserveAspectRatio="none">
+      <path d="M0 40 L0 36 L6 34 L12 30 L18 24 L24 16 L30 10 L36 8 L42 12 L48 18 L54 22 L60 20 L66 15 L72 18 L78 26 L84 30 L90 27 L96 22 L102 24 L108 31 L114 36 L120 38 L120 40 Z" fill="rgba(243,242,236,.78)"/>
+    </svg>
+    <small>Histogram</small>
+  </div>
+
+  <div class="level" role="img" aria-label="Level indicator">
+    <small>Level</small>
+    <div class="axis"></div><div class="tick l"></div><div class="tick r"></div>
+    <div class="mid"></div><div class="bubble"></div>
+  </div>
+
+  <aside class="cluster cluster-left" aria-label="Tools">
+    <div class="group">
+      <h3>Scopes</h3>
+      <div class="chips">
+        <button class="chip" aria-pressed="false">Waveform</button>
+        <button class="chip" aria-pressed="false">False colour</button>
+        <button class="chip" aria-pressed="false">Zebra</button>
+      </div>
+    </div>
+    <div class="group">
+      <h3>Interval timer</h3>
+      <div class="rowlist">
+        <button aria-pressed="false"><span style="color:inherit">Off</span><span>Set up</span></button>
+      </div>
+    </div>
+    <div class="group">
+      <h3>Cameras</h3>
+      <div class="rowlist">
+        <button class="on" aria-pressed="true"><span style="color:inherit"><i class="dot"></i>ZV-E10 (this)</span></button>
+        <button aria-pressed="false"><span style="color:inherit"><i class="dot off"></i>a7 IV</span><span>offline</span></button>
+      </div>
+    </div>
+  </aside>
+
+  <aside class="cluster cluster-right" aria-label="Actions">
+    <div class="actions">
+      <button class="shoot" aria-label="Shoot"><i></i></button>
+      <div class="lbl">Shoot</div>
+      <div class="duo">
+        <button class="round" aria-label="Record"><span class="rec" aria-hidden="true"></span>Record</button>
+        <button class="round" aria-label="Focus"><span class="af" aria-hidden="true"></span>Focus</button>
+      </div>
+    </div>
+    <div class="presets">
+      <h3>Presets</h3>
+      <div class="grid">
+        <button class="preset on" aria-pressed="true">C1</button>
+        <button class="preset" aria-pressed="false">C2</button>
+        <button class="preset" aria-pressed="false">C3</button>
+        <button class="preset" aria-pressed="false">C4</button>
+      </div>
+      <div class="pname">C1 <b>Talking head</b></div>
+    </div>
+  </aside>
+
+  <div class="exposure" role="group" aria-label="Exposure">
+    <div class="ev"><button class="v">M</button><span class="k">Mode</span></div>
+    <div class="ev hero"><button class="v num">1/125</button><span class="k">Shutter</span></div>
+    <div class="ev hero"><button class="v num">f/4.0</button><span class="k">Aperture</span></div>
+    <div class="ev hero"><button class="v num">ISO 800</button><span class="k">ISO</span></div>
+    <div class="ev"><button class="v num">+0.3</button><span class="k">Exposure comp</span></div>
+    <div class="ev"><button class="v num">5200K</button><span class="k">White balance</span></div>
+    <div class="ev"><button class="v small">AF-C</button><span class="k">Focus</span></div>
+    <div class="ev"><button class="v small">Single</button><span class="k">Drive</span></div>
+    <div class="ev"><button class="v small">RAW+JPEG</button><span class="k">Format</span></div>
+    <div class="ev"><button class="v small">Off</button><span class="k">Picture profile</span></div>
+  </div>
+
+  <div class="tray" aria-label="Captures and destination">
+    <button class="handle" aria-expanded="true">Captures <i aria-hidden="true"></i></button>
+    <div class="film">
+      <h3>Last six captures</h3>
+      <div class="strip">
+        <button class="tile"><span class="img a"></span><span class="meta">DSC01231</span></button>
+        <button class="tile"><span class="img b"></span><span class="meta">DSC01232</span></button>
+        <button class="tile"><span class="img c"></span><span class="meta">DSC01233</span></button>
+        <button class="tile"><span class="img d"></span><span class="meta">DSC01234</span></button>
+        <button class="tile"><span class="img e"></span><span class="meta">DSC01235</span></button>
+        <button class="tile"><span class="img f"><span class="bar"><i></i></span></span><span class="meta">DSC01236 <span>transferring 64%</span></span></button>
+      </div>
+    </div>
+    <div class="dest">
+      <h3>Save to</h3>
+      <div class="path"><span>Saving to</span>~/Pictures/Rimix/2026-11-10</div>
+      <div class="seg" role="radiogroup" aria-label="Destination">
+        <button role="radio" aria-checked="false">Custom folder</button>
+        <button role="radio" aria-checked="false">Lightroom watched folder</button>
+        <button role="radio" aria-checked="true" class="on">New folder per date</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Screen 2: connect ============ -->
+<section class="screen connect" aria-label="Connect screen">
+  <div class="webcam" aria-hidden="true"></div>
+  <div class="reticle" aria-hidden="true"><i></i><i></i><i></i><i></i><span>Webcam preview, looking for a QR code</span></div>
+
+  <header class="rail">
+    <div class="wordmark">Rimix</div>
+    <div class="status">No camera connected</div>
+    <div class="spacer"></div>
+  </header>
+
+  <h1>Connect a camera</h1>
+  <p class="sub">Three ways in, all over Wi-Fi once paired. Pick whichever is nearest to hand.</p>
+
+  <div class="ways">
+    <article class="way">
+      <h2>Scan the QR code</h2>
+      <div class="preview"><span><span class="live-dot" aria-hidden="true"></span><b>Webcam preview</b></span><span>full screen behind</span></div>
+      <p>On the camera: Menu, Network, Send to Smartphone, then show the QR code</p>
+      <div class="fill"></div>
+    </article>
+    <article class="way">
+      <h2>Nearby over Bluetooth</h2>
+      <div class="device">
+        <div class="d"><b>ZV-E10</b><span>pairing enabled · 2 m away</span></div>
+        <button class="btn">Connect</button>
+      </div>
+      <div class="fill"></div>
+      <p>Cameras with Bluetooth on appear here as soon as they are in range.</p>
+    </article>
+    <article class="way">
+      <h2>Enter the camera's address</h2>
+      <form class="field" onsubmit="return false">
+        <label for="ip">Camera address</label>
+        <input id="ip" type="text" value="192.168.122.1" spellcheck="false">
+        <button class="btn" type="submit">Connect</button>
+      </form>
+      <div class="fill"></div>
+      <p>Shown on the camera under Network, Wi-Fi, Display Wi-Fi info.</p>
+    </article>
+  </div>
+
+  <div class="foot">
+    <p class="note">First time on this camera? Press OK on the camera screen when it asks to allow this computer.</p>
+    <div class="recent">Recently used
+      <button>ZV-E10 (Wi-Fi Direct)</button>
+      <button>a7 IV (home router)</button>
+    </div>
+  </div>
+</section>
+</body>
+</html>
+<!--
+Design idea: the image is the interface; the live view fills the window and every control is a translucent EVF-style overlay, with exposure values as the hero text.
+Palette: #08090B background, #F3F2EC HUD ink, rgba(8,9,11,.55/.72) scrims, #4CE07A focus-lock green (focus frame only), #FF4530 record, #0B0D11 webcam backdrop.
+Typefaces: Barlow Condensed (values, wordmark, headings) and Barlow (labels, body); fallbacks Avenir Next Condensed / Arial Narrow and Avenir Next / Helvetica Neue.
+Avoided: near-black with a green accent theme (green marks focus only), caps labels, monospace data, cards with shadows, decorative load motion, arrows on buttons.
+-->

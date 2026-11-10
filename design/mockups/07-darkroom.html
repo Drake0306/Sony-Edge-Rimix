@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rimix — Darkroom</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,500;0,600;1,500&family=Public+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#130f0c; --surface:#1a1511; --raised:#221b15; --line:#3a2e25; --line-soft:#281f19;
+  --ink:#ecdfcb; --ink-2:#b5a28a; --ink-3:#7d6c5a;
+  --safe:#e4461a; --safe-deep:#7a230f; --safe-glow:rgba(228,70,26,.38);
+  --paper:#e6d9c3; --paper-edge:#c9bba3; --paper-ink:#241a13; --paper-ink-2:#564537;
+  --green:#9ccf86;
+  --serif:"Alegreya","Iowan Old Style","Palatino Linotype","Book Antiqua",Georgia,serif;
+  --sans:"Public Sans","Helvetica Neue",Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 var(--sans);overflow-x:hidden}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--safe);outline-offset:3px}
+
+/* paper grain and a hint of the safelight bulb, both CSS */
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:50;opacity:.085;mix-blend-mode:screen;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .95 0 0 0 0 .82 0 0 0 0 .62 0 0 0 .7 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>")}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:49;
+  background:radial-gradient(55% 38% at 88% -8%,rgba(228,70,26,.14),transparent 70%)}
+
+.badge{position:fixed;right:14px;bottom:14px;z-index:60;font:12px/1 var(--sans);color:var(--ink-2);background:var(--raised);border:1px solid var(--line);padding:6px 9px;border-radius:3px}
+
+/* ---------- Screen 1: the bench ---------- */
+.bench{height:clamp(640px,100vh,900px);display:grid;grid-template-rows:auto minmax(0,1fr);padding:0 22px 16px;gap:12px}
+.top{display:flex;align-items:center;gap:26px;height:52px;padding-top:6px;border-bottom:1px solid var(--line-soft)}
+.top h1{font:600 27px/1 var(--serif);margin:0;letter-spacing:.005em}
+.cam{display:flex;gap:18px;align-items:center;color:var(--ink-2);font-size:13px}
+.cam b{color:var(--ink);font-weight:600;font-size:14px}
+.bars{display:inline-flex;align-items:flex-end;gap:2px;height:12px;vertical-align:-1px;margin-right:6px}
+.bars i{width:3px;background:var(--ink);border-radius:1px}
+.bars i:nth-child(1){height:4px}.bars i:nth-child(2){height:7px}.bars i:nth-child(3){height:10px}.bars i:nth-child(4){height:12px}
+.batt{display:inline-block;width:24px;height:11px;border:1px solid var(--ink-2);border-radius:2px;position:relative;vertical-align:-1px;margin-right:6px}
+.batt::before{content:"";position:absolute;left:1px;top:1px;bottom:1px;width:72%;background:var(--ink-2)}
+.batt::after{content:"";position:absolute;right:-3px;top:3px;width:2px;height:5px;background:var(--ink-2)}
+.status{margin-left:auto;color:var(--ink-3);font-size:13px}
+
+.work{display:grid;grid-template-columns:minmax(0,1fr) 336px;gap:20px;min-height:0}
+.stage{display:grid;grid-template-rows:minmax(0,1fr) auto auto auto;gap:12px;min-height:0}
+
+/* live view */
+.live-wrap{container-type:size;min-height:0;display:flex;align-items:center;justify-content:center}
+.live{position:relative;width:min(100cqw,calc(100cqh * 16 / 9));aspect-ratio:16/9;background:#000;border:1px solid var(--line);margin:0;overflow:hidden}
+.live .scene{position:absolute;inset:0;width:100%;height:100%;display:block;filter:saturate(.8) contrast(1.03) brightness(.96)}
+.thirds{position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(90deg,transparent calc(33.33% - .5px),rgba(236,223,203,.16) calc(33.33% - .5px) calc(33.33% + .5px),transparent calc(33.33% + .5px) calc(66.66% - .5px),rgba(236,223,203,.16) calc(66.66% - .5px) calc(66.66% + .5px),transparent calc(66.66% + .5px)),
+  linear-gradient(180deg,transparent calc(33.33% - .5px),rgba(236,223,203,.16) calc(33.33% - .5px) calc(33.33% + .5px),transparent calc(33.33% + .5px) calc(66.66% - .5px),rgba(236,223,203,.16) calc(66.66% - .5px) calc(66.66% + .5px),transparent calc(66.66% + .5px))}
+.focus{position:absolute;left:37%;top:30%;width:13.5%;aspect-ratio:1;border:1.5px solid var(--green);box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+.focus::before,.focus::after{content:"";position:absolute;background:var(--green)}
+.focus::before{left:50%;top:50%;width:6px;height:1.5px;margin:-.75px 0 0 -3px}
+.focus::after{left:50%;top:50%;width:1.5px;height:6px;margin:-3px 0 0 -.75px}
+.focus b{position:absolute;left:0;top:calc(100% + 6px);font:600 11px/1 var(--sans);color:var(--green);white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.histo{position:absolute;left:12px;bottom:12px;width:120px;height:52px;background:rgba(10,7,5,.62);border:1px solid rgba(236,223,203,.18);padding:4px}
+.histo svg{width:100%;height:100%;display:block}
+.level{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);width:200px;height:18px}
+.level .rail{position:absolute;left:0;right:0;top:9px;height:1px;background:rgba(236,223,203,.55)}
+.level .rail::before,.level .rail::after{content:"";position:absolute;top:-4px;width:1px;height:9px;background:rgba(236,223,203,.55)}
+.level .rail::before{left:0}.level .rail::after{right:0}
+.level .bubble{position:absolute;left:50%;top:5px;width:34px;height:9px;margin-left:-17px;border:1px solid var(--green);border-radius:5px;background:rgba(10,7,5,.5)}
+.level .deg{position:absolute;right:-30px;top:3px;font-size:10.5px;color:rgba(236,223,203,.7)}
+.lv-tag{position:absolute;right:12px;top:10px;font-size:11.5px;color:rgba(236,223,203,.8);background:rgba(10,7,5,.55);padding:3px 7px;border:1px solid rgba(236,223,203,.16)}
+
+/* contact sheet */
+.sheet{background:#0b0806;border:1px solid var(--line-soft);padding:0 12px}
+.sheet .edge{height:12px;display:flex;align-items:center;justify-content:space-between;background:
+  radial-gradient(3px 3px at 0 50%,transparent 0,transparent 100%),
+  repeating-linear-gradient(90deg,transparent 0 11px,#1f1812 11px 19px,transparent 19px 28px) 4px 50%/100% 7px no-repeat}
+.frames{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;padding:5px 0;background:linear-gradient(180deg,#1c140e,#17100b)}
+.frame{position:relative;aspect-ratio:3/2;background:#000;overflow:hidden;border:1px solid #2a2017}
+.frame svg{position:absolute;inset:0;width:100%;height:100%;display:block;filter:sepia(.55) saturate(.6) contrast(1.05) brightness(.78)}
+.frame:nth-child(2) svg{filter:sepia(.5) saturate(.6) contrast(1.1) brightness(.72)}
+.frame:nth-child(4) svg{filter:sepia(.6) saturate(.55) brightness(.84)}
+.frame .num{position:absolute;left:5px;bottom:4px;font:500 10.5px/1 var(--sans);color:var(--ink-2);text-shadow:0 1px 1px #000;letter-spacing:.02em}
+.frame.xfer::after{content:"";position:absolute;inset:0;background:rgba(19,15,12,.55)}
+.frame.xfer .xf{position:absolute;left:6px;right:6px;top:50%;transform:translateY(-50%);z-index:1;font:500 10.5px/1 var(--sans);color:var(--ink)}
+.frame.xfer .xf i{display:block;height:2px;margin-top:5px;background:var(--line);position:relative}
+.frame.xfer .xf i::before{content:"";position:absolute;left:0;top:0;bottom:0;width:64%;background:var(--safe);box-shadow:0 0 6px var(--safe-glow)}
+.sheet .edge span{font:500 9.5px/1 var(--sans);color:#5d4d3d;letter-spacing:.06em;background:#0b0806;padding:0 4px}
+
+/* save to + tools */
+.saveto{display:flex;align-items:center;gap:18px;padding:8px 14px;background:var(--surface);border:1px solid var(--line-soft);flex-wrap:wrap}
+.saveto .path{color:var(--ink-2)}
+.saveto .path b{color:var(--ink);font-weight:500;margin-left:6px}
+.opts{display:flex;gap:4px;margin-left:auto}
+.opt{display:inline-flex;align-items:center;gap:7px;padding:4px 10px;border:1px solid transparent;border-radius:2px;background:none;color:var(--ink-2);font-size:13px}
+.opt::before{content:"";width:10px;height:10px;border-radius:50%;border:1px solid var(--ink-3)}
+.opt:hover{color:var(--ink);border-color:var(--line)}
+.opt[aria-checked="true"]{color:var(--ink)}
+.opt[aria-checked="true"]::before{border-color:var(--safe);background:radial-gradient(circle,var(--safe) 0 2.5px,transparent 3px)}
+.tools{display:flex;align-items:center;gap:26px;color:var(--ink-3);font-size:12.5px;padding:0 2px}
+.tools .grp{display:flex;align-items:center;gap:8px}
+.tools .grp>span:first-child{color:var(--ink-3);margin-right:2px}
+.chip{background:none;border:1px solid var(--line-soft);border-radius:2px;padding:3px 8px;font-size:12px;color:var(--ink-2)}
+.chip:hover{border-color:var(--line);color:var(--ink)}
+.chip.on{color:var(--ink);border-color:var(--ink-3)}
+.chip.off{color:var(--ink-3)}
+
+/* enlarger timer face */
+.timer{display:grid;grid-template-rows:auto auto auto;gap:14px;min-height:0;align-content:start}
+.face{background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:14px 16px 14px;box-shadow:inset 0 1px 0 rgba(236,223,203,.04)}
+.face h2{font:500 17px/1 var(--serif);margin:0 0 12px;color:var(--ink-2);display:flex;justify-content:space-between;align-items:baseline}
+.face h2 small{font:400 12px/1 var(--sans);color:var(--ink-3)}
+.big{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:14px}
+.dial .lab{font-size:11px;color:var(--ink-3)}
+.dial .val{font:700 30px/1.05 var(--sans);font-variant-numeric:tabular-nums;letter-spacing:-.025em;margin:3px 0 7px;white-space:nowrap}
+.scale{position:relative;height:9px;
+  background:repeating-linear-gradient(90deg,var(--ink-3) 0 1px,transparent 1px 36px) left bottom/100% 9px no-repeat,
+             repeating-linear-gradient(90deg,var(--line) 0 1px,transparent 1px 6px) left bottom/100% 5px no-repeat}
+.scale::after{content:"";position:absolute;left:var(--p,50%);bottom:-2px;width:2px;height:13px;margin-left:-1px;background:var(--safe);box-shadow:0 0 6px var(--safe-glow)}
+.mode{display:flex;align-items:center;gap:8px;padding:8px 0 10px;border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);margin-bottom:12px}
+.mode .lab{font-size:11px;color:var(--ink-3);margin-right:auto}
+.mode button{width:30px;height:26px;border:1px solid var(--line-soft);background:none;font-weight:600;font-size:13px;color:var(--ink-3);border-radius:2px}
+.mode button:hover{color:var(--ink);border-color:var(--line)}
+.mode button[aria-pressed="true"]{color:var(--ink);border-color:var(--safe);box-shadow:inset 0 -2px 0 var(--safe)}
+.small{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
+.small .dial .val{font-size:17px;margin:2px 0 5px;letter-spacing:-.01em}
+.small .scale{height:7px;background-size:100% 7px,100% 4px}
+.small .scale::after{height:10px}
+
+/* shutter and friends */
+.actions{display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;align-items:center;padding:4px 6px}
+.shoot{width:108px;height:108px;border-radius:50%;border:0;position:relative;color:#fff4ec;font:600 18px/1 var(--serif);
+  background:radial-gradient(circle at 38% 32%,#ff8a5c 0,var(--safe) 42%,#9a2c10 100%);
+  box-shadow:0 0 0 5px var(--bg),0 0 0 6px var(--line),0 0 38px 8px var(--safe-glow),inset 0 -10px 18px rgba(0,0,0,.35)}
+.shoot:hover{filter:brightness(1.1)}
+.shoot:active{transform:translateY(1px)}
+.side{display:grid;gap:10px}
+.btn{display:flex;align-items:center;gap:9px;min-height:40px;padding:0 14px;border:1px solid var(--line);background:var(--surface);border-radius:3px;font-weight:500;font-size:14px;text-align:left}
+.btn:hover{border-color:var(--ink-3);background:var(--raised)}
+.btn .dot{width:11px;height:11px;border-radius:50%;background:var(--safe);box-shadow:0 0 6px var(--safe-glow)}
+.btn .ring{width:12px;height:12px;border-radius:50%;border:1.5px solid var(--ink-2)}
+.btn small{margin-left:auto;color:var(--ink-3);font-size:11.5px;font-weight:400}
+
+.presets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.preset{border:1px solid var(--line-soft);background:var(--surface);padding:8px 10px 9px;text-align:left;border-radius:3px;min-height:54px}
+.preset:hover{border-color:var(--line);background:var(--raised)}
+.preset b{display:block;font:700 15px/1 var(--sans);margin-bottom:5px}
+.preset span{display:block;font-size:11.5px;color:var(--ink-2);line-height:1.25}
+.preset.on{border-color:var(--safe);box-shadow:inset 0 2px 0 var(--safe)}
+.preset.on span{color:var(--ink)}
+
+/* ---------- Screen 2: load film ---------- */
+.load{min-height:clamp(640px,100vh,900px);padding:54px 40px 40px;border-top:1px solid var(--line);display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:34px;background:linear-gradient(180deg,#110d0a 0,var(--bg) 220px)}
+.load header{max-width:1180px;margin:0 auto;width:100%;display:flex;align-items:baseline;gap:28px;flex-wrap:wrap}
+.load h2{font:500 46px/1.02 var(--serif);margin:0;letter-spacing:-.005em}
+.load header p{color:var(--ink-2);margin:0;font-size:15px;max-width:48ch}
+.canisters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:40px;align-items:stretch;max-width:1180px;margin:0 auto;width:100%}
+.canister{position:relative;padding-top:28px;display:flex;flex-direction:column}
+.canister .can{flex:1;display:flex;flex-direction:column}
+.canister .label{flex:1}
+.cap{position:absolute;top:0;left:12px;right:12px;height:28px;border-radius:9px 9px 0 0;background:linear-gradient(90deg,#1f1f22,#5c5c62 30%,#3a3a3f 55%,#505056 78%,#1b1b1e);border-bottom:1px solid #000}
+.cap::before{content:"";position:absolute;left:50%;top:-11px;width:30px;height:12px;margin-left:-15px;background:linear-gradient(90deg,#3a3a3e,#6a6a70,#3a3a3e);border-radius:3px 3px 0 0}
+.cap::after{content:"";position:absolute;left:50%;top:-6px;width:14px;height:3px;margin-left:-7px;background:#111}
+.can{background:linear-gradient(90deg,#17171a,#36363b 16%,#27272b 50%,#36363b 84%,#141417);border-radius:0 0 12px 12px;padding:18px 16px 24px;box-shadow:inset 0 -16px 22px rgba(0,0,0,.5)}
+.label{background:linear-gradient(90deg,var(--paper-edge),var(--paper) 14%,var(--paper) 86%,var(--paper-edge));color:var(--paper-ink);padding:22px 22px 22px;border-radius:2px;min-height:372px;display:flex;flex-direction:column;gap:12px;position:relative;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.label::before{content:"";position:absolute;left:0;right:0;top:0;height:7px;background:var(--safe)}
+.label h3{font:600 25px/1.1 var(--serif);margin:6px 0 0}
+.label p{margin:0;font-size:13.5px;color:var(--paper-ink-2);line-height:1.45}
+.label .fill{flex:1}
+.leader{height:24px;margin:0 56px;background:
+  repeating-linear-gradient(90deg,transparent 0 10px,#2a2017 10px 17px,transparent 17px 26px) 4px 3px/100% 6px no-repeat,
+  repeating-linear-gradient(90deg,transparent 0 10px,#2a2017 10px 17px,transparent 17px 26px) 4px 15px/100% 6px no-repeat,
+  #0e0b09;border-radius:0 0 4px 4px}
+.cam-preview{aspect-ratio:4/3;background:#1a1511;border:1px solid #3a2e25;position:relative;color:var(--ink-3);display:grid;place-items:center;font-size:12.5px}
+.cam-preview::before{content:"";position:absolute;inset:14px;border:1px solid rgba(236,223,203,.18);
+  -webkit-mask:linear-gradient(#000 0 0) top left/22px 22px no-repeat,linear-gradient(#000 0 0) top right/22px 22px no-repeat,linear-gradient(#000 0 0) bottom left/22px 22px no-repeat,linear-gradient(#000 0 0) bottom right/22px 22px no-repeat;
+  mask:linear-gradient(#000 0 0) top left/22px 22px no-repeat,linear-gradient(#000 0 0) top right/22px 22px no-repeat,linear-gradient(#000 0 0) bottom left/22px 22px no-repeat,linear-gradient(#000 0 0) bottom right/22px 22px no-repeat}
+.device{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid rgba(36,26,19,.22);border-radius:3px;background:rgba(255,255,255,.22)}
+.device .bt{width:28px;height:28px;border-radius:50%;border:1px solid var(--paper-ink-2);display:grid;place-items:center;flex:none}
+.device .bt svg{width:12px;height:16px}
+.device b{display:block;font-weight:600;font-size:14px}
+.device span{font-size:12.5px;color:var(--paper-ink-2)}
+.connect{background:var(--paper-ink);color:var(--paper);border:0;border-radius:3px;padding:10px 16px;font-weight:600;font-size:14px}
+.connect:hover{background:#3a2a1f}
+.connect.prime{background:var(--safe);color:#fff6ef}
+.connect.prime:hover{background:#f0582c}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:12px;color:var(--paper-ink-2)}
+.field input{border:1px solid rgba(36,26,19,.35);background:rgba(255,255,255,.4);border-radius:3px;padding:10px 12px;font:500 16px var(--sans);color:var(--paper-ink);font-variant-numeric:tabular-nums}
+.field input:hover{border-color:var(--paper-ink-2)}
+.row{display:flex;gap:10px;align-items:center}
+.row .connect{flex:none}
+.label .foot{font-size:11px;color:var(--paper-ink-2);display:flex;justify-content:space-between;border-top:1px solid rgba(36,26,19,.18);padding-top:8px}
+.load footer{max-width:1180px;margin:0 auto;width:100%;display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap;color:var(--ink-2);font-size:13.5px}
+.load footer p{margin:0;max-width:60ch}
+.recent{display:flex;align-items:center;gap:10px;margin-left:auto}
+.recent span{color:var(--ink-3)}
+.recent button{background:none;border:1px solid var(--line);border-radius:2px;padding:5px 10px;color:var(--ink-2);font-size:13px}
+.recent button:hover{color:var(--ink);border-color:var(--ink-3)}
+
+@media (max-width:1240px){
+  .work{grid-template-columns:minmax(0,1fr) 300px}
+  .dial .val{font-size:26px}
+  .saveto{gap:10px;padding:6px 10px;font-size:13px}
+  .opt{padding:4px 7px;font-size:12.5px;gap:5px}
+  .tools{gap:18px}
+  .btn small{display:none}
+  .shoot{width:96px;height:96px}
+  .canisters{gap:26px}
+  .label{padding:18px 16px 18px;min-height:340px}
+  .label h3{font-size:22px}
+}
+@media (max-height:760px){
+  .bench{gap:8px}
+  .stage{gap:8px}
+  .face{padding:10px 14px}
+  .big{margin-bottom:8px;gap:10px}
+  .dial .val{font-size:24px;margin:2px 0 5px}
+  .small{gap:6px 14px}
+  .small .dial .val{font-size:15px}
+  .mode{padding:6px 0 8px;margin-bottom:8px}
+  .shoot{width:84px;height:84px;font-size:16px}
+  .timer{gap:10px}
+  .preset{min-height:46px;padding:6px 8px 7px}
+  .frames{gap:8px}
+}
+@media (prefers-reduced-motion:no-preference){
+  .btn,.chip,.opt,.preset,.connect{transition:border-color .12s,background-color .12s,color .12s}
+}
+</style>
+</head>
+<body>
+<div class="badge">07 — Darkroom</div>
+
+<!-- ============ Screen 1 ============ -->
+<main class="bench" aria-label="Main screen">
+  <header class="top">
+    <h1>Rimix</h1>
+    <div class="cam">
+      <b>ZV-E10</b>
+      <span><i class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></i>Wi-Fi Direct, strong signal</span>
+      <span><i class="batt" aria-hidden="true"></i>Battery 72%</span>
+      <span>Slot 1, 238 shots left</span>
+      <span>Firmware 2.00</span>
+    </div>
+    <div class="status">Live view 24 fps · last shot 0.8 s ago</div>
+  </header>
+
+  <div class="work">
+    <section class="stage" aria-label="Live view and captures">
+      <div class="live-wrap">
+        <figure class="live">
+          <svg class="scene" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Placeholder scene: a person at a desk by a window">
+            <defs>
+              <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9fb7c9"/><stop offset="1" stop-color="#e3d9c6"/></linearGradient>
+              <linearGradient id="wall" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5c6168"/><stop offset="1" stop-color="#3a3e44"/></linearGradient>
+              <linearGradient id="desk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8a6a4a"/><stop offset="1" stop-color="#5b4430"/></linearGradient>
+              <radialGradient id="face" cx="0.4" cy="0.35" r="0.8"><stop offset="0" stop-color="#e8c3a6"/><stop offset="1" stop-color="#b98a6b"/></radialGradient>
+            </defs>
+            <g id="scene">
+              <rect width="1600" height="900" fill="url(#wall)"/>
+              <rect x="980" y="80" width="460" height="520" rx="8" fill="url(#sky)"/>
+              <rect x="1200" y="80" width="14" height="520" fill="#2b2e33"/>
+              <rect x="980" y="330" width="460" height="12" fill="#2b2e33"/>
+              <rect x="0" y="620" width="1600" height="280" fill="url(#desk)"/>
+              <rect x="300" y="560" width="220" height="130" rx="10" fill="#1d1f23"/>
+              <rect x="312" y="572" width="196" height="106" rx="4" fill="#2f3f55"/>
+              <ellipse cx="700" cy="620" rx="150" ry="60" fill="#2a2d33"/>
+              <path d="M560 640 Q700 400 840 640 Z" fill="#2f5d8a"/>
+              <circle cx="700" cy="400" r="95" fill="url(#face)"/>
+              <path d="M605 395 Q700 270 795 395 Q760 330 700 330 Q640 330 605 395 Z" fill="#2b2320"/>
+              <rect x="1120" y="520" width="120" height="140" rx="4" fill="#4b5563"/>
+              <circle cx="1180" cy="455" r="55" fill="#d8b36a" opacity="0.7"/>
+            </g>
+          </svg>
+          <div class="thirds" aria-hidden="true"></div>
+          <div class="focus" role="img" aria-label="Focus locked"><b>Locked</b></div>
+          <div class="histo" aria-label="Histogram">
+            <svg viewBox="0 0 120 44" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M0 44 L0 36 L8 30 L16 22 L24 14 L32 18 L40 24 L48 20 L56 12 L64 16 L72 26 L80 30 L88 28 L96 34 L104 38 L112 40 L120 42 L120 44 Z" fill="rgba(236,223,203,.55)"/>
+              <path d="M0 44 L0 40 L20 38 L40 30 L60 22 L80 32 L100 40 L120 43 L120 44Z" fill="rgba(228,70,26,.35)"/>
+            </svg>
+          </div>
+          <div class="level" aria-label="Level, 0 degrees"><div class="rail"></div><div class="bubble"></div><span class="deg">0°</span></div>
+          <div class="lv-tag">Live view</div>
+        </figure>
+      </div>
+
+      <div class="sheet" aria-label="Last six captures">
+        <div class="edge" aria-hidden="true"><span>Rimix</span><span>ZV-E10</span></div>
+        <div class="frames">
+          <div class="frame"><svg viewBox="260 120 1080 720" preserveAspectRatio="xMidYMid slice"><use href="#scene"/></svg><span class="num">DSC01231</span></div>
+          <div class="frame"><svg viewBox="420 200 960 640" preserveAspectRatio="xMidYMid slice"><use href="#scene"/></svg><span class="num">DSC01232</span></div>
+          <div class="frame"><svg viewBox="100 80 1200 800" preserveAspectRatio="xMidYMid slice"><use href="#scene"/></svg><span class="num">DSC01233</span></div>
+          <div class="frame"><svg viewBox="600 180 900 600" preserveAspectRatio="xMidYMid slice"><use href="#scene"/></svg><span class="num">DSC01234</span></div>
+          <div class="frame"><svg viewBox="300 220 900 600" preserveAspectRatio="xMidYMid slice"><use href="#scene"/></svg><span class="num">DSC01235</span></div>
+          <div class="frame xfer"><svg viewBox="200 140 1100 733" preserveAspectRatio="xMidYMid slice"><use href="#scene"/></svg><span class="xf">Transferring 64%<i></i></span><span class="num">DSC01236</span></div>
+        </div>
+        <div class="edge" aria-hidden="true"><span>31</span><span>32</span><span>33</span><span>34</span><span>35</span><span>36</span></div>
+      </div>
+
+      <div class="saveto" role="group" aria-label="Save to">
+        <span class="path">Save to <b>~/Pictures/Rimix/2026-11-10</b></span>
+        <div class="opts" role="radiogroup">
+          <button class="opt" role="radio" aria-checked="false">Custom folder</button>
+          <button class="opt" role="radio" aria-checked="false">Lightroom watched folder</button>
+          <button class="opt" role="radio" aria-checked="true">New folder per date</button>
+        </div>
+      </div>
+
+      <div class="tools">
+        <div class="grp"><span>Scopes</span><button class="chip">Waveform</button><button class="chip">False colour</button><button class="chip">Zebra</button></div>
+        <div class="grp"><span>Interval timer</span><button class="chip off">Off</button></div>
+        <div class="grp"><span>Cameras</span><button class="chip on">ZV-E10 (this)</button><button class="chip off">a7 IV (offline)</button></div>
+      </div>
+    </section>
+
+    <aside class="timer" aria-label="Camera settings and actions">
+      <section class="face">
+        <h2>Exposure <small>Mode M</small></h2>
+        <div class="big">
+          <div class="dial"><div class="lab">Shutter</div><div class="val">1/125</div><div class="scale" style="--p:46%"></div></div>
+          <div class="dial"><div class="lab">Aperture</div><div class="val">f/4.0</div><div class="scale" style="--p:38%"></div></div>
+          <div class="dial"><div class="lab">ISO</div><div class="val">800</div><div class="scale" style="--p:42%"></div></div>
+        </div>
+        <div class="mode" role="radiogroup" aria-label="Mode">
+          <span class="lab">Mode</span>
+          <button aria-pressed="false">P</button><button aria-pressed="false">A</button><button aria-pressed="false">S</button><button aria-pressed="true">M</button>
+        </div>
+        <div class="small">
+          <div class="dial"><div class="lab">Exposure comp</div><div class="val">+0.3</div><div class="scale" style="--p:56%"></div></div>
+          <div class="dial"><div class="lab">White balance</div><div class="val">5200K</div><div class="scale" style="--p:48%"></div></div>
+          <div class="dial"><div class="lab">Focus</div><div class="val">AF-C</div><div class="scale" style="--p:66%"></div></div>
+          <div class="dial"><div class="lab">Drive</div><div class="val">Single</div><div class="scale" style="--p:8%"></div></div>
+          <div class="dial"><div class="lab">Format</div><div class="val">RAW+JPEG</div><div class="scale" style="--p:92%"></div></div>
+          <div class="dial"><div class="lab">Picture profile</div><div class="val">Off</div><div class="scale" style="--p:4%"></div></div>
+        </div>
+      </section>
+
+      <div class="actions">
+        <button class="shoot">Shoot</button>
+        <div class="side">
+          <button class="btn"><span class="dot" aria-hidden="true"></span>Record<small>movie</small></button>
+          <button class="btn"><span class="ring" aria-hidden="true"></span>Focus<small>autofocus now</small></button>
+        </div>
+      </div>
+
+      <div class="presets" role="group" aria-label="Presets">
+        <button class="preset on"><b>C1</b><span>Talking head</span></button>
+        <button class="preset"><b>C2</b><span>&nbsp;</span></button>
+        <button class="preset"><b>C3</b><span>&nbsp;</span></button>
+        <button class="preset"><b>C4</b><span>&nbsp;</span></button>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<!-- ============ Screen 2 ============ -->
+<section class="load" aria-label="Connect screen">
+  <header>
+    <h2>Connect a camera</h2>
+    <p>Three ways to load one in. Keep the camera switched on and close by.</p>
+  </header>
+
+  <div class="canisters">
+    <article class="canister">
+      <div class="cap" aria-hidden="true"></div>
+      <div class="can">
+        <div class="label">
+          <h3>Scan the QR code</h3>
+          <div class="cam-preview">Webcam</div>
+          <p>On the camera: Menu, Network, Send to Smartphone, then show the QR code</p>
+          <div class="fill"></div>
+          <div class="foot"><span>Hold the screen up to the webcam</span><span>1</span></div>
+        </div>
+      </div>
+      <div class="leader" aria-hidden="true"></div>
+    </article>
+
+    <article class="canister">
+      <div class="cap" aria-hidden="true"></div>
+      <div class="can">
+        <div class="label">
+          <h3>Nearby over Bluetooth</h3>
+          <div class="device">
+            <span class="bt" aria-hidden="true"><svg viewBox="0 0 12 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M2 4l8 8-4 3V1l4 3-8 8"/></svg></span>
+            <div><b>ZV-E10</b><span>ZV-E10 · pairing enabled · 2 m away</span></div>
+          </div>
+          <button class="connect prime">Connect</button>
+          <p>The camera appears here when Bluetooth pairing is switched on.</p>
+          <div class="fill"></div>
+          <div class="foot"><span>Looking for cameras nearby</span><span>2</span></div>
+        </div>
+      </div>
+      <div class="leader" aria-hidden="true"></div>
+    </article>
+
+    <article class="canister">
+      <div class="cap" aria-hidden="true"></div>
+      <div class="can">
+        <div class="label">
+          <h3>Enter the camera's address</h3>
+          <div class="field">
+            <label for="ip">Camera address</label>
+            <div class="row"><input id="ip" type="text" value="192.168.122.1"><button class="connect">Connect</button></div>
+          </div>
+          <p>The address is shown on the camera under Network settings when it is on the same Wi-Fi.</p>
+          <div class="fill"></div>
+          <div class="foot"><span>Same network as this computer</span><span>3</span></div>
+        </div>
+      </div>
+      <div class="leader" aria-hidden="true"></div>
+    </article>
+  </div>
+
+  <footer>
+    <p>First time on this camera? Press OK on the camera screen when it asks to allow this computer.</p>
+    <div class="recent"><span>Recently used</span><button>ZV-E10 (Wi-Fi Direct)</button><button>a7 IV (home router)</button></div>
+  </footer>
+</section>
+
+<!--
+Idea: an analog photo lab under safelight: the live view sits on a dark bench, the last captures are an actual contact sheet with sprocket holes and edge print, settings read like the labelled dials of an enlarger timer, and the shutter is the one glowing red thing in the room; connecting is loading film, with the three methods as three canister labels.
+Palette: #130f0c warm black, #1a1511 surface, #3a2e25 lines, #ecdfcb paper ink, #b5a28a / #7d6c5a muted ink, #e4461a safelight (only accent), #e6d9c3 paper label, #9ccf86 focus green.
+Type: Alegreya (humanist serif, headings only) with Public Sans for every value and label; bold tabular numerals on the dials.
+Avoided: neutral tinted-black, all-caps tracked eyebrows, monospace labels, identical rounded cards with grey shadows, any second accent colour, arrows on buttons, page-load animation.
+-->
+</body>
+</html>

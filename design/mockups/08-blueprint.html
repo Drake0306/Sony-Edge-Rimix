@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rimix — Blueprint</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@400;500;600&family=Saira:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d2b5e; --deep:#0a2350; --well:#0b2756;
+  --line:#a9d8ee; --line-70:rgba(169,216,238,.7); --line-40:rgba(169,216,238,.4); --line-20:rgba(169,216,238,.2); --line-10:rgba(169,216,238,.1);
+  --white:#eef7fc; --mid:#6f9fd6; --dim:#3b64a3;
+  --red:#ff8266; --green:#86e3a1;
+  --cond:"Saira Condensed","Arial Narrow","Helvetica Neue",Arial,sans-serif;
+  --sans:"Saira","Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;color:var(--line);font:14px/1.4 var(--sans);overflow-x:hidden;
+  background:
+    radial-gradient(circle,rgba(169,216,238,.26) .8px,transparent 1.2px) 0 0/24px 24px,
+    linear-gradient(rgba(169,216,238,.09) 1px,transparent 1px) 0 0/120px 120px,
+    linear-gradient(90deg,rgba(169,216,238,.09) 1px,transparent 1px) 0 0/120px 120px,
+    var(--bg)}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;background:none}
+:focus-visible{outline:1.5px dashed var(--white);outline-offset:3px}
+.lab{font:500 12px/1 var(--cond);letter-spacing:.05em;color:var(--line-70)}
+
+.badge{position:fixed;right:14px;top:14px;z-index:60;font:500 12px/1 var(--cond);letter-spacing:.05em;color:var(--white);background:var(--deep);border:1px solid var(--line);padding:6px 9px}
+
+/* ---------- Screen 1 ---------- */
+.sheet{height:clamp(640px,100vh,900px);display:grid;grid-template-rows:auto minmax(0,1fr) auto;padding:14px 22px 16px;gap:12px}
+.hdr{display:flex;align-items:baseline;gap:22px;border-bottom:1px solid var(--line);padding-bottom:8px}
+.hdr h1{font:600 28px/1 var(--cond);letter-spacing:.14em;margin:0;color:var(--white)}
+.hdr .sub{font:400 14px/1 var(--cond);letter-spacing:.04em;color:var(--line-70)}
+.hdr .status{margin-left:0;font:400 13px/1 var(--cond);letter-spacing:.04em;color:var(--line-70)}
+
+.work{display:grid;grid-template-columns:minmax(0,1fr) 336px;gap:22px;min-height:0}
+.stage{display:grid;grid-template-rows:minmax(0,1fr) auto auto auto;gap:10px;min-height:0}
+
+/* live view block with dimension lines */
+.live-wrap{container-type:size;min-height:0;display:flex;align-items:center;justify-content:center}
+.lv-block{width:min(100cqw,calc((100cqh - 26px) * 16 / 9 + 30px));display:grid;grid-template-columns:minmax(0,1fr) 30px;grid-template-rows:26px minmax(0,1fr)}
+.dim{position:relative;font:400 12px/1 var(--cond);letter-spacing:.05em;color:var(--line)}
+.dim-top{grid-column:1;grid-row:1;height:26px}
+.dim-top::before{content:"";position:absolute;left:0;right:0;top:11px;height:1px;background:var(--line)}
+.dim-top::after{content:"";position:absolute;left:0;right:0;top:4px;height:14px;
+  background:linear-gradient(90deg,var(--line) 0 1px,transparent 1px) left/1px 100% no-repeat,linear-gradient(90deg,var(--line) 0 1px,transparent 1px) right/1px 100% no-repeat}
+.dim-top .t{position:absolute;left:50%;top:5px;transform:translateX(-50%);background:var(--bg);padding:0 8px;z-index:1}
+.dim-top .a{position:absolute;top:8px;width:0;height:0;border:3.5px solid transparent}
+.dim-top .a.l{left:1px;border-right:9px solid var(--line);border-left:0}
+.dim-top .a.r{right:1px;border-left:9px solid var(--line);border-right:0}
+.dim-right{grid-column:2;grid-row:2;width:30px}
+.dim-right::before{content:"";position:absolute;top:0;height:var(--h,68.9%);left:16px;width:1px;background:var(--line)}
+.dim-right::after{content:"";position:absolute;left:8px;width:18px;top:0;height:var(--h,68.9%);
+  background:linear-gradient(var(--line) 0 1px,transparent 1px) top/100% 1px no-repeat,linear-gradient(var(--line) 0 1px,transparent 1px) bottom/100% 1px no-repeat}
+.dim-right .t{position:absolute;left:10px;top:calc(var(--h,68.9%) / 2);transform:translateY(-50%);writing-mode:vertical-rl;background:var(--bg);padding:8px 0;z-index:1;line-height:1}
+.dim-right .a{position:absolute;left:12.5px;width:0;height:0;border:3.5px solid transparent}
+.dim-right .a.u{top:1px;border-bottom:9px solid var(--line);border-top:0}
+.dim-right .a.d{top:calc(var(--h,68.9%) - 10px);border-top:9px solid var(--line);border-bottom:0}
+.live{grid-column:1;grid-row:2;position:relative;aspect-ratio:16/9;margin:0;border:1px solid var(--line);background:#000;overflow:hidden}
+.live .scene{position:absolute;inset:0;width:100%;height:100%;display:block}
+.live .ovl{position:absolute;inset:0;width:100%;height:100%;display:block;font-family:var(--cond)}
+
+/* detail views (filmstrip) */
+.strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+.det{position:relative;border:1px solid var(--line-70);padding:4px;background:var(--deep)}
+.det .img{position:relative;aspect-ratio:3/2;background:var(--deep);overflow:hidden}
+.det svg{position:absolute;inset:0;width:100%;height:100%;display:block;filter:grayscale(1) contrast(1.15) brightness(.9);mix-blend-mode:screen;opacity:.75}
+.det .cap{display:flex;justify-content:space-between;align-items:center;padding:5px 2px 1px;font:400 12px/1 var(--cond);letter-spacing:.06em;color:var(--line)}
+.det.xfer{border-style:dashed}
+.det.xfer .img::after{content:"";position:absolute;inset:0;background:rgba(13,43,94,.55)}
+.det.xfer .bar{position:absolute;left:6px;right:6px;bottom:8px;height:1px;background:var(--line-40);z-index:1}
+.det.xfer .bar::before{content:"";position:absolute;left:0;top:-1px;height:3px;width:64%;background:var(--white)}
+.det.xfer .cap{color:var(--white)}
+.det.xfer .tx{position:absolute;left:6px;bottom:14px;z-index:1;font:500 12px/1 var(--cond);letter-spacing:.06em;color:var(--white)}
+
+/* save to and tools as schematic rows */
+.row{display:flex;align-items:center;gap:14px;border:1px solid var(--line-40);padding:7px 12px;min-height:38px}
+.row .lab{margin-right:4px}
+.row .path{color:var(--white);font-weight:500}
+.radios{display:flex;gap:4px;margin-left:auto}
+.radio{display:inline-flex;align-items:center;gap:7px;border:1px solid transparent;padding:4px 9px;color:var(--line-70);font-size:13px}
+.radio::before{content:"";width:11px;height:11px;border-radius:50%;border:1px solid var(--line-70)}
+.radio:hover{border-color:var(--line-40);color:var(--white)}
+.radio[aria-checked="true"]{color:var(--white)}
+.radio[aria-checked="true"]::before{border-color:var(--white);background:radial-gradient(circle,var(--white) 0 2.5px,transparent 3px)}
+.tools{display:flex;align-items:center;gap:22px;padding:0 2px}
+.grp{display:flex;align-items:center;gap:6px}
+.grp .lab{margin-right:4px}
+.sw{border:1px solid var(--line-40);padding:4px 9px;font-size:12.5px;color:var(--line-70);display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.tools .lab{white-space:nowrap}
+.sw::before{content:"";width:7px;height:7px;border:1px solid var(--line-70);border-radius:50%}
+.sw:hover{border-color:var(--line);color:var(--white)}
+.sw.on{color:var(--white);border-color:var(--line)}
+.sw.on::before{background:var(--white);border-color:var(--white)}
+.sw.off{color:var(--line-40)}
+.sw.plain::before{display:none}
+
+/* right column: the diagram */
+.panel{display:grid;grid-template-rows:auto auto auto auto;gap:12px;min-height:0;align-content:start}
+.tri{border:1px solid var(--line);padding:10px 12px 6px;position:relative}
+.tri h2,.list h2{margin:0;font:500 13px/1 var(--cond);letter-spacing:.08em;color:var(--line-70)}
+.tri svg{display:block;width:100%;height:auto;font-family:var(--cond)}
+.list{border:1px solid var(--line);padding:10px 12px 4px}
+.list table{width:100%;border-collapse:collapse;margin-top:6px}
+.list td{padding:6px 0;border-top:1px solid var(--line-20);font-size:14px}
+.list tr:first-child td{border-top:0}
+.list td:first-child{font:400 12.5px/1 var(--cond);letter-spacing:.05em;color:var(--line-70);width:50%}
+.list td:last-child{color:var(--white);font-weight:500;text-align:right;font-variant-numeric:tabular-nums}
+.list td:last-child::before{content:"";display:inline-block;width:14px;height:1px;background:var(--line-40);vertical-align:middle;margin-right:10px}
+
+.ctrl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:16px;align-items:center;padding:2px 4px}
+.shoot{width:104px;height:104px;border-radius:50%;border:1px solid var(--line);position:relative;display:grid;place-items:center;color:var(--bg);font:600 17px/1 var(--cond);letter-spacing:.1em;
+  background:radial-gradient(circle,var(--white) 0 36px,transparent 37px),
+             repeating-conic-gradient(var(--line) 0 1deg,transparent 1deg 30deg)}
+.shoot::before{content:"";position:absolute;inset:8px;border-radius:50%;border:1px solid var(--line);background:var(--bg)}
+.shoot span{position:relative;z-index:1;width:72px;height:72px;border-radius:50%;background:var(--white);display:grid;place-items:center;box-shadow:0 0 0 3px var(--bg),0 0 0 4px var(--line)}
+.shoot:hover span{background:#fff}
+.shoot:active span{transform:translateY(1px)}
+.side{display:grid;gap:8px}
+.btn{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border:1px solid var(--line);color:var(--white);font-weight:500;font-size:14px;text-align:left}
+.btn:hover{background:var(--line-10)}
+.btn small{margin-left:auto;font:400 12px/1 var(--cond);letter-spacing:.05em;color:var(--line-70)}
+.btn .sym{width:16px;height:16px;border:1px solid var(--line);border-radius:50%;display:grid;place-items:center;flex:none}
+.btn .sym.rec::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--red)}
+.btn .sym.af{border-radius:0;border:0;background:
+  linear-gradient(var(--line) 0 0) center/100% 1px no-repeat,linear-gradient(var(--line) 0 0) center/1px 100% no-repeat;position:relative}
+.btn .sym.af::before{content:"";width:8px;height:8px;border:1px solid var(--line);border-radius:50%;background:var(--bg)}
+.presets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.pre{border:1px solid var(--line-70);padding:7px 9px 8px;text-align:left;min-height:52px;position:relative}
+.pre::before{content:"";position:absolute;left:9px;right:9px;top:-1px;height:1px;background:var(--line-70)}
+.pre:hover{background:var(--line-10);border-color:var(--line)}
+.pre b{display:block;font:600 15px/1 var(--cond);letter-spacing:.06em;color:var(--white);margin-bottom:5px}
+.pre span{display:block;font-size:11.5px;color:var(--line-70);line-height:1.25}
+.pre.on{border-color:var(--white);background:var(--line-10)}
+.pre.on::before{height:3px;background:var(--white)}
+.pre.on span{color:var(--white)}
+
+/* title block */
+.title{display:grid;grid-template-columns:repeat(7,auto);border:1px solid var(--line);justify-content:stretch}
+.title>div{padding:7px 14px 8px;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:4px}
+.title>div:first-child{border-left:0}
+.title .v{color:var(--white);font-size:14px;font-weight:500;white-space:nowrap;display:flex;align-items:center;gap:8px}
+.title .sig{display:inline-flex;align-items:flex-end;gap:2px;height:12px}
+.title .sig i{width:3px;background:var(--white)}
+.title .sig i:nth-child(1){height:4px}.title .sig i:nth-child(2){height:7px}.title .sig i:nth-child(3){height:10px}.title .sig i:nth-child(4){height:12px}
+.title .bat{display:inline-block;width:26px;height:12px;border:1px solid var(--line);position:relative}
+.title .bat::before{content:"";position:absolute;left:1px;top:1px;bottom:1px;width:72%;background:var(--white)}
+.title .bat::after{content:"";position:absolute;right:-4px;top:3px;width:2px;height:4px;background:var(--line)}
+.title .sheetno{margin-left:auto}
+
+/* ---------- Screen 2: wiring schematic ---------- */
+.connect{min-height:clamp(640px,100vh,900px);border-top:1px solid var(--line);padding:50px 40px 44px;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:34px}
+.connect header{max-width:1240px;width:100%;margin:0 auto;display:flex;align-items:baseline;gap:26px;flex-wrap:wrap}
+.connect h2{margin:0;font:600 40px/1 var(--cond);letter-spacing:.06em;color:var(--white)}
+.connect header p{margin:0;color:var(--line-70);max-width:50ch}
+.schem{max-width:1240px;width:100%;margin:0 auto;display:grid;grid-template-columns:190px minmax(0,1fr) 190px;align-items:stretch}
+.term{position:relative;display:grid;place-items:center}
+.term::after{content:"";position:absolute;top:50%;height:1px;width:100%;background:var(--line);z-index:0}
+.term.lap::after{left:50%}
+.term.cam::after{right:50%}
+.term .fig{position:relative;z-index:1;background:var(--bg);padding:10px 0}
+.term .name{position:absolute;left:50%;transform:translateX(-50%);bottom:-2px;font:500 13px/1 var(--cond);letter-spacing:.08em;color:var(--line);white-space:nowrap;background:var(--bg);padding:2px 6px;z-index:2}
+.term.lap .name{bottom:auto;top:calc(50% + 46px)}
+.term.cam .name{bottom:auto;top:calc(50% + 46px)}
+.laptop{width:124px;height:80px;position:relative}
+.laptop .scr{position:absolute;left:14px;right:14px;top:0;height:62px;border:1px solid var(--line);border-radius:3px 3px 0 0}
+.laptop .scr::before{content:"";position:absolute;inset:5px;border:1px dashed var(--line-40)}
+.laptop .base{position:absolute;left:0;right:0;bottom:6px;height:10px;border:1px solid var(--line);border-top-width:1px;border-radius:0 0 4px 4px}
+.laptop .base::before{content:"";position:absolute;left:50%;top:0;width:24px;height:3px;margin-left:-12px;border:1px solid var(--line);border-top:0}
+.camera{width:120px;height:78px;position:relative}
+.camera .body{position:absolute;left:0;right:0;top:14px;bottom:4px;border:1px solid var(--line);border-radius:4px}
+.camera .lens{position:absolute;left:38px;top:22px;width:44px;height:44px;border:1px solid var(--line);border-radius:50%;display:grid;place-items:center}
+.camera .lens::before{content:"";width:22px;height:22px;border:1px solid var(--line);border-radius:50%}
+.camera .lens::after{content:"";position:absolute;width:56px;height:56px;border:1px dashed var(--line-40);border-radius:50%}
+.camera .shoe{position:absolute;left:14px;top:4px;width:28px;height:10px;border:1px solid var(--line);border-bottom:0}
+.camera .scrn{position:absolute;right:-8px;top:24px;width:10px;height:30px;border:1px solid var(--line);border-left:0}
+.camera .btn2{position:absolute;right:16px;top:9px;width:14px;height:5px;border:1px solid var(--line);border-bottom:0}
+.paths{position:relative;display:grid;grid-auto-rows:1fr;padding:0 10px}
+.paths::before,.paths::after{content:"";position:absolute;top:calc(100% / 6);bottom:calc(100% / 6);width:1px;background:var(--line)}
+.paths::before{left:0}.paths::after{right:0}
+.wire{position:relative;display:grid;place-items:center;padding:14px 0}
+.wire::before{content:"";position:absolute;left:-10px;right:-10px;top:50%;height:1px;background:var(--line)}
+.wire .j{position:absolute;top:50%;width:7px;height:7px;margin-top:-3.5px;border-radius:50%;background:var(--bg);border:1px solid var(--line)}
+.wire .j.l{left:-13.5px}.wire .j.r{right:-13.5px}
+.node{position:relative;z-index:1;background:var(--bg);border:1px solid var(--line);display:grid;grid-template-columns:200px minmax(0,1fr);width:min(100%,720px);min-height:150px}
+.node .head{padding:16px 18px;border-right:1px solid var(--line-40);display:flex;flex-direction:column;gap:8px}
+.node h3{margin:0;font:600 20px/1.1 var(--cond);letter-spacing:.04em;color:var(--white)}
+.node .head p{margin:0;font-size:12.5px;color:var(--line-70);line-height:1.4}
+.node .body{padding:16px 18px;display:flex;flex-direction:column;gap:12px;justify-content:center}
+.node .body p{margin:0;font-size:13.5px;color:var(--line);line-height:1.45;max-width:46ch}
+.webcam{display:grid;grid-template-columns:150px minmax(0,1fr);gap:16px;align-items:center}
+.webcam .view{aspect-ratio:4/3;border:1px solid var(--line);position:relative;display:grid;place-items:center;font:400 12px/1 var(--cond);letter-spacing:.06em;color:var(--line-70);background:var(--deep)}
+.webcam .view::before{content:"";position:absolute;inset:12px;border:1px dashed var(--line-40)}
+.device{display:flex;align-items:center;gap:14px;border:1px solid var(--line-40);padding:10px 14px}
+.device b{display:block;color:var(--white);font-weight:500}
+.device span{font-size:12.5px;color:var(--line-70)}
+.device .bt{width:30px;height:30px;border:1px solid var(--line);border-radius:50%;display:grid;place-items:center;flex:none}
+.device .bt svg{width:12px;height:16px}
+.go{border:1px solid var(--line);background:var(--white);color:var(--bg);padding:9px 18px;font:600 14px/1 var(--cond);letter-spacing:.1em;flex:none}
+.go:hover{background:#fff}
+.go.quiet{background:none;color:var(--white)}
+.go.quiet:hover{background:var(--line-10)}
+.field{display:flex;gap:10px;align-items:flex-end}
+.field label{display:block;font:400 12px/1 var(--cond);letter-spacing:.05em;color:var(--line-70);margin-bottom:6px}
+.field input{border:1px solid var(--line);background:var(--deep);color:var(--white);padding:8px 12px;font:500 16px var(--sans);font-variant-numeric:tabular-nums;width:220px}
+.field input:hover{border-color:var(--white)}
+.connect footer{max-width:1240px;width:100%;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:30px;align-items:start}
+.note{border:1px solid var(--line-40);padding:12px 16px;display:flex;gap:14px;align-items:baseline;max-width:720px}
+.note .lab{flex:none}
+.note p{margin:0;color:var(--line)}
+.recent{border:1px solid var(--line-40);padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+.recent .items{display:flex;gap:8px}
+.recent button{border:1px solid var(--line-40);padding:5px 10px;color:var(--line);font-size:13px}
+.recent button:hover{border-color:var(--line);color:var(--white)}
+
+@media (max-width:1240px){
+  .work{grid-template-columns:minmax(0,1fr) 300px}
+  .row{gap:10px;padding:6px 10px;font-size:13px}
+  .radio{padding:4px 7px;font-size:12.5px}
+  .btn small{display:none}
+  .tools{gap:14px}
+  .sw{padding:4px 7px;font-size:12px;gap:5px}
+  .sw::before{display:none}
+  .title>div{padding:6px 10px 7px}
+  .title .v{font-size:13px}
+  .schem{grid-template-columns:150px minmax(0,1fr) 150px}
+  .node{grid-template-columns:170px minmax(0,1fr)}
+  .connect{padding:40px 28px 36px}
+}
+@media (max-height:760px){
+  .sheet{gap:8px}
+  .stage{gap:8px}
+  .panel{gap:8px}
+  .shoot{width:88px;height:88px}
+  .shoot span{width:60px;height:60px}
+  .pre{min-height:44px;padding:5px 8px 6px}
+  .list td{padding:4px 0}
+  .tri{padding:8px 10px 4px}
+  .title>div{padding:5px 10px 6px}
+}
+@media (prefers-reduced-motion:no-preference){
+  .btn,.sw,.radio,.pre,.go,.recent button{transition:border-color .12s,background-color .12s,color .12s}
+}
+</style>
+</head>
+<body>
+<div class="badge">08 — Blueprint</div>
+
+<!-- ============ Screen 1 ============ -->
+<main class="sheet" aria-label="Main screen">
+  <header class="hdr">
+    <h1>RIMIX</h1>
+    <span class="sub">Camera control, ZV-E10, connected over Wi-Fi Direct</span>
+    <span class="status">Live view 24 fps · last shot 0.8 s ago</span>
+  </header>
+
+  <div class="work">
+    <section class="stage" aria-label="Live view and captures">
+      <div class="live-wrap">
+        <div class="lv-block">
+          <div class="dim dim-top" aria-hidden="true"><span class="a l"></span><span class="a r"></span><span class="t">Frame 16:9, 1920 × 1080</span></div>
+          <div class="dim dim-right" aria-hidden="true" style="--h:68.9%"><span class="a u"></span><span class="a d"></span><span class="t">Horizon</span></div>
+          <figure class="live">
+            <svg class="scene" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Placeholder scene: a person at a desk by a window">
+              <defs>
+                <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9fb7c9"/><stop offset="1" stop-color="#e3d9c6"/></linearGradient>
+                <linearGradient id="wall" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5c6168"/><stop offset="1" stop-color="#3a3e44"/></linearGradient>
+                <linearGradient id="desk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8a6a4a"/><stop offset="1" stop-color="#5b4430"/></linearGradient>
+                <radialGradient id="face" cx="0.4" cy="0.35" r="0.8"><stop offset="0" stop-color="#e8c3a6"/><stop offset="1" stop-color="#b98a6b"/></radialGradient>
+              </defs>
+              <g id="scene">
+                <rect width="1600" height="900" fill="url(#wall)"/>
+                <rect x="980" y="80" width="460" height="520" rx="8" fill="url(#sky)"/>
+                <rect x="1200" y="80" width="14" height="520" fill="#2b2e33"/>
+                <rect x="980" y="330" width="460" height="12" fill="#2b2e33"/>
+                <rect x="0" y="620" width="1600" height="280" fill="url(#desk)"/>
+                <rect x="300" y="560" width="220" height="130" rx="10" fill="#1d1f23"/>
+                <rect x="312" y="572" width="196" height="106" rx="4" fill="#2f3f55"/>
+                <ellipse cx="700" cy="620" rx="150" ry="60" fill="#2a2d33"/>
+                <path d="M560 640 Q700 400 840 640 Z" fill="#2f5d8a"/>
+                <circle cx="700" cy="400" r="95" fill="url(#face)"/>
+                <path d="M605 395 Q700 270 795 395 Q760 330 700 330 Q640 330 605 395 Z" fill="#2b2320"/>
+                <rect x="1120" y="520" width="120" height="140" rx="4" fill="#4b5563"/>
+                <circle cx="1180" cy="455" r="55" fill="#d8b36a" opacity="0.7"/>
+              </g>
+            </svg>
+            <!-- drafted overlay: thirds, focus frame + leader, horizon (level), histogram -->
+            <svg class="ovl" viewBox="0 0 1600 900" xmlns="http://www.w3.org/2000/svg" aria-label="Overlays: rule of thirds, focus frame locked, level, histogram">
+              <g stroke="rgba(169,216,238,.28)" stroke-width="1.2" stroke-dasharray="10 10">
+                <line x1="533" y1="0" x2="533" y2="900"/><line x1="1067" y1="0" x2="1067" y2="900"/>
+                <line x1="0" y1="300" x2="1600" y2="300"/><line x1="0" y1="600" x2="1600" y2="600"/>
+              </g>
+              <!-- horizon as a drafted level line -->
+              <g stroke="#a9d8ee" stroke-width="1.6">
+                <line x1="0" y1="620" x2="1600" y2="620" stroke-dasharray="26 10 4 10"/>
+                <line x1="760" y1="606" x2="760" y2="634"/><line x1="840" y1="606" x2="840" y2="634"/>
+                <line x1="800" y1="598" x2="800" y2="642" stroke="#86e3a1" stroke-width="2.2"/>
+                <path d="M 760 620 A 40 40 0 0 1 800 580" fill="none" stroke-dasharray="4 4"/>
+              </g>
+              <text x="812" y="588" fill="#eef7fc" font-size="24" letter-spacing="1">Level 0.0°</text>
+              <!-- focus frame -->
+              <g stroke="#86e3a1" stroke-width="2.6" fill="none">
+                <rect x="595" y="292" width="210" height="210"/>
+                <line x1="700" y1="386" x2="700" y2="408"/><line x1="689" y1="397" x2="711" y2="397"/>
+              </g>
+              <!-- leader line to the callout -->
+              <g stroke="#a9d8ee" stroke-width="1.6" fill="none">
+                <line x1="805" y1="292" x2="905" y2="200"/><line x1="905" y1="200" x2="1200" y2="200"/>
+                <circle cx="805" cy="292" r="4" fill="#a9d8ee"/>
+              </g>
+              <text x="912" y="186" fill="#86e3a1" font-size="26" font-weight="600" letter-spacing="1">AF-C locked</text>
+              <text x="1095" y="186" fill="#eef7fc" font-size="24" letter-spacing="1" opacity=".95">1.8 m</text>
+              <!-- histogram -->
+              <g transform="translate(24 740)">
+                <rect x="0" y="0" width="240" height="120" fill="rgba(10,35,80,.72)" stroke="#a9d8ee" stroke-width="1.4"/>
+                <path d="M6 114 L6 96 L28 82 L50 60 L72 40 L94 52 L116 70 L138 58 L160 34 L182 46 L204 76 L226 98 L234 108 L234 114 Z" fill="none" stroke="#eef7fc" stroke-width="2"/>
+                <g stroke="rgba(169,216,238,.4)" stroke-width="1"><line x1="66" y1="6" x2="66" y2="114"/><line x1="126" y1="6" x2="126" y2="114"/><line x1="186" y1="6" x2="186" y2="114"/></g>
+                <text x="8" y="22" fill="#a9d8ee" font-size="20" letter-spacing="1">Histogram</text>
+              </g>
+              <text x="1570" y="866" fill="#eef7fc" font-size="24" text-anchor="end" letter-spacing="1" opacity=".9">Live view</text>
+            </svg>
+          </figure>
+        </div>
+      </div>
+
+      <div class="strip" aria-label="Last six captures">
+        <div class="det"><div class="img"><svg viewBox="260 120 1080 720" preserveAspectRatio="xMidYMid slice"><use href="#scene"/></svg></div><div class="cap"><span>DSC01231</span></div></div>
+        <div class="det"><div class="img"><svg viewBox="420 200 960 640" preserveAspectRatio="xMidYMid slice"><use href="#scene"/></svg></div><div class="cap"><span>DSC01232</span></div></div>
+        <div class="det"><div class="img"><svg viewBox="100 80 1200 800" preserveAspectRatio="xMidYMid slice"><use href="#scene"/></svg></div><div class="cap"><span>DSC01233</span></div></div>
+        <div class="det"><div class="img"><svg viewBox="600 180 900 600" preserveAspectRatio="xMidYMid slice"><use href="#scene"/></svg></div><div class="cap"><span>DSC01234</span></div></div>
+        <div class="det"><div class="img"><svg viewBox="300 220 900 600" preserveAspectRatio="xMidYMid slice"><use href="#scene"/></svg></div><div class="cap"><span>DSC01235</span></div></div>
+        <div class="det xfer"><div class="img"><svg viewBox="200 140 1100 733" preserveAspectRatio="xMidYMid slice"><use href="#scene"/></svg><span class="tx">Transferring 64%</span><span class="bar"></span></div><div class="cap"><span>DSC01236</span></div></div>
+      </div>
+
+      <div class="row" role="group" aria-label="Save to">
+        <span class="lab">Save to</span><span class="path">~/Pictures/Rimix/2026-11-10</span>
+        <div class="radios" role="radiogroup">
+          <button class="radio" role="radio" aria-checked="false">Custom folder</button>
+          <button class="radio" role="radio" aria-checked="false">Lightroom watched folder</button>
+          <button class="radio" role="radio" aria-checked="true">New folder per date</button>
+        </div>
+      </div>
+
+      <div class="tools">
+        <div class="grp"><span class="lab">Scopes</span><button class="sw">Waveform</button><button class="sw">False colour</button><button class="sw">Zebra</button></div>
+        <div class="grp"><span class="lab">Interval timer</span><button class="sw off plain">Off</button></div>
+        <div class="grp"><span class="lab">Cameras</span><button class="sw on">ZV-E10 (this)</button><button class="sw off">a7 IV (offline)</button></div>
+      </div>
+    </section>
+
+    <aside class="panel" aria-label="Camera settings and actions">
+      <section class="tri">
+        <h2>Exposure</h2>
+        <svg viewBox="0 0 312 212" aria-label="Exposure triangle: shutter 1/125, aperture f/4.0, ISO 800, mode M, exposure comp +0.3">
+          <g stroke="#a9d8ee" stroke-width="1.2" fill="none">
+            <path d="M156 30 L286 178 L26 178 Z"/>
+            <path d="M156 30 L156 178" stroke-dasharray="3 5" opacity=".6"/>
+            <path d="M156 30 L91 178" stroke-dasharray="3 5" opacity=".3"/>
+            <path d="M156 30 L221 178" stroke-dasharray="3 5" opacity=".3"/>
+            <circle cx="156" cy="129" r="30"/>
+            <circle cx="156" cy="30" r="4" fill="#0d2b5e"/><circle cx="286" cy="178" r="4" fill="#0d2b5e"/><circle cx="26" cy="178" r="4" fill="#0d2b5e"/>
+          </g>
+          <circle cx="156" cy="129" r="24" fill="#0d2b5e"/>
+          <text x="156" y="126" text-anchor="middle" fill="#eef7fc" font-size="20" font-weight="600" letter-spacing="1">M</text>
+          <text x="156" y="143" text-anchor="middle" fill="#a9d8ee" font-size="12" letter-spacing=".6">+0.3 EV</text>
+          <text x="156" y="16" text-anchor="middle" fill="#a9d8ee" font-size="11" letter-spacing=".8">Shutter</text>
+          <text x="186" y="36" fill="#eef7fc" font-size="24" font-weight="600" letter-spacing=".5">1/125</text>
+          <text x="26" y="200" fill="#a9d8ee" font-size="11" letter-spacing=".8">Aperture</text>
+          <text x="80" y="201" fill="#eef7fc" font-size="24" font-weight="600" letter-spacing=".5">f/4.0</text>
+          <text x="286" y="200" text-anchor="end" fill="#a9d8ee" font-size="11" letter-spacing=".8">ISO</text>
+          <text x="258" y="201" text-anchor="end" fill="#eef7fc" font-size="24" font-weight="600" letter-spacing=".5">800</text>
+        </svg>
+      </section>
+
+      <section class="list">
+        <h2>Settings</h2>
+        <table>
+          <tr><td>White balance</td><td>5200K</td></tr>
+          <tr><td>Focus</td><td>AF-C</td></tr>
+          <tr><td>Drive</td><td>Single</td></tr>
+          <tr><td>Format</td><td>RAW+JPEG</td></tr>
+          <tr><td>Picture profile</td><td>Off</td></tr>
+        </table>
+      </section>
+
+      <div class="ctrl">
+        <button class="shoot"><span>SHOOT</span></button>
+        <div class="side">
+          <button class="btn"><span class="sym rec" aria-hidden="true"></span>Record<small>movie</small></button>
+          <button class="btn"><span class="sym af" aria-hidden="true"></span>Focus<small>autofocus now</small></button>
+        </div>
+      </div>
+
+      <div class="presets" role="group" aria-label="Presets">
+        <button class="pre on"><b>C1</b><span>Talking head</span></button>
+        <button class="pre"><b>C2</b><span>&nbsp;</span></button>
+        <button class="pre"><b>C3</b><span>&nbsp;</span></button>
+        <button class="pre"><b>C4</b><span>&nbsp;</span></button>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="title" aria-label="Camera and connection">
+    <div><span class="lab">Camera</span><span class="v">ZV-E10</span></div>
+    <div><span class="lab">Connection</span><span class="v"><i class="sig" aria-hidden="true"><i></i><i></i><i></i><i></i></i>Wi-Fi Direct, strong signal</span></div>
+    <div><span class="lab">Battery</span><span class="v"><i class="bat" aria-hidden="true"></i>72%</span></div>
+    <div><span class="lab">Card</span><span class="v">Slot 1, 238 shots left</span></div>
+    <div><span class="lab">Firmware</span><span class="v">2.00</span></div>
+    <div><span class="lab">Drawing</span><span class="v">Rimix, camera control</span></div>
+    <div class="sheetno"><span class="lab">Sheet</span><span class="v">1 of 2</span></div>
+  </footer>
+</main>
+
+<!-- ============ Screen 2 ============ -->
+<section class="connect" aria-label="Connect screen">
+  <header>
+    <h2>Connect a camera</h2>
+    <p>Three ways to wire this computer to the camera. Pick whichever is closest to hand.</p>
+  </header>
+
+  <div class="schem">
+    <div class="term lap">
+      <div class="fig" aria-label="This computer"><div class="laptop"><div class="scr"></div><div class="base"></div></div></div>
+      <span class="name">This computer</span>
+    </div>
+
+    <div class="paths">
+      <div class="wire">
+        <span class="j l" aria-hidden="true"></span><span class="j r" aria-hidden="true"></span>
+        <article class="node">
+          <div class="head"><h3>Scan the QR code</h3><p>Point the camera screen at the webcam.</p></div>
+          <div class="body">
+            <div class="webcam">
+              <div class="view">Webcam</div>
+              <p>On the camera: Menu, Network, Send to Smartphone, then show the QR code</p>
+            </div>
+          </div>
+        </article>
+      </div>
+      <div class="wire">
+        <span class="j l" aria-hidden="true"></span><span class="j r" aria-hidden="true"></span>
+        <article class="node">
+          <div class="head"><h3>Nearby over Bluetooth</h3><p>Cameras with pairing switched on show up here.</p></div>
+          <div class="body">
+            <div class="device">
+              <span class="bt" aria-hidden="true"><svg viewBox="0 0 12 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M2 4l8 8-4 3V1l4 3-8 8"/></svg></span>
+              <div><b>ZV-E10</b><span>ZV-E10 · pairing enabled · 2 m away</span></div>
+              <button class="go" style="margin-left:auto">CONNECT</button>
+            </div>
+          </div>
+        </article>
+      </div>
+      <div class="wire">
+        <span class="j l" aria-hidden="true"></span><span class="j r" aria-hidden="true"></span>
+        <article class="node">
+          <div class="head"><h3>Enter the camera's address</h3><p>Shown on the camera under Network settings.</p></div>
+          <div class="body">
+            <div class="field">
+              <div><label for="ip">Camera address</label><input id="ip" type="text" value="192.168.122.1"></div>
+              <button class="go quiet">CONNECT</button>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+
+    <div class="term cam">
+      <div class="fig" aria-label="The camera"><div class="camera"><div class="shoe"></div><div class="btn2"></div><div class="body"></div><div class="lens"></div><div class="scrn"></div></div></div>
+      <span class="name">Camera</span>
+    </div>
+  </div>
+
+  <footer>
+    <div class="note"><span class="lab">Note</span><p>First time on this camera? Press OK on the camera screen when it asks to allow this computer.</p></div>
+    <div class="recent"><span class="lab">Recently used</span><div class="items"><button>ZV-E10 (Wi-Fi Direct)</button><button>a7 IV (home router)</button></div></div>
+  </footer>
+</section>
+
+<!--
+Idea: the camera's state is a technical drawing: pale cyan line work on blueprint blue, the live view annotated with dimension and leader lines (frame, horizon as a drafted level, focus callout), exposure drawn as an actual triangle with the three values at its corners, controls as outlined schematic components and camera facts in a title block; connecting is a wiring schematic from this computer to the camera along three labelled paths.
+Palette: #0d2b5e blueprint blue, #0a2350 deep blue, #a9d8ee line cyan, #eef7fc white ink, #6f9fd6 / #3b64a3 muted blue, #ff8266 record red (only), #86e3a1 focus green.
+Type: Saira Condensed for labels, headings and dimension text; Saira for values and body copy.
+Avoided: filled cards and drop shadows, a second accent colour, all-caps eyebrow labels (caps only on the few drafting-style buttons), monospace labels, numbered markers for things that are not a sequence, arrows on buttons, page-load animation.
+-->
+</body>
+</html>
