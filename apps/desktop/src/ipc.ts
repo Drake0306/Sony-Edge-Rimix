@@ -9,8 +9,9 @@
 //   {"StateChanged": {"connected": true, ...}}    (newtype variants: one key)
 //
 // and a `PtpValue` as {"U16": 5}. The app's own types (AppSettings and
-// RecentCamera) use camelCase fields. `src/fixtures/state-changed.json` is
-// pinned by the Rust test `state_changed_event_json_is_stable`.
+// RecentCamera) use camelCase fields. `src/fixtures/state-changed.json` and
+// `src/fixtures/capture-saved.json` are pinned by the Rust tests
+// `state_changed_event_json_is_stable` and `capture_saved_event_json_is_stable`.
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -60,7 +61,10 @@ export interface CameraState {
 export interface Received {
   path: string;
   bytes: number;
+  /** The saved file's name, including any `-N` suffix. */
   filename: string;
+  /** The camera's name for the file; progress events use this name. */
+  camera_filename: string;
 }
 
 export type CameraEvent =

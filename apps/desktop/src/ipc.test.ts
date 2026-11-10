@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import fixture from './fixtures/state-changed.json';
+import captureSaved from './fixtures/capture-saved.json';
 import {
   isCaptureSaved,
   isConnected,
@@ -29,6 +30,17 @@ describe('camera events', () => {
     expect(isConnected(event)).toBe(false);
   });
 
+  // Pinned by the Rust test `capture_saved_event_json_is_stable`.
+  test('a saved shot names both the saved file and the camera file', () => {
+    const event = captureSaved as unknown as CameraEvent;
+    expect(isCaptureSaved(event)).toBe(true);
+    if (!isCaptureSaved(event)) return;
+    expect(event.CaptureSaved.filename).toBe('DSC00001-1.JPG');
+    expect(event.CaptureSaved.camera_filename).toBe('DSC00001.JPG');
+    expect(event.CaptureSaved.path).toBe('/p/DSC00001-1.JPG');
+    expect(event.CaptureSaved.bytes).toBe(3);
+  });
+
   test('unit variants arrive as bare strings', () => {
     const event = JSON.parse('"Connected"') as CameraEvent;
     expect(isConnected(event)).toBe(true);
@@ -41,7 +53,7 @@ describe('camera events', () => {
     expect(isDisconnected(gone)).toBe(true);
     if (isDisconnected(gone)) expect(gone.Disconnected.reason).toBe('timeout');
     const saved = JSON.parse(
-      '{"CaptureSaved":{"path":"/p/DSC00001.JPG","bytes":3,"filename":"DSC00001.JPG"}}',
+      '{"CaptureSaved":{"path":"/p/DSC00001.JPG","bytes":3,"filename":"DSC00001.JPG","camera_filename":"DSC00001.JPG"}}',
     ) as CameraEvent;
     expect(isCaptureSaved(saved)).toBe(true);
     expect(isStateChanged(saved)).toBe(false);

@@ -45,11 +45,13 @@ function toaster(host: HTMLElement): (message: string) => void {
   };
 }
 
-/** Toasts for camera events that are news rather than state. */
-function eventToast(event: CameraEvent): string | null {
+/**
+ * Toasts for camera events that are news rather than state. A failed save
+ * is not one: it stays in the Save to panel until the next save.
+ */
+export function eventToast(event: CameraEvent): string | null {
   if (typeof event !== 'object') return null;
   if ('CaptureSkipped' in event) return `Skipped a repeat of ${event.CaptureSkipped.filename}`;
-  if ('CaptureFailed' in event) return `Could not save ${event.CaptureFailed.filename}: ${event.CaptureFailed.error}`;
   return null;
 }
 

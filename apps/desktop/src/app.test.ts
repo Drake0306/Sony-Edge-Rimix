@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import cameraState from './fixtures/camera-state.json';
-import { startApp } from './app';
+import { eventToast, startApp } from './app';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
@@ -46,5 +46,12 @@ describe('startApp', () => {
     radios('Theme')[1].click();
     expect(html.getAttribute('data-theme')).toBe('light');
     expect(radios('Theme')[1].getAttribute('aria-checked')).toBe('true');
+  });
+});
+
+describe('event toasts', () => {
+  test('a failed save is shown in Save to, not as a toast; a skipped repeat still toasts', () => {
+    expect(eventToast({ CaptureFailed: { filename: 'DSC00001.JPG', error: 'Cannot save to /x: denied' } })).toBeNull();
+    expect(eventToast({ CaptureSkipped: { filename: 'DSC00001.JPG' } })).toContain('DSC00001.JPG');
   });
 });

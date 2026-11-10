@@ -71,14 +71,6 @@ pub fn parse_addr(ip: &str) -> Result<SocketAddr, String> {
         .map_err(|_| format!("Not an IP address: {ip}"))
 }
 
-/// "Rimix on <hostname>", shown on the camera's pairing prompt.
-fn host_name() -> String {
-    match hostname::get() {
-        Ok(name) if !name.is_empty() => format!("Rimix on {}", name.to_string_lossy()),
-        _ => "Rimix".into(),
-    }
-}
-
 pub async fn discover(timeout_ms: u64) -> Result<Vec<DiscoveredCamera>, String> {
     sony_ptpip::discover(Duration::from_millis(timeout_ms))
         .await
@@ -101,7 +93,7 @@ pub async fn connect(
     let camera = Camera::connect(CameraConfig {
         addr,
         guid: state.guid,
-        host_name: host_name(),
+        host_name: sony_ptpip::default_host_name(),
         destination,
         auto_receive: true,
         reconnect: true,
@@ -513,4 +505,23 @@ mod tests {
     }
 
     const STATE_CHANGED_FIXTURE: &str = include_str!("../../src/fixtures/state-changed.json");
+
+    /// Pins the JSON of a saved shot whose name took a `-N` suffix; the same
+    /// string is `src/fixtures/capture-saved.json`, used by `src/ipc.test.ts`
+    /// and `src/state.test.ts`.
+    #[test]
+    fn capture_saved_event_json_is_stable() {
+        let event = CameraEvent::CaptureSaved(sony_ptpip::capture::Received {
+            path: "/p/DSC00001-1.JPG".into(),
+            bytes: 3,
+            filename: "DSC00001-1.JPG".into(),
+            camera_filename: "DSC00001.JPG".into(),
+        });
+        assert_eq!(
+            serde_json::to_string(&event).unwrap(),
+            CAPTURE_SAVED_FIXTURE.trim()
+        );
+    }
+
+    const CAPTURE_SAVED_FIXTURE: &str = include_str!("../../src/fixtures/capture-saved.json");
 }

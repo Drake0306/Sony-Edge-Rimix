@@ -37,6 +37,12 @@ export interface Transfer {
   total: number;
 }
 
+/** The last shot that could not be received or saved. */
+export interface SaveError {
+  filename: string;
+  error: string;
+}
+
 export interface AppState {
   screen: 'connect' | 'main';
   camera: CameraState | null;
@@ -46,8 +52,10 @@ export interface AppState {
   nearby: DiscoveredCamera[];
   /** Newest first, at most six. */
   captures: CaptureItem[];
-  /** Files on their way from the camera, keyed by filename. */
+  /** Files on their way from the camera, keyed by the camera's filename. */
   transfers: Record<string, Transfer>;
+  /** Shown in Save to until the next shot is saved. */
+  saveError: SaveError | null;
   status: { fps: number; lastShotAt: number | null };
   /** Live view overlays switched from the Scopes panel. */
   overlays: { thirds: boolean; zebra: boolean };
@@ -68,6 +76,7 @@ export const initialState = (): AppState => ({
   nearby: [],
   captures: [],
   transfers: {},
+  saveError: null,
   status: { fps: 0, lastShotAt: null },
   overlays: { thirds: true, zebra: false },
   reconnecting: null,
@@ -103,7 +112,7 @@ export function watch<T extends object, S>(
   });
 }
 
-/** What a camera event changes; toasts for skipped and failed shots are the app's job. */
+/** What a camera event changes; the toast for a skipped shot is the app's job. */
 export function applyEvent(state: AppState, event: CameraEvent): Partial<AppState> {
   if (event === 'Connected') return state.reconnecting === null ? {} : { reconnecting: null };
   if (event === 'Frame') return {};
@@ -121,18 +130,28 @@ export function applyEvent(state: AppState, event: CameraEvent): Partial<AppStat
     return { transfers: { ...state.transfers, [filename]: { received, total } } };
   }
   if ('CaptureSaved' in event) {
-    const { path, filename, bytes } = event.CaptureSaved;
-    const transfers = { ...state.transfers };
-    delete transfers[filename];
+    const { path, filename, bytes, camera_filename } = event.CaptureSaved;
+    const transfers = withoutTransfer(state.transfers, camera_filename);
     const captures = [{ path, filename, bytes }, ...state.captures.filter((c) => c.path !== path)];
-    return { captures: captures.slice(0, MAX_CAPTURES), transfers };
+    return { captures: captures.slice(0, MAX_CAPTURES), transfers, saveError: null };
   }
-  if ('CaptureSkipped' in event || 'CaptureFailed' in event) {
-    const filename = 'CaptureSkipped' in event ? event.CaptureSkipped.filename : event.CaptureFailed.filename;
-    if (!(filename in state.transfers)) return {};
-    const transfers = { ...state.transfers };
-    delete transfers[filename];
-    return { transfers };
+  if ('CaptureFailed' in event) {
+    const { filename, error } = event.CaptureFailed;
+    const patch: Partial<AppState> = {};
+    if (filename in state.transfers) patch.transfers = withoutTransfer(state.transfers, filename);
+    const same = state.saveError?.filename === filename && state.saveError.error === error;
+    if (!same) patch.saveError = { filename, error };
+    return patch;
+  }
+  if ('CaptureSkipped' in event) {
+    const { filename } = event.CaptureSkipped;
+    return filename in state.transfers ? { transfers: withoutTransfer(state.transfers, filename) } : {};
   }
   return {};
+}
+
+function withoutTransfer(transfers: Record<string, Transfer>, filename: string): Record<string, Transfer> {
+  const rest = { ...transfers };
+  delete rest[filename];
+  return rest;
 }

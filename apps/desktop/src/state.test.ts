@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import fixture from './fixtures/state-changed.json';
+import captureSaved from './fixtures/capture-saved.json';
 import { applyEvent, createStore, initialState } from './state';
 import type { CameraEvent } from './ipc';
 
@@ -32,12 +33,38 @@ describe('store', () => {
       const name = `DSC0000${i}.JPG`;
       s = { ...s, ...applyEvent(s, { CaptureProgress: { filename: name, received: 5, total: 10 } }) };
       expect(s.transfers[name]).toEqual({ received: 5, total: 10 });
-      s = { ...s, ...applyEvent(s, { CaptureSaved: { path: `/p/${name}`, bytes: 10, filename: name } }) };
+      s = {
+        ...s,
+        ...applyEvent(s, { CaptureSaved: { path: `/p/${name}`, bytes: 10, filename: name, camera_filename: name } }),
+      };
       expect(s.transfers[name]).toBeUndefined();
     }
     expect(s.captures.map((c) => c.filename)).toEqual([
       'DSC00007.JPG', 'DSC00006.JPG', 'DSC00005.JPG', 'DSC00004.JPG', 'DSC00003.JPG', 'DSC00002.JPG',
     ]);
+  });
+
+  test('a save under a suffixed name clears the progress keyed by the camera name', () => {
+    let s = initialState();
+    s = { ...s, ...applyEvent(s, { CaptureProgress: { filename: 'DSC00001.JPG', received: 1, total: 3 } }) };
+    s = { ...s, ...applyEvent(s, captureSaved as unknown as CameraEvent) };
+    expect(s.transfers).toEqual({});
+    expect(s.captures[0]).toEqual({ path: '/p/DSC00001-1.JPG', filename: 'DSC00001-1.JPG', bytes: 3 });
+  });
+
+  test('a failed save is kept as one persistent error until the next save', () => {
+    let s = initialState();
+    const failed: CameraEvent = {
+      CaptureFailed: { filename: 'DSC00001.JPG', error: 'Cannot save to /x: Permission denied' },
+    };
+    s = { ...s, ...applyEvent(s, { CaptureProgress: { filename: 'DSC00001.JPG', received: 0, total: 3 } }) };
+    s = { ...s, ...applyEvent(s, failed) };
+    expect(s.saveError).toEqual({ filename: 'DSC00001.JPG', error: 'Cannot save to /x: Permission denied' });
+    expect(s.transfers).toEqual({});
+    // The same failure again changes nothing, so nothing re-renders.
+    expect(applyEvent(s, failed)).toEqual({});
+    s = { ...s, ...applyEvent(s, captureSaved as unknown as CameraEvent) };
+    expect(s.saveError).toBeNull();
   });
 
   test('events without state changes leave the state alone', () => {

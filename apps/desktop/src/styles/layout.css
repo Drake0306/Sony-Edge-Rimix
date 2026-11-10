@@ -263,6 +263,8 @@ body{overflow:hidden}
 .path .pathbtn:hover{background:var(--hov-2)}
 .path span{flex:1;min-width:0}
 .apppop .path{margin-bottom:6px}
+.save-error{margin:0 0 6px;padding:6px 10px;font-size:11.5px;line-height:1.35;color:var(--ink);background:var(--rec-well);border-radius:10px;overflow-wrap:anywhere}
+.save-error[hidden]{display:none}
 
 /* filmstrip */
 .thumb .pic img{display:block;width:100%;height:100%;object-fit:cover}

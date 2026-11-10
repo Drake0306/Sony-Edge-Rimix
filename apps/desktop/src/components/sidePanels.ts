@@ -4,7 +4,7 @@
 import type { Actions } from '../actions';
 import { button, el, icon } from '../dom';
 import type { AppSettings, DestinationMode } from '../ipc';
-import { watch, type AppState, type AppStore } from '../state';
+import { watch, type AppState, type AppStore, type SaveError } from '../state';
 
 const MODES: [DestinationMode, string][] = [
   ['CustomFolder', 'Custom folder'],
@@ -48,12 +48,22 @@ export function rowButton(key: string, value = '', trail: 'check' | 'chev' | 'no
   return r;
 }
 
-/** Save to: path, Choose folder and the three destination modes. */
+/**
+ * The Save to panel's error line. The camera layer words folder failures as
+ * "Cannot save to <folder>: <error>"; anything else names the file.
+ */
+export function saveErrorText(e: SaveError): string {
+  return e.error.startsWith('Cannot save to ') ? e.error : `Could not receive ${e.filename}: ${e.error}`;
+}
+
+/** Save to: path, Choose folder, the last save failure and the three destination modes. */
 export function saveToSection(store: AppStore, actions: Actions): { el: HTMLElement; destroy: () => void } {
   const path = el('div', 'path');
   const pathText = el('span');
   const choose = button('pathbtn', 'Choose folder');
   path.append(pathText, choose);
+  const failure = el('div', 'save-error');
+  failure.setAttribute('role', 'alert');
   const modes = group('radiogroup', 'Destination');
   const save = (patch: Partial<AppSettings>) => {
     const s = store.get().settings;
@@ -63,7 +73,11 @@ export function saveToSection(store: AppStore, actions: Actions): { el: HTMLElem
     const folder = await actions.pickFolder();
     if (folder) save({ destinationBase: folder });
   });
-  const destroy = watch(store, (s) => s.settings, (s) => {
+  const offError = watch(store, (s) => s.saveError, (e) => {
+    failure.hidden = e === null;
+    failure.textContent = e ? saveErrorText(e) : '';
+  });
+  const offSettings = watch(store, (s) => s.settings, (s) => {
     pathText.textContent = s ? destinationText(s) : '';
     pathText.title = s?.destinationBase ?? '';
     modes.replaceChildren(
@@ -78,7 +92,11 @@ export function saveToSection(store: AppStore, actions: Actions): { el: HTMLElem
       }),
     );
   });
-  return { el: sect('Save to', path, modes), destroy };
+  const destroy = () => {
+    offError();
+    offSettings();
+  };
+  return { el: sect('Save to', path, failure, modes), destroy };
 }
 
 function switchRow(label: string, on: boolean, toggle?: () => void): HTMLElement {

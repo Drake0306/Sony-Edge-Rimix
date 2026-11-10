@@ -22,7 +22,6 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 directories = { workspace = true }
-hostname = "0.4"
 
 [dev-dependencies]
 sony-ptpip-sim = { path = "../../../crates/sony-ptpip-sim" }
