@@ -93,4 +93,85 @@ describe('qr scanner', () => {
     );
     expect(webcamErrorMessage(new Error('weird'))).toMatch(/isn't available here/);
   });
+
+  function rig() {
+    const tracks = [{ stop: vi.fn() }, { stop: vi.fn() }];
+    let n = 0;
+    const resolvers: Array<() => void> = [];
+    const getUserMedia = vi.fn(() => {
+      const track = tracks[n++];
+      const stream = { getTracks: () => [track] } as unknown as MediaStream;
+      return new Promise<MediaStream>((res) => resolvers.push(() => res(stream)));
+    });
+    const decode = vi.fn(() => null as string | null);
+    const onResult = vi.fn();
+    const video = document.createElement('video');
+    video.play = vi.fn(async () => {});
+    Object.defineProperty(video, 'videoWidth', { value: 640 });
+    Object.defineProperty(video, 'videoHeight', { value: 360 });
+    const canvas = document.createElement('canvas');
+    const ctx = {
+      drawImage: vi.fn(),
+      getImageData: vi.fn(() => ({ data: new Uint8ClampedArray(4), width: 1, height: 1 })),
+    };
+    canvas.getContext = vi.fn(() => ctx) as unknown as typeof canvas.getContext;
+    const scanner = createScanner(
+      { intervalMs: 100, onResult },
+      { getUserMedia, decode, now: () => 0 },
+    );
+    return { tracks, resolvers, decode, onResult, video, canvas, scanner };
+  }
+
+  it('releases the camera when stop() runs while getUserMedia is pending', async () => {
+    vi.useFakeTimers();
+    const r = rig();
+    const started = r.scanner.start(r.video, r.canvas);
+    r.scanner.stop();
+    r.resolvers[0]();
+    await started;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(r.tracks[0].stop).toHaveBeenCalled();
+    expect(r.decode).not.toHaveBeenCalled();
+    expect(r.onResult).not.toHaveBeenCalled();
+  });
+
+  it('keeps only the latest start when start() is called twice while pending', async () => {
+    vi.useFakeTimers();
+    const r = rig();
+    const first = r.scanner.start(r.video, r.canvas);
+    const second = r.scanner.start(r.video, r.canvas);
+    r.resolvers[0]();
+    r.resolvers[1]();
+    await Promise.all([first, second]);
+    expect(r.tracks[0].stop).toHaveBeenCalled();
+    expect(r.tracks[1].stop).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(r.decode).toHaveBeenCalledTimes(3);
+  });
+
+  it('stops the tracks and rethrows when play() rejects', async () => {
+    const r = rig();
+    const err = Object.assign(new Error('blocked'), { name: 'NotAllowedError' });
+    r.video.play = vi.fn(async () => {
+      throw err;
+    });
+    const started = r.scanner.start(r.video, r.canvas);
+    r.resolvers[0]();
+    await expect(started).rejects.toBe(err);
+    expect(r.tracks[0].stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips a frame when decode throws', async () => {
+    vi.useFakeTimers();
+    const r = rig();
+    r.decode.mockImplementationOnce(() => {
+      throw new Error('boom');
+    });
+    const started = r.scanner.start(r.video, r.canvas);
+    r.resolvers[0]();
+    await started;
+    await vi.advanceTimersByTimeAsync(300);
+    expect(r.decode).toHaveBeenCalledTimes(3);
+    r.scanner.stop();
+  });
 });

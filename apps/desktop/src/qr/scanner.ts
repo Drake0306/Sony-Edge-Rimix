@@ -61,45 +61,69 @@ export function createScanner(
     }
   };
 
-  return {
-    async start(video, canvas) {
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) {
-        throw Object.assign(new Error('Canvas 2D is not available'), { name: 'NotSupportedError' });
-      }
-      this.stop();
-      const s = await getUserMedia({
-        video: {
-          deviceId: opts.deviceId ? { exact: opts.deviceId } : undefined,
-          facingMode: 'user',
-          width: { ideal: 1280 },
-        },
-      });
-      stream = s;
-      video.srcObject = s;
-      await video.play();
+  let gen = 0;
 
-      timer = setInterval(() => {
-        const vw = video.videoWidth;
-        const vh = video.videoHeight;
-        if (!vw || !vh) return;
-        const w = Math.min(MAX_WIDTH, vw);
-        const h = Math.round((vh * w) / vw);
-        canvas.width = w;
-        canvas.height = h;
+  const stop = () => {
+    gen++;
+    clearTimer();
+    stream?.getTracks().forEach((t) => t.stop());
+    stream = null;
+  };
+
+  const start = async (video: HTMLVideoElement, canvas: HTMLCanvasElement) => {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) {
+      throw Object.assign(new Error('Canvas 2D is not available'), { name: 'NotSupportedError' });
+    }
+    stop();
+    const mine = gen;
+    const s = await getUserMedia({
+      video: {
+        deviceId: opts.deviceId ? { exact: opts.deviceId } : undefined,
+        facingMode: 'user',
+        width: { ideal: 1280 },
+      },
+    });
+    if (gen !== mine) {
+      s.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    stream = s;
+    video.srcObject = s;
+    try {
+      await video.play();
+    } catch (e) {
+      if (gen === mine) stop();
+      else s.getTracks().forEach((t) => t.stop());
+      throw e;
+    }
+    if (gen !== mine) {
+      s.getTracks().forEach((t) => t.stop());
+      return;
+    }
+
+    timer = setInterval(() => {
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (!vw || !vh) return;
+      const w = Math.min(MAX_WIDTH, vw);
+      const h = Math.round((vh * w) / vw);
+      canvas.width = w;
+      canvas.height = h;
+      let text: string | null;
+      try {
         ctx.drawImage(video, 0, 0, w, h);
         const frame = ctx.getImageData(0, 0, w, h);
-        const text = decode(frame.data, frame.width, frame.height);
-        if (text !== null) {
-          clearTimer();
-          opts.onResult(text);
-        }
-      }, intervalMs);
-    },
-    stop() {
-      clearTimer();
-      stream?.getTracks().forEach((t) => t.stop());
-      stream = null;
-    },
+        text = decode(frame.data, frame.width, frame.height);
+      } catch {
+        return;
+      }
+      if (text !== null) {
+        clearTimer();
+        opts.onResult(text);
+      }
+    }, intervalMs);
   };
+
+  return { start, stop };
 }
