@@ -4,7 +4,7 @@
 
 use std::fmt;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// How long to wait for a joined network to come up.
 pub const JOIN_WAIT: Duration = Duration::from_secs(20);
@@ -69,6 +69,7 @@ enum Mode {
 pub struct Wifi {
     mode: Arc<Mode>,
     sleep: Arc<dyn Fn(Duration) + Send + Sync>,
+    now: Arc<dyn Fn() -> Instant + Send + Sync>,
 }
 
 impl Wifi {
@@ -76,6 +77,7 @@ impl Wifi {
         Wifi {
             mode: Arc::new(Mode::System(runner)),
             sleep: Arc::new(std::thread::sleep),
+            now: Arc::new(Instant::now),
         }
     }
 
@@ -84,6 +86,7 @@ impl Wifi {
         Wifi {
             mode: Arc::new(Mode::Fake(Mutex::new(None))),
             sleep: Arc::new(std::thread::sleep),
+            now: Arc::new(Instant::now),
         }
     }
 
@@ -96,9 +99,14 @@ impl Wifi {
         }
     }
 
-    /// Replaces how polling waits, so tests do not.
-    pub fn with_sleep(mut self, f: impl Fn(Duration) + Send + Sync + 'static) -> Wifi {
-        self.sleep = Arc::new(f);
+    /// Replaces how polling waits and reads the time, so tests do not wait.
+    pub fn with_clock(
+        mut self,
+        now: impl Fn() -> Instant + Send + Sync + 'static,
+        sleep: impl Fn(Duration) + Send + Sync + 'static,
+    ) -> Wifi {
+        self.now = Arc::new(now);
+        self.sleep = Arc::new(sleep);
         self
     }
 
@@ -132,6 +140,9 @@ impl Wifi {
 
 #[cfg(target_os = "macos")]
 impl Wifi {
+    /// Joins `ssid`. Success is the network name reading back, or the Wi-Fi
+    /// interface getting an address: recent macOS often will not print the
+    /// current network name even while joined.
     fn system_join(
         &self,
         runner: &dyn Runner,
@@ -139,7 +150,7 @@ impl Wifi {
         password: Option<&str>,
     ) -> Result<(), WifiError> {
         let device = system_device(runner)?;
-        if system_current_network(runner)?.as_deref() == Some(ssid) {
+        if network_on(runner, &device)?.as_deref() == Some(ssid) {
             return Ok(());
         }
         let mut args = vec!["-setairportnetwork", device.as_str(), ssid];
@@ -153,16 +164,18 @@ impl Wifi {
             let text = format!("{}{}", out.stdout, out.stderr);
             return Err(WifiError::Failed(text.trim().to_string()));
         }
-        let mut waited = Duration::ZERO;
+        let deadline = (self.now)() + JOIN_WAIT;
         loop {
-            if system_current_network(runner)?.as_deref() == Some(ssid) {
+            if network_on(runner, &device)?.as_deref() == Some(ssid) {
                 return Ok(());
             }
-            if waited >= JOIN_WAIT {
+            if has_address(runner, &device) {
+                return Ok(());
+            }
+            if (self.now)() >= deadline {
                 return Err(WifiError::Failed(format!("{ssid} did not come up")));
             }
             (self.sleep)(JOIN_POLL);
-            waited += JOIN_POLL;
         }
     }
 }
@@ -170,7 +183,7 @@ impl Wifi {
 #[cfg(not(target_os = "macos"))]
 impl Wifi {
     fn system_join(&self, _: &dyn Runner, _: &str, _: Option<&str>) -> Result<(), WifiError> {
-        let _ = &self.sleep;
+        let _ = (&self.sleep, &self.now);
         Err(WifiError::Unsupported)
     }
 }
@@ -191,15 +204,29 @@ fn system_device(_: &dyn Runner) -> Result<String, WifiError> {
 #[cfg(target_os = "macos")]
 fn system_current_network(runner: &dyn Runner) -> Result<Option<String>, WifiError> {
     let device = system_device(runner)?;
-    let out = runner
-        .run("networksetup", &["-getairportnetwork", &device])
-        .map_err(|e| WifiError::Failed(format!("Could not run networksetup: {e}")))?;
-    Ok(parse_current_network(&out.stdout))
+    network_on(runner, &device)
 }
 
 #[cfg(not(target_os = "macos"))]
 fn system_current_network(_: &dyn Runner) -> Result<Option<String>, WifiError> {
     Ok(None)
+}
+
+#[cfg(target_os = "macos")]
+fn network_on(runner: &dyn Runner, device: &str) -> Result<Option<String>, WifiError> {
+    let out = runner
+        .run("networksetup", &["-getairportnetwork", device])
+        .map_err(|e| WifiError::Failed(format!("Could not run networksetup: {e}")))?;
+    Ok(parse_current_network(&out.stdout))
+}
+
+/// Whether `ipconfig getifaddr` prints an IPv4 address for `device`.
+#[cfg(target_os = "macos")]
+fn has_address(runner: &dyn Runner, device: &str) -> bool {
+    match runner.run("ipconfig", &["getifaddr", device]) {
+        Ok(out) => out.success && out.stdout.trim().parse::<std::net::Ipv4Addr>().is_ok(),
+        Err(_) => false,
+    }
 }
 
 /// The `Device:` of the `Wi-Fi` port in `networksetup -listallhardwareports`.
@@ -314,49 +341,126 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
-    #[test]
-    fn join_runs_networksetup_and_waits_until_the_network_is_up() {
-        // device + current (other), set, then current twice more: still other, joined.
-        let runner = FakeRunner::scripted([
-            ports(),
-            ports(),
-            on("Home"),
-            out(""),
-            ports(),
-            on("Home"),
-            ports(),
-            on(SSID),
-        ]);
-        let wifi = Wifi::new(runner.clone()).with_sleep(|_| {});
-        wifi.join(SSID, Some("12345678")).unwrap();
-        assert!(runner.calls().iter().any(|c| c
-            == &[
-                "networksetup",
-                "-setairportnetwork",
-                "en0",
-                SSID,
-                "12345678"
-            ]));
+    fn no_address() -> Output {
+        Output {
+            success: false,
+            stdout: String::new(),
+            stderr: String::new(),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn address() -> Output {
+        out("192.168.122.10\n")
+    }
+
+    #[cfg(target_os = "macos")]
+    fn argv(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|p| p.to_string()).collect()
+    }
+
+    #[cfg(target_os = "macos")]
+    const LIST: &[&str] = &["networksetup", "-listallhardwareports"];
+    #[cfg(target_os = "macos")]
+    const GET: &[&str] = &["networksetup", "-getairportnetwork", "en0"];
+    #[cfg(target_os = "macos")]
+    const ADDR: &[&str] = &["ipconfig", "getifaddr", "en0"];
+
+    /// A Wi-Fi whose clock moves only when it sleeps.
+    #[cfg(target_os = "macos")]
+    fn wifi_with_fake_clock(runner: Arc<FakeRunner>) -> Wifi {
+        let start = Instant::now();
+        let elapsed = Arc::new(Mutex::new(Duration::ZERO));
+        let read = elapsed.clone();
+        Wifi::new(runner).with_clock(
+            move || start + *read.lock().unwrap(),
+            move |d| *elapsed.lock().unwrap() += d,
+        )
     }
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn join_without_password_omits_the_argument_and_already_joined_runs_nothing() {
-        let runner = FakeRunner::scripted([ports(), ports(), off(), out(""), ports(), on(SSID)]);
-        let wifi = Wifi::new(runner.clone()).with_sleep(|_| {});
-        wifi.join(SSID, None).unwrap();
-        assert!(runner
-            .calls()
-            .iter()
-            .any(|c| c == &["networksetup", "-setairportnetwork", "en0", SSID]));
-
-        let runner = FakeRunner::scripted([ports(), ports(), on(SSID)]);
-        let wifi = Wifi::new(runner.clone()).with_sleep(|_| {});
+    fn join_succeeds_when_the_address_appears_though_the_name_stays_unreadable() {
+        let runner = FakeRunner::scripted([
+            ports(),
+            off(),
+            out(""),
+            off(),
+            no_address(),
+            off(),
+            address(),
+        ]);
+        let wifi = wifi_with_fake_clock(runner.clone());
         wifi.join(SSID, Some("12345678")).unwrap();
-        assert!(!runner
-            .calls()
-            .iter()
-            .any(|c| c.contains(&"-setairportnetwork".to_string())));
+        assert_eq!(
+            runner.calls(),
+            vec![
+                argv(LIST),
+                argv(GET),
+                argv(&[
+                    "networksetup",
+                    "-setairportnetwork",
+                    "en0",
+                    SSID,
+                    "12345678"
+                ]),
+                argv(GET),
+                argv(ADDR),
+                argv(GET),
+                argv(ADDR),
+            ]
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn join_succeeds_when_the_network_name_reads_back() {
+        let runner = FakeRunner::scripted([ports(), on("Home"), out(""), on(SSID)]);
+        let wifi = wifi_with_fake_clock(runner.clone());
+        wifi.join(SSID, Some("12345678")).unwrap();
+        assert_eq!(
+            runner.calls(),
+            vec![
+                argv(LIST),
+                argv(GET),
+                argv(&[
+                    "networksetup",
+                    "-setairportnetwork",
+                    "en0",
+                    SSID,
+                    "12345678"
+                ]),
+                argv(GET),
+            ]
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn join_without_password_omits_the_argument() {
+        for password in [None, Some("")] {
+            let runner = FakeRunner::scripted([ports(), off(), out(""), on(SSID)]);
+            let wifi = wifi_with_fake_clock(runner.clone());
+            wifi.join(SSID, password).unwrap();
+            assert_eq!(
+                runner.calls(),
+                vec![
+                    argv(LIST),
+                    argv(GET),
+                    argv(&["networksetup", "-setairportnetwork", "en0", SSID]),
+                    argv(GET),
+                ]
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn already_joined_runs_nothing_more() {
+        let runner = FakeRunner::scripted([ports(), on(SSID)]);
+        let wifi = wifi_with_fake_clock(runner.clone());
+        wifi.join(SSID, Some("12345678")).unwrap();
+        assert_eq!(runner.calls(), vec![argv(LIST), argv(GET)]);
     }
 
     #[cfg(target_os = "macos")]
@@ -364,26 +468,38 @@ mod tests {
     fn join_reports_networksetup_failure_text() {
         let runner = FakeRunner::scripted([
             ports(),
-            ports(),
             off(),
             out("Failed to join network DIRECT-abc1:ZV-E10.\n"),
         ]);
-        let wifi = Wifi::new(runner).with_sleep(|_| {});
+        let wifi = wifi_with_fake_clock(runner);
         let err = wifi.join(SSID, Some("x")).unwrap_err();
         assert!(matches!(err, WifiError::Failed(ref t) if t.contains("Failed to join")));
     }
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn join_gives_up_when_the_network_never_comes_up() {
-        let mut script = vec![ports(), ports(), off(), out("")];
-        for _ in 0..=JOIN_WAIT.as_secs() {
-            script.push(ports());
-            script.push(on("Home"));
+    fn join_gives_up_when_no_address_ever_comes() {
+        // Polls at 0 s, 1 s, .. 20 s: one name read and one address read each.
+        let polls = JOIN_WAIT.as_secs() as usize + 1;
+        let mut script = vec![ports(), off(), out("")];
+        for _ in 0..polls {
+            script.push(off());
+            script.push(no_address());
         }
-        let wifi = Wifi::new(FakeRunner::scripted(script)).with_sleep(|_| {});
+        let runner = FakeRunner::scripted(script);
+        let wifi = wifi_with_fake_clock(runner.clone());
         let err = wifi.join(SSID, Some("x")).unwrap_err();
         assert_eq!(err, WifiError::Failed(format!("{SSID} did not come up")));
+        let calls = runner.calls();
+        assert_eq!(calls.len(), 3 + 2 * polls);
+        assert_eq!(
+            calls.iter().filter(|c| **c == argv(LIST)).count(),
+            1,
+            "the device is looked up once per join"
+        );
+        for pair in calls[3..].chunks(2) {
+            assert_eq!(pair, [argv(GET), argv(ADDR)]);
+        }
     }
 
     #[cfg(target_os = "macos")]
