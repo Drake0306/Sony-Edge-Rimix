@@ -4,6 +4,8 @@ import {
   connectErrorMessage,
   connectingText,
   findingText,
+  fingerprintChangedText,
+  fingerprintText,
   joiningText,
   NOT_A_WIFI_CODE,
   reconnectingText,
@@ -86,9 +88,9 @@ describe('Wi-Fi connect copy', () => {
     );
   });
 
-  test('a network the Mac cannot see yet points at the Wi-Fi Direct Info screen', () => {
+  test('a network this computer cannot see yet points at the Wi-Fi Direct Info screen', () => {
     expect(wifiErrorMessage('join', ssid, "This computer can't see the network DIRECT-abc1:ZV-E10 yet")).toBe(
-      "This Mac can't see DIRECT-abc1:ZV-E10 yet. On the camera, open Menu, Network, PC Remote Function, Wi-Fi Direct Info and stay on that screen, then try again.",
+      "This computer can't see DIRECT-abc1:ZV-E10 yet. On the camera, open Menu, Network, PC Remote Function, Wi-Fi Direct Info and stay on that screen, then try again.",
     );
   });
 
@@ -151,5 +153,19 @@ describe('sshErrorMessage', () => {
         '192.168.122.1',
       ),
     ).toBe(CHANGED);
+  });
+});
+
+describe('fingerprint copy', () => {
+  test('the confirmation shows both hashes', () => {
+    expect(fingerprintText('SHA256:abc', 'aa:bb')).toBe(
+      "This camera's fingerprint is SHA256:abc (MD5 aa:bb). Check it against Access Authen. Info on the camera; it may show either form.",
+    );
+  });
+
+  test('a changed fingerprint shows the stored and the current one', () => {
+    expect(fingerprintChangedText('SHA256:old', 'SHA256:new')).toBe(
+      "This camera's fingerprint changed. Stored: SHA256:old. Camera now: SHA256:new. If you reset the camera, forget it in App settings and connect again; otherwise do not connect.",
+    );
   });
 });

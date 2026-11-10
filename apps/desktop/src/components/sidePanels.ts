@@ -1,6 +1,7 @@
 // The quiet left column: Scopes and timer, Cameras, and Save to. The Save to
 // section is also used by the App settings popover.
 
+import { sameAddress } from '../address';
 import type { Actions } from '../actions';
 import { button, el, icon } from '../dom';
 import type { AppSettings, DestinationMode } from '../ipc';
@@ -139,8 +140,6 @@ function scopes(store: AppStore, actions: Actions): { el: HTMLElement; destroy: 
   return { el: sect('Scopes and timer', g), destroy };
 }
 
-/** Phase 1 stored the bare address, later versions add the PTP/IP port. */
-const sameAddress = (a: string, b: string) => a.replace(/:15740$/, '') === b.replace(/:15740$/, '');
 
 function cameras(store: AppStore, actions: Actions): { el: HTMLElement; destroy: () => void } {
   const g = group('list', 'Cameras');

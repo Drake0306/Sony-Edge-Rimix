@@ -42,7 +42,7 @@ function setup(over: Partial<AppSettings> = {}) {
   const forget = vi.spyOn(actions, 'forgetCamera').mockResolvedValue();
   const unmount = mount(root, store, actions);
   mounted.push(unmount);
-  return { root, store, unmount, forget };
+  return { root, store, unmount, forget, actions };
 }
 
 const radios = (root: HTMLElement, label: string) =>
@@ -129,6 +129,14 @@ describe('app settings', () => {
     expect(show.textContent).toBe('Show log folder');
     show.click();
     expect(invoke).toHaveBeenLastCalledWith('open_logs');
+  });
+
+  test('a log folder that will not open is toasted', async () => {
+    const { root, actions } = setup();
+    const toast = vi.spyOn(actions, 'toast');
+    vi.mocked(invoke).mockRejectedValueOnce('No such folder');
+    [...root.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Show log folder')!.click();
+    await vi.waitFor(() => expect(toast).toHaveBeenCalledWith('Could not open the log folder: No such folder'));
   });
 
   test('offers Automatic and Ask me for Wi-Fi join and saves the choice', () => {

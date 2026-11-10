@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import cameraState from './fixtures/camera-state.json';
-import { ASK_FIND_MS, createActions, FIND_MS } from './actions';
+import { ASK_FIND_MS, createActions, FIND_MS, parseHostKeyChanged, rememberedFingerprint } from './actions';
+import { mount as mountTopbar } from './components/topbar';
 import { start } from './interval';
 import * as ipc from './ipc';
 import type { AppSettings, CameraState, DiscoveredCamera, Preset, RecentCamera, WifiJoin } from './ipc';
@@ -251,6 +252,38 @@ describe('Access Authentication', () => {
     expect(ipc.connect).toHaveBeenLastCalledWith('192.168.122.1:15740', SSID, { ...login, fingerprint: SHA });
   });
 
+  test('a changed fingerprint is parsed into both values', () => {
+    expect(parseHostKeyChanged(`HOSTKEY_CHANGED SHA256:old ${SHA}`)).toEqual({ expected: 'SHA256:old', actual: SHA });
+    expect(parseHostKeyChanged(`HOSTKEY ${SHA} ${MD5}`)).toBeNull();
+    expect(parseHostKeyChanged('Cannot connect to 1.2.3.4:15740: refused')).toBeNull();
+  });
+
+  test('a changed fingerprint stops with both values and nothing to confirm', async () => {
+    vi.mocked(ipc.connect).mockRejectedValueOnce(`HOSTKEY_CHANGED SHA256:old ${SHA}`);
+    const store = storeWith('Automatic', {}, { reconnecting: 4, interval: start({ everyS: 5, count: null }, 0) });
+    const actions = createActions(store);
+    expect(await actions.connect('192.168.122.1', null, { ...login, fingerprint: 'SHA256:old' })).toBe(false);
+    const pending = store.get().pendingFingerprint!;
+    expect(pending.changed).toEqual({ expected: 'SHA256:old', actual: SHA });
+    expect(store.get().error).toBeNull();
+    expect(store.get().screen).toBe('connect');
+    expect(store.get().reconnecting).toBeNull();
+    expect(store.get().interval).toBeNull();
+    // Nothing can be confirmed on this path: retry never connects.
+    expect(await pending.retry()).toBe(false);
+    expect(ipc.connect).toHaveBeenCalledTimes(1);
+  });
+
+  test('a remembered fingerprint is matched by address with or without the port', () => {
+    const rc: RecentCamera = {
+      ip: '10.0.0.7', model: 'ILCE-7M4', lastUsed: 1, ssid: null, sshUser: 'cam', sshFingerprint: SHA,
+    };
+    const settings = { ...defaultSettings('/tmp'), recentCameras: [rc] };
+    expect(rememberedFingerprint(settings, '10.0.0.7:15740', null)).toBe(SHA);
+    expect(rememberedFingerprint(settings, ' 10.0.0.7 ', null)).toBe(SHA);
+    expect(rememberedFingerprint(settings, '10.0.0.8:15740', null)).toBeNull();
+  });
+
   test('a remembered Access Authentication camera asks for its password instead of connecting', async () => {
     const rc: RecentCamera = {
       ip: '192.168.122.1', model: 'ILCE-7M4', lastUsed: 1, ssid: SSID, sshUser: 'cam', sshFingerprint: SHA,
@@ -363,6 +396,59 @@ describe('presets', () => {
     const store = storeWith('Automatic', {}, { camera, activePreset: 2 });
     await createActions(store).disconnect();
     expect(store.get().activePreset).toBeNull();
+  });
+});
+
+describe('connect clears a stale link state', () => {
+  test('a successful connect clears reconnecting and the interval; the top bar says Wi-Fi', async () => {
+    const store = storeWith('Automatic', {}, {
+      screen: 'main', camera: { ...camera, connected: false }, reconnecting: 5, interval: start({ everyS: 5, count: null }, 0),
+    });
+    const root = document.createElement('div');
+    const unmount = mountTopbar(root, store, {} as never);
+    let seen: Partial<AppState> | null = null;
+    vi.mocked(ipc.connect).mockImplementationOnce(async () => {
+      seen = { reconnecting: store.get().reconnecting, interval: store.get().interval };
+      return camera;
+    });
+    expect(await createActions(store).connect('192.168.122.1')).toBe(true);
+    expect(seen).toEqual({ reconnecting: null, interval: null });
+    expect(store.get().reconnecting).toBeNull();
+    expect(store.get().interval).toBeNull();
+    expect(root.textContent).toContain('Wi-Fi');
+    expect(root.textContent).not.toContain('Reconnecting');
+    unmount();
+  });
+
+  test('joining another network drops a reconnecting camera first', async () => {
+    const order: string[] = [];
+    vi.mocked(ipc.disconnect).mockImplementation(async () => void order.push('disconnect'));
+    vi.mocked(ipc.joinNetwork).mockImplementation(async () => void order.push('join'));
+    const store = storeWith('Automatic', {}, {
+      screen: 'main', camera, reconnecting: 2, interval: start({ everyS: 5, count: null }, 0),
+    });
+    let atJoin: Partial<AppState> | null = null;
+    vi.mocked(ipc.joinNetwork).mockImplementationOnce(async () => {
+      order.push('join');
+      atJoin = { reconnecting: store.get().reconnecting, interval: store.get().interval, camera: store.get().camera };
+    });
+    expect(await createActions(store).connectWithWifi({ ssid: 'DIRECT-new:ILCE-7M4', password: 'pw' })).toBe(true);
+    expect(order).toEqual(['disconnect', 'join']);
+    expect(atJoin).toEqual({ reconnecting: null, interval: null, camera: null });
+  });
+
+  test('joining with no camera connected does not disconnect', async () => {
+    const store = storeWith('Automatic');
+    await createActions(store).connectWithWifi({ ssid: SSID, password: 'pw' });
+    expect(ipc.disconnect).not.toHaveBeenCalled();
+    expect(ipc.joinNetwork).toHaveBeenCalledTimes(1);
+  });
+
+  test('Ask mode also drops a connected camera before waiting', async () => {
+    const store = storeWith('Ask', {}, { screen: 'main', camera });
+    await createActions(store).connectWithWifi({ ssid: SSID, password: '' });
+    expect(ipc.disconnect).toHaveBeenCalledTimes(1);
+    expect(ipc.joinNetwork).not.toHaveBeenCalled();
   });
 });
 

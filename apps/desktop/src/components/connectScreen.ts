@@ -3,7 +3,7 @@
 // the address field under their own disclosures), plus recently used cameras.
 
 import type { Actions } from '../actions';
-import { fingerprintText, NOT_A_WIFI_CODE, webcamErrorMessage } from '../copy';
+import { fingerprintChangedText, fingerprintText, NOT_A_WIFI_CODE, webcamErrorMessage } from '../copy';
 import { button, el, icon } from '../dom';
 import { discover, type SshLogin } from '../ipc';
 import { parseWifiQr } from '../qr/payload';
@@ -18,6 +18,7 @@ const REFRESH_MS = 5000;
 const RESCAN_MS = 3000;
 const NOTE = 'First time on this camera? Press OK on the camera screen when it asks to allow this computer.';
 const SCANNING = "Hold the camera's QR code up to the webcam.";
+export const SSH_PASSWORD_NEEDED = 'Enter the password shown under Access Authen. Info.';
 const INFO_GLYPH =
   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 7v4M8 5v.2" stroke-linecap="round"/></svg>';
 
@@ -242,6 +243,17 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     return !ssh.hidden && user ? { user, password: sshPw.value, fingerprint: null } : null;
   };
 
+  /**
+   * False, with the password field focused and the reason shown, while the
+   * Access Authentication box is open without a password.
+   */
+  const loginReady = (): boolean => {
+    if (ssh.hidden || sshPw.value) return true;
+    store.set({ error: SSH_PASSWORD_NEEDED });
+    sshPw.focus();
+    return false;
+  };
+
   const openLogin = () => {
     setOpen(sshToggle, ssh, true);
     (sshUser.value.trim() ? sshPw : sshUser).focus();
@@ -285,7 +297,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       return;
     }
     if (!fromScanner) {
-      if (store.get().connecting === null) await actions.connectWithWifi(wifi, login());
+      if (store.get().connecting === null && loginReady()) await actions.connectWithWifi(wifi, login());
       return;
     }
     if (text === failedText || store.get().connecting !== null) {
@@ -297,6 +309,10 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     pw.value = wifi.password;
     area.value = text;
     showPaste();
+    if (!loginReady()) {
+      rescan();
+      return;
+    }
     const ok = await actions.connectWithWifi(wifi, login());
     if (!ok) {
       if (!stopped) setFailedText(text);
@@ -320,6 +336,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       ssid.focus();
       return;
     }
+    if (!loginReady()) return;
     void actions.connectWithWifi({ ssid: name, password: pw.value }, login());
   });
   sshToggle.addEventListener('click', () => {
@@ -332,7 +349,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   });
   addrForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (ip.value.trim()) void actions.connect(ip.value, null, login());
+    if (ip.value.trim() && loginReady()) void actions.connect(ip.value, null, login());
   });
   matches.addEventListener('click', () => void store.get().pendingFingerprint?.retry());
   cancel.addEventListener('click', () => store.set({ pendingFingerprint: null }));
@@ -346,7 +363,13 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     }),
     watch(store, (s) => s.pendingFingerprint, (pending) => {
       confirm.hidden = pending === null;
-      confirmText.textContent = pending ? fingerprintText(pending.sha256) : '';
+      // A changed fingerprint has nothing to confirm: only Cancel is offered.
+      matches.hidden = !!pending?.changed;
+      confirmText.textContent = !pending
+        ? ''
+        : pending.changed
+          ? fingerprintChangedText(pending.changed.expected, pending.changed.actual)
+          : fingerprintText(pending.sha256, pending.md5);
     }),
     // A remembered Access Authentication camera: fill in what is known and
     // wait for the password.
@@ -384,7 +407,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
               openLogin();
               return;
             }
-            void actions.connect(cam.ip, null, login());
+            if (loginReady()) void actions.connect(cam.ip, null, login());
           });
           d.append(t, b);
           return d;

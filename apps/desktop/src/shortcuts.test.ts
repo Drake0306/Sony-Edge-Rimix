@@ -19,6 +19,16 @@ function setup() {
 }
 
 describe('shortcuts', () => {
+  test('Space on a focused button presses the button, not the shutter', () => {
+    const { actions, press } = setup();
+    const stop = document.createElement('button');
+    const e = press(' ', {}, stop);
+    expect(actions.shoot).not.toHaveBeenCalled();
+    expect(e.defaultPrevented).toBe(false);
+    press('f', {}, stop);
+    expect(actions.focus).toHaveBeenCalledTimes(1);
+  });
+
   test('Space, R and F shoot, record and focus', () => {
     const { actions, press } = setup();
     expect(press(' ').defaultPrevented).toBe(true);

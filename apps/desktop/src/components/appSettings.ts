@@ -136,7 +136,9 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   const logsRow = el('div', 'r');
   logsRow.setAttribute('role', 'listitem');
   const showLogs = button('pathbtn', 'Show log folder');
-  showLogs.addEventListener('click', () => void openLogs().catch(() => {}));
+  showLogs.addEventListener('click', () =>
+    void openLogs().catch((e) => actions.toast(`Could not open the log folder: ${e instanceof Error ? e.message : String(e)}`)),
+  );
   logsRow.append(el('span', 'k', 'Logs'), showLogs);
   logsGroup.append(logsRow);
 

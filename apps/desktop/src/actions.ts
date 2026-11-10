@@ -10,6 +10,7 @@ import {
   joiningText,
   wifiErrorMessage,
 } from './copy';
+import { sameAddress } from './address';
 import type { AppSettings, Preset, PtpValue, RecentCamera, SshLogin } from './ipc';
 import { start, type IntervalPlan } from './interval';
 import { describeFailures, upsertPreset } from './presets';
@@ -64,11 +65,20 @@ export function parseHostKey(err: string): { sha256: string; md5: string } | nul
 }
 
 /**
+ * The stored and current fingerprints in the `connect` error
+ * `HOSTKEY_CHANGED <expected> <actual_sha256>`, or null for any other error.
+ */
+export function parseHostKeyChanged(err: string): { expected: string; actual: string } | null {
+  const m = /^HOSTKEY_CHANGED (\S+) (\S+)$/.exec(err);
+  return m ? { expected: m[1], actual: m[2] } : null;
+}
+
+/**
  * The fingerprint confirmed earlier for the camera on this network (or at
  * this address when the network is unknown), told apart as in forgetCamera.
  */
-function rememberedFingerprint(settings: AppSettings | null, ip: string, ssid: string | null): string | null {
-  const same = (c: RecentCamera) => (ssid ? c.ssid === ssid : !c.ssid && c.ip === ip.trim());
+export function rememberedFingerprint(settings: AppSettings | null, ip: string, ssid: string | null): string | null {
+  const same = (c: RecentCamera) => (ssid ? c.ssid === ssid : !c.ssid && sameAddress(c.ip, ip));
   return settings?.recentCameras.find(same)?.sshFingerprint ?? null;
 }
 
@@ -98,6 +108,8 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
       error: null,
       pendingFingerprint: null,
       sshPrefill: null,
+      reconnecting: null,
+      interval: null,
       connecting: { phase: 'connecting', text: connectingText(name) },
     });
     try {
@@ -108,6 +120,8 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
         camera,
         settings,
         connecting: null,
+        reconnecting: null,
+        interval: null,
         error: null,
         // Presets belong to a camera; none is active on the new one yet.
         activePreset: null,
@@ -116,9 +130,23 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
       return true;
     } catch (e) {
       const hostKey = login ? parseHostKey(message(e)) : null;
+      const changed = login ? parseHostKeyChanged(message(e)) : null;
       // Connecting drops the previous camera first, so after a failed
       // switch there may be no camera left to show.
       const camera = await ipc.getState().catch(() => null);
+      if (changed) {
+        // Never connect silently: show both fingerprints and offer only Cancel.
+        store.set({
+          error: null,
+          camera,
+          connecting: null,
+          reconnecting: null,
+          interval: null,
+          screen: 'connect',
+          pendingFingerprint: { sha256: changed.actual, md5: '', retry: () => Promise.resolve(false), changed },
+        });
+        return false;
+      }
       if (hostKey && login) {
         // Not an error: the user compares the fingerprint with the camera's
         // screen on the connect screen, then connects again with it.
@@ -126,7 +154,15 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
           store.get().connecting
             ? Promise.resolve(false)
             : connectTo(ip, ssid, name, { ...login, fingerprint: hostKey.sha256 });
-        store.set({ error: null, camera, connecting: null, screen: 'connect', pendingFingerprint: { ...hostKey, retry } });
+        store.set({
+          error: null,
+          camera,
+          connecting: null,
+          reconnecting: null,
+          interval: null,
+          screen: 'connect',
+          pendingFingerprint: { ...hostKey, retry },
+        });
         return false;
       }
       const error = connectErrorMessage(message(e), ip.trim());
@@ -141,6 +177,10 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
 
   async function connectWithWifi({ ssid, password }: WifiCredentials, ssh: SshLogin | null = null): Promise<boolean> {
     if (store.get().connecting) return false;
+    // A camera still connected (or reconnecting) would rejoin its own
+    // network before each attempt, racing this join: drop it first.
+    const { camera: current, reconnecting } = store.get();
+    if (current || reconnecting !== null) await disconnect();
     store.set({ pendingFingerprint: null });
     const fail = (step: 'join' | 'find' | 'wait', e: unknown) => {
       store.set({ connecting: null, error: wifiErrorMessage(step, ssid, message(e)) });

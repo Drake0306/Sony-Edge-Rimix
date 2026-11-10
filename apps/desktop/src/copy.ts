@@ -55,8 +55,12 @@ export function sshErrorMessage(err: string): string | null {
 }
 
 /** The connect screen's confirmation line for a camera's SSH fingerprint. */
-export const fingerprintText = (sha256: string) =>
-  `This camera's fingerprint is ${sha256}. Check it against Access Authen. Info on the camera.`;
+export const fingerprintText = (sha256: string, md5: string) =>
+  `This camera's fingerprint is ${sha256}${md5 ? ` (MD5 ${md5})` : ''}. Check it against Access Authen. Info on the camera; it may show either form.`;
+
+/** The connect screen's warning when a camera's SSH fingerprint differs from the confirmed one. */
+export const fingerprintChangedText = (expected: string, actual: string) =>
+  `This camera's fingerprint changed. Stored: ${expected}. Camera now: ${actual}. If you reset the camera, forget it in App settings and connect again; otherwise do not connect.`;
 
 /** The connect screen's message for a webcam error (a DOMException name from getUserMedia). */
 export function webcamErrorMessage(e: unknown): string {
@@ -95,7 +99,7 @@ export function wifiErrorMessage(step: 'join' | 'find' | 'wait', ssid: string, d
     return `Joined ${ssid} but no camera answered. On the camera, open Menu, Network, PC Remote Function, and stay on that screen.`;
   }
   if (detail.startsWith(CANT_SEE)) {
-    return `This Mac can't see ${ssid} yet. On the camera, open Menu, Network, PC Remote Function, Wi-Fi Direct Info and stay on that screen, then try again.`;
+    return `This computer can't see ${ssid} yet. On the camera, open Menu, Network, PC Remote Function, Wi-Fi Direct Info and stay on that screen, then try again.`;
   }
   if (detail === NO_WIFI) {
     return 'This computer has no Wi-Fi. Put the camera and this computer on the same router and use Nearby.';

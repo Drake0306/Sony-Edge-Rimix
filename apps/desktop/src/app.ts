@@ -80,10 +80,12 @@ export function toastConnecting(store: AppStore, toast: (message: string) => voi
   });
 }
 
-/** Space shoots, R records, F focuses: once per press, never while typing. */
+/** Space shoots (unless a button has focus), R records, F focuses: once per press, never while typing. */
 export function handleShortcut(e: KeyboardEvent, store: AppStore, actions: Actions): void {
   if (e.repeat || store.get().screen !== 'main' || isTyping(e.target)) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // Space on a focused button presses that button (Stop, say), not the shutter.
+  if (e.key === ' ' && e.target instanceof HTMLButtonElement) return;
   if (e.key === ' ') actions.shoot();
   else if (e.key === 'r' || e.key === 'R') actions.toggleRecord();
   else if (e.key === 'f' || e.key === 'F') actions.focus();

@@ -4,7 +4,7 @@ import { NOT_A_WIFI_CODE } from '../copy';
 import type { AppSettings, RecentCamera } from '../ipc';
 import { createStore, defaultSettings, initialState, type AppStore } from '../state';
 import { createScanner, webcamSupported } from '../qr/scanner';
-import { mount } from './connectScreen';
+import { mount, SSH_PASSWORD_NEEDED } from './connectScreen';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(() => Promise.resolve([])) }));
 vi.mock('../qr/scanner', () => ({
@@ -235,13 +235,57 @@ describe('Access Authentication', () => {
     store.set({ pendingFingerprint: { sha256: SHA, md5: 'aa:bb', retry } });
     expect(block().hidden).toBe(false);
     expect(block().querySelector('p')!.textContent).toBe(
-      `This camera's fingerprint is ${SHA}. Check it against Access Authen. Info on the camera.`,
+      `This camera's fingerprint is ${SHA} (MD5 aa:bb). Check it against Access Authen. Info on the camera; it may show either form.`,
     );
     byText('It matches, connect').click();
     expect(retry).toHaveBeenCalledTimes(1);
     byText('Cancel').click();
     expect(store.get().pendingFingerprint).toBeNull();
     expect(block().hidden).toBe(true);
+  });
+
+  test('a changed fingerprint shows both values and only Cancel', () => {
+    const block = () => root.querySelector<HTMLElement>('.fingerprint')!;
+    const OLD = 'SHA256:storedstoredstoredstoredstoredstoredstor';
+    store.set({
+      pendingFingerprint: {
+        sha256: SHA,
+        md5: '',
+        retry: vi.fn(() => Promise.resolve(false)),
+        changed: { expected: OLD, actual: SHA },
+      },
+    });
+    expect(block().hidden).toBe(false);
+    const text = block().querySelector('p')!.textContent!;
+    expect(text).toBe(
+      `This camera's fingerprint changed. Stored: ${OLD}. Camera now: ${SHA}. If you reset the camera, forget it in App settings and connect again; otherwise do not connect.`,
+    );
+    expect(byText('It matches, connect').hidden).toBe(true);
+    byText('Cancel').click();
+    expect(store.get().pendingFingerprint).toBeNull();
+
+    // An ordinary confirmation afterwards offers the connect button again.
+    store.set({ pendingFingerprint: { sha256: SHA, md5: 'aa:bb', retry: vi.fn(() => Promise.resolve(true)) } });
+    expect(byText('It matches, connect').hidden).toBe(false);
+  });
+
+  test('an open login without a password asks for it instead of connecting', () => {
+    disclosure().click();
+    user().value = 'cam';
+    root.querySelector<HTMLInputElement>('#ssid')!.value = 'DIRECT-zz:ILCE-7M4';
+    root.querySelector<HTMLInputElement>('#pw')!.closest('form')!.requestSubmit();
+    expect(actions.connectWithWifi).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(pass());
+    expect(message().textContent).toBe(SSH_PASSWORD_NEEDED);
+    expect(SSH_PASSWORD_NEEDED).toBe('Enter the password shown under Access Authen. Info.');
+
+    byText('Advanced: connect by address').click();
+    root.querySelector<HTMLInputElement>('#ip')!.closest('form')!.requestSubmit();
+    expect(actions.connect).not.toHaveBeenCalled();
+
+    pass().value = 'pw';
+    root.querySelector<HTMLInputElement>('#ip')!.closest('form')!.requestSubmit();
+    expect(actions.connect).toHaveBeenCalledWith('192.168.122.1', null, { user: 'cam', password: 'pw', fingerprint: null });
   });
 });
 

@@ -85,6 +85,11 @@ export interface PendingFingerprint {
   sha256: string;
   md5: string;
   retry: () => Promise<boolean>;
+  /**
+   * Set when the camera's fingerprint differs from the confirmed one: there
+   * is nothing to confirm, only both fingerprints to show.
+   */
+  changed?: { expected: string; actual: string };
 }
 
 /** Where the connect screen fills in a remembered camera's login (no password is kept). */
