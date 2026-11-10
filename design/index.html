@@ -16,6 +16,7 @@ a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 header h1{font-size:clamp(1.9rem,3.5vw,2.8rem);margin:0 0 .4rem;letter-spacing:-.02em;text-wrap:balance}
 header p{max-width:68ch;color:var(--fg-2);margin:.3rem 0}
 .how{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:.9rem;color:var(--fg-3);margin-top:10px}
+.group{font-size:1.35rem;letter-spacing:-.01em;margin:44px 0 -12px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(560px,1fr));gap:28px;margin-top:32px}
 @media (max-width:620px){.grid{grid-template-columns:1fr}}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;min-width:0;display:flex;flex-direction:column}
@@ -42,11 +43,82 @@ header p{max-width:68ch;color:var(--fg-2);margin:.3rem 0}
 <body>
 <div class="wrap">
 <header>
-  <h1>Ten directions for Rimix</h1>
-  <p>Every mockup shows the same two screens with the same content: the main shooting screen (live view, exposure, shoot, presets, destination, filmstrip) and the connect screen (QR, Bluetooth, address). Only the design changes, so you can judge the look on its own.</p>
+  <h1>Glass variants for Rimix</h1>
+  <p>Round two. Every variant combines the two things kept from round one: the Viewfinder layout, where the live view fills the window and the controls float over it, and the Remote Console settings list, one row per setting with inline controls. All of them use an Apple-style frosted glass material. Same two screens, same content, so only the design changes.</p>
   <p>Click any preview to open it full size in a new tab. Each page scrolls: the main screen is on top, the connect screen below it. Press Escape and come back here to compare the next one.</p>
   <div class="how"><span>Previews are the real files, scaled down.</span><span>Each card lists the one idea, the palette, and the typefaces.</span></div>
 </header>
+<h2 class="group">Round two: glass variants</h2>
+<section class="grid">
+
+<article class="card" id="d11">
+  <a class="frame" href="mockups/11-glass-inspector.html" title="Open Glass Inspector full size">
+    <iframe src="mockups/11-glass-inspector.html" loading="lazy" tabindex="-1" title="Glass Inspector preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">11</span><h2>Glass Inspector</h2><a class="open" href="mockups/11-glass-inspector.html">Open full size</a></div>
+    <p class="idea">the Viewfinder layout with every control cast in dark Apple-style glass, and the Remote Console settings list housed in one tall inspector floating on the right edge of the footage.</p>
+    <div class="row"><span class="sw"><i style="background:#101216" title="#101216"></i><i style="background:#FFFFFF" title="#FFFFFF"></i><i style="background:#30D158" title="#30D158"></i><i style="background:#FF453A" title="#FF453A"></i></span><span class="fonts">Inter 400 to 700 (falls back to -apple-system / SF Pro Text / Helvetica Neue), tabular numerals on every value.</span></div>
+    <p class="avoid">Avoided: a branded accent colour (hierarchy is brighter vs dimmer glass), uppercase labels, monospace values, identical cards with grey shadows, arrows on buttons, page-load motion.</p>
+  </div>
+</article>
+<article class="card" id="d12">
+  <a class="frame" href="mockups/12-glass-drawer.html" title="Open Glass Drawer full size">
+    <iframe src="mockups/12-glass-drawer.html" loading="lazy" tabindex="-1" title="Glass Drawer preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">12</span><h2>Glass Drawer</h2><a class="open" href="mockups/12-glass-drawer.html">Open full size</a></div>
+    <p class="idea">the footage stays clean under one thin glass toolbar; everything else lives in two glass drawers, the Remote Console settings list sliding in from the right and captures plus destination rising as a half-open sheet from the bottom, with the shoot capsule riding on top of the sheet.</p>
+    <div class="row"><span class="sw"><i style="background:#101216" title="#101216"></i><i style="background:#FFFFFF" title="#FFFFFF"></i><i style="background:#30D158" title="#30D158"></i><i style="background:#FF453A" title="#FF453A"></i></span><span class="fonts">Inter 400 to 700 (falls back to -apple-system / SF Pro Text / Helvetica Neue), tabular numerals on every value.</span></div>
+    <p class="avoid">Avoided: a branded accent colour (hierarchy is brighter vs dimmer glass), uppercase labels, monospace values, identical cards with grey shadows, arrows on buttons, page-load motion; drawers are drawn open rather than animated in.</p>
+  </div>
+</article>
+<article class="card" id="d13">
+  <a class="frame" href="mockups/13-glass-dock.html" title="Open Glass Dock full size">
+    <iframe src="mockups/13-glass-dock.html" loading="lazy" tabindex="-1" title="Glass Dock preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">13</span><h2>Glass Dock</h2><a class="open" href="mockups/13-glass-dock.html">Open full size</a></div>
+    <p class="idea">everything you touch while shooting lives in one floating glass dock at the bottom of the footage (ten exposure chips above, presets, Record, Shoot, Focus below); tapping a chip opens the 06 settings list as a glass popover, shown open on ISO.</p>
+    <div class="row"><span class="sw"><i style="background:#0C0E12" title="#0C0E12"></i><i style="background:#FFFFFF" title="#FFFFFF"></i><i style="background:#FF453A" title="#FF453A"></i><i style="background:#30D158" title="#30D158"></i><i style="background:#1D1D1F" title="#1D1D1F"></i></span><span class="fonts">Inter 400-700 (Google Fonts) with -apple-system / SF Pro Text / Helvetica Neue fallbacks; tabular numerals on every value.</span></div>
+    <p class="avoid">Avoided: a colour accent for selection (hierarchy is brighter glass only), uppercase labels, monospace values, identical cards with one radius (dock 24, panels 18, groups 12, steppers 7), load animations, arrows on buttons.</p>
+  </div>
+</article>
+<article class="card" id="d14">
+  <a class="frame" href="mockups/14-glass-sidebar.html" title="Open Glass Sidebar full size">
+    <iframe src="mockups/14-glass-sidebar.html" loading="lazy" tabindex="-1" title="Glass Sidebar preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">14</span><h2>Glass Sidebar</h2><a class="open" href="mockups/14-glass-sidebar.html">Open full size</a></div>
+    <p class="idea">one macOS window, the footage running edge to edge, and every setting in a translucent sidebar that shows the live view blurred behind it the way a Mac sidebar shows the desktop; the 06 list pattern is the whole sidebar.</p>
+    <div class="row"><span class="sw"><i style="background:#0D1016" title="#0D1016"></i><i style="background:#161B28" title="#161B28"></i><i style="background:#2B3A52" title="#2B3A52"></i><i style="background:#3B2F3F" title="#3B2F3F"></i><i style="background:#FFFFFF" title="#FFFFFF"></i><i style="background:#FF453A" title="#FF453A"></i><i style="background:#30D158" title="#30D158"></i></span><span class="fonts">Inter 400-700 (Google Fonts) with -apple-system / SF Pro Text / Helvetica Neue fallbacks; tabular numerals on every value.</span></div>
+    <p class="avoid">Avoided: a colour accent for selection (brighter glass only), uppercase labels, monospace values, a second toolbar over the footage, identical cards (window 12, groups 10, steppers 6), load animations, arrows on buttons.</p>
+  </div>
+</article>
+<article class="card" id="d15">
+  <a class="frame" href="mockups/15-glass-ring.html" title="Open Glass Ring full size">
+    <iframe src="mockups/15-glass-ring.html" loading="lazy" tabindex="-1" title="Glass Ring preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">15</span><h2>Glass Ring</h2><a class="open" href="mockups/15-glass-ring.html">Open full size</a></div>
+    <p class="idea">the exposure controls become a lens control ring: a single glass disc in the bottom-right corner with Shoot at the hub, Record and Focus as inner arcs and the ten exposure values engraved around the outer ring; the selected value opens the stacked settings list as a glass panel beside it.</p>
+    <div class="row"><span class="sw"><i style="background:#0B0C0F" title="#0B0C0F"></i><i style="background:#FFFFFF" title="#FFFFFF"></i><i style="background:#FF453A" title="#FF453A"></i><i style="background:#30D158" title="#30D158"></i><i style="background:#1D1D1F" title="#1D1D1F"></i></span><span class="fonts">-apple-system / SF Pro Text with Inter 400-700 loaded as the fallback, then Segoe UI and system-ui; tabular numerals on every value.</span></div>
+    <p class="avoid">Avoided: a coloured accent for selection (hierarchy is opacity of glass), uppercase labels, monospace values, identical cards with the same shadow, decorative load motion, arrows on buttons; the ring is the one bold move and everything else is a quiet capsule or panel.</p>
+  </div>
+</article>
+<article class="card" id="d16">
+  <a class="frame" href="mockups/16-glass-daylight.html" title="Open Glass Daylight full size">
+    <iframe src="mockups/16-glass-daylight.html" loading="lazy" tabindex="-1" title="Glass Daylight preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">16</span><h2>Glass Daylight</h2><a class="open" href="mockups/16-glass-daylight.html">Open full size</a></div>
+    <p class="idea">the light twin of 11 for bright rooms: the same Viewfinder layout with one tall frosted-white inspector on the right carrying the stacked settings list, a bright capsule of Record, Shoot and Focus bottom-centre, a frosted filmstrip tray bottom-left and a thin frosted status bar, all in dark text so it can be compared with dark glass side by side.</p>
+    <div class="row"><span class="sw"><i style="background:#E9EBEF" title="#E9EBEF"></i><i style="background:#FFFFFF" title="#FFFFFF"></i><i style="background:#1D1D1F" title="#1D1D1F"></i><i style="background:#4A4A4F" title="#4A4A4F"></i><i style="background:#73737A" title="#73737A"></i><i style="background:#FF3B30" title="#FF3B30"></i><i style="background:#30D158" title="#30D158"></i></span><span class="fonts">-apple-system / SF Pro Text with Inter 400-700 loaded as the fallback, then Segoe UI and system-ui; tabular numerals on every value.</span></div>
+    <p class="avoid">Avoided: a coloured selection accent (selected is solid white glass or the ink itself), uppercase labels, monospace values, a grey card grid with identical shadows, decorative load motion, arrows on buttons.</p>
+  </div>
+</article>
+</section>
+<h2 class="group">Kept from round one, for reference</h2>
 <section class="grid">
 
 <article class="card" id="d01">
@@ -60,50 +132,6 @@ header p{max-width:68ch;color:var(--fg-2);margin:.3rem 0}
     <p class="avoid">Avoided: near-black with a green accent theme (green marks focus only), caps labels, monospace data, cards with shadows, decorative load motion, arrows on buttons.</p>
   </div>
 </article>
-<article class="card" id="d02">
-  <a class="frame" href="mockups/02-tether-studio.html" title="Open Tether Studio full size">
-    <iframe src="mockups/02-tether-studio.html" loading="lazy" tabindex="-1" title="Tether Studio preview"></iframe>
-  </a>
-  <div class="body">
-    <div class="head"><span class="num">02</span><h2>Tether Studio</h2><a class="open" href="mockups/02-tether-studio.html">Open full size</a></div>
-    <p class="idea">a calm, colour-neutral tethering workstation (tools left, live view centre, camera settings right, filmstrip docked below) where the only saturated colour is the Shoot button and the focus-lock frame.</p>
-    <div class="row"><span class="sw"><i style="background:#222222" title="#222222"></i><i style="background:#2C2C2C" title="#2C2C2C"></i><i style="background:#343434" title="#343434"></i><i style="background:#3D3D3D" title="#3D3D3D"></i><i style="background:#474747" title="#474747"></i><i style="background:#DADADA" title="#DADADA"></i><i style="background:#9C9C9C" title="#9C9C9C"></i></span><span class="fonts">Archivo (400/500/600) with Helvetica Neue / Arial fallback, tabular numerals throughout.</span></div>
-    <p class="avoid">Avoided: rounded cards with shadows, gradients, caps eyebrow labels, monospace data, a second accent colour, and any decorative motion.</p>
-  </div>
-</article>
-<article class="card" id="d03">
-  <a class="frame" href="mockups/03-dial-deck.html" title="Open Dial Deck full size">
-    <iframe src="mockups/03-dial-deck.html" loading="lazy" tabindex="-1" title="Dial Deck preview"></iframe>
-  </a>
-  <div class="body">
-    <div class="head"><span class="num">03</span><h2>Dial Deck</h2><a class="open" href="mockups/03-dial-deck.html">Open full size</a></div>
-    <p class="idea">the exposure controls are real objects. Shutter, aperture, ISO and exposure compensation are brushed-silver rotary dials with engraved scales and a value window sitting on a matte black top plate beside the live view; you turn dials, you do not type numbers. The Connect screen uses the same mode dial to choose QR / Bluetooth / Address.</p>
-    <div class="row"><span class="sw"><i style="background:#2a2926" title="#2a2926"></i><i style="background:#242321" title="#242321"></i><i style="background:#161614" title="#161614"></i><i style="background:#1e1e1c" title="#1e1e1c"></i><i style="background:#cfccc3" title="#cfccc3"></i><i style="background:#a7a49b" title="#a7a49b"></i><i style="background:#7d7a72" title="#7d7a72"></i></span><span class="fonts">Barlow (UI) and Barlow Condensed (engraved numerals and headings), fallback Helvetica Neue / Arial Narrow / Arial.</span></div>
-    <p class="avoid">Avoided: identical rounded cards (only two materials, bench and plate), all-caps eyebrows on headings (engraving only on the logo and the plate title), a single acid accent (orange is reserved for the record state), decorative load animation, monospace labels.</p>
-  </div>
-</article>
-<article class="card" id="d04">
-  <a class="frame" href="mockups/04-mission-control.html" title="Open Mission Control full size">
-    <iframe src="mockups/04-mission-control.html" loading="lazy" tabindex="-1" title="Mission Control preview"></iframe>
-  </a>
-  <div class="body">
-    <div class="head"><span class="num">04</span><h2>Mission Control</h2><a class="open" href="mockups/04-mission-control.html">Open full size</a></div>
-    <p class="idea">a broadcast control room on a laptop. Even with one camera, the main screen is a wall of camera tiles; the selected one expands to a program view with waveform and false colour docked beside it, tally colour (red recording, green live) carries state, and every exposure value sits in one aligned data column.</p>
-    <div class="row"><span class="sw"><i style="background:#0d1526" title="#0d1526"></i><i style="background:#0a111f" title="#0a111f"></i><i style="background:#131d31" title="#131d31"></i><i style="background:#182540" title="#182540"></i><i style="background:#1f2e4d" title="#1f2e4d"></i><i style="background:#263352" title="#263352"></i><i style="background:#34466c" title="#34466c"></i></span><span class="fonts">Archivo (variable width axis; values set at 125% width with tabular figures), fallback Helvetica Neue / Arial.</span></div>
-    <p class="avoid">Avoided: pure black, a lone acid accent (red and green are both semantic tallies), rounded SaaS cards with shadows (flat panels with 1px lines and 4px radius only), monospace for values, all-caps eyebrows, decorative gradients.</p>
-  </div>
-</article>
-<article class="card" id="d05">
-  <a class="frame" href="mockups/05-creator-daylight.html" title="Open Creator Daylight full size">
-    <iframe src="mockups/05-creator-daylight.html" loading="lazy" tabindex="-1" title="Creator Daylight preview"></iframe>
-  </a>
-  <div class="body">
-    <div class="head"><span class="num">05</span><h2>Creator Daylight</h2><a class="open" href="mockups/05-creator-daylight.html">Open full size</a></div>
-    <p class="idea">a camera remote that looks like a modern consumer app, with exposure as big numbers over fat sliders instead of a menu of fields.</p>
-    <div class="row"><span class="sw"><i style="background:#F3F5F8" title="#F3F5F8"></i><i style="background:#FFFFFF" title="#FFFFFF"></i><i style="background:#E9EDF3" title="#E9EDF3"></i><i style="background:#000000" title="#000000"></i><i style="background:#5B6470" title="#5B6470"></i><i style="background:#E0286F" title="#E0286F"></i><i style="background:#C21F5D" title="#C21F5D"></i></span><span class="fonts">Sora 400/600/800 (fallback -apple-system, Segoe UI, system-ui, sans-serif).</span></div>
-    <p class="avoid">Avoided: cream and serif, terracotta or indigo accents, drop shadows, uppercase eyebrow labels, monospace data labels, arrows on buttons; the only middle dots are in the strings the brief requires verbatim.</p>
-  </div>
-</article>
 <article class="card" id="d06">
   <a class="frame" href="mockups/06-remote-console.html" title="Open Remote Console full size">
     <iframe src="mockups/06-remote-console.html" loading="lazy" tabindex="-1" title="Remote Console preview"></iframe>
@@ -113,50 +141,6 @@ header p{max-width:68ch;color:var(--fg-2);margin:.3rem 0}
     <p class="idea">Rimix as a menu-bar-style companion: a narrow 460px control column and a borderless live-view window that float as two separate windows beside your other apps.</p>
     <div class="row"><span class="sw"><i style="background:#CDD5E3" title="#CDD5E3"></i><i style="background:#E7DFEA" title="#E7DFEA"></i><i style="background:#C8D9DF" title="#C8D9DF"></i><i style="background:#FFFFFF" title="#FFFFFF"></i><i style="background:#1D1D1F" title="#1D1D1F"></i><i style="background:#6E6E73" title="#6E6E73"></i><i style="background:#0A7AFF" title="#0A7AFF"></i></span><span class="fonts">-apple-system / SF Pro Text with Inter 400-700 as the loaded fallback, then Segoe UI and system-ui.</span></div>
     <p class="avoid">Avoided: a branded accent (blue is only ever &quot;selected&quot;), full-bleed dashboard layout, uppercase labels, monospace labels, drop-shadow cards inside the window (insets use a half-pixel hairline instead), and animated window entrances.</p>
-  </div>
-</article>
-<article class="card" id="d07">
-  <a class="frame" href="mockups/07-darkroom.html" title="Open Darkroom full size">
-    <iframe src="mockups/07-darkroom.html" loading="lazy" tabindex="-1" title="Darkroom preview"></iframe>
-  </a>
-  <div class="body">
-    <div class="head"><span class="num">07</span><h2>Darkroom</h2><a class="open" href="mockups/07-darkroom.html">Open full size</a></div>
-    <p class="idea">an analog photo lab under safelight: the live view sits on a dark bench, the last captures are an actual contact sheet with sprocket holes and edge print, settings read like the labelled dials of an enlarger timer, and the shutter is the one glowing red thing in the room; connecting is loading film, with the three methods as three canister labels.</p>
-    <div class="row"><span class="sw"><i style="background:#130f0c" title="#130f0c"></i><i style="background:#1a1511" title="#1a1511"></i><i style="background:#3a2e25" title="#3a2e25"></i><i style="background:#ecdfcb" title="#ecdfcb"></i><i style="background:#b5a28a" title="#b5a28a"></i><i style="background:#7d6c5a" title="#7d6c5a"></i><i style="background:#e4461a" title="#e4461a"></i></span><span class="fonts">Alegreya (humanist serif, headings only) with Public Sans for every value and label; bold tabular numerals on the dials.</span></div>
-    <p class="avoid">Avoided: neutral tinted-black, all-caps tracked eyebrows, monospace labels, identical rounded cards with grey shadows, any second accent colour, arrows on buttons, page-load animation.</p>
-  </div>
-</article>
-<article class="card" id="d08">
-  <a class="frame" href="mockups/08-blueprint.html" title="Open Blueprint full size">
-    <iframe src="mockups/08-blueprint.html" loading="lazy" tabindex="-1" title="Blueprint preview"></iframe>
-  </a>
-  <div class="body">
-    <div class="head"><span class="num">08</span><h2>Blueprint</h2><a class="open" href="mockups/08-blueprint.html">Open full size</a></div>
-    <p class="idea">the camera&#x27;s state is a technical drawing: pale cyan line work on blueprint blue, the live view annotated with dimension and leader lines (frame, horizon as a drafted level, focus callout), exposure drawn as an actual triangle with the three values at its corners, controls as outlined schematic components and camera facts in a title block; connecting is a wiring schematic from this computer to the camera along three labelled paths.</p>
-    <div class="row"><span class="sw"><i style="background:#0d2b5e" title="#0d2b5e"></i><i style="background:#0a2350" title="#0a2350"></i><i style="background:#a9d8ee" title="#a9d8ee"></i><i style="background:#eef7fc" title="#eef7fc"></i><i style="background:#6f9fd6" title="#6f9fd6"></i><i style="background:#3b64a3" title="#3b64a3"></i><i style="background:#ff8266" title="#ff8266"></i></span><span class="fonts">Saira Condensed for labels, headings and dimension text; Saira for values and body copy.</span></div>
-    <p class="avoid">Avoided: filled cards and drop shadows, a second accent colour, all-caps eyebrow labels (caps only on the few drafting-style buttons), monospace labels, numbered markers for things that are not a sequence, arrows on buttons, page-load animation.</p>
-  </div>
-</article>
-<article class="card" id="d09">
-  <a class="frame" href="mockups/09-bold-blocks.html" title="Open Bold Blocks full size">
-    <iframe src="mockups/09-bold-blocks.html" loading="lazy" tabindex="-1" title="Bold Blocks preview"></iframe>
-  </a>
-  <div class="body">
-    <div class="head"><span class="num">09</span><h2>Bold Blocks</h2><a class="open" href="mockups/09-bold-blocks.html">Open full size</a></div>
-    <p class="idea">neo-brutalist clarity. Every control is a flat block with a thick black rule; you can read the whole camera state from across the room. The Connect screen is three tall colour blocks, one per method.</p>
-    <div class="row"><span class="sw"><i style="background:#FFFFFF" title="#FFFFFF"></i><i style="background:#000000" title="#000000"></i><i style="background:#FFD400" title="#FFD400"></i><i style="background:#1E40FF" title="#1E40FF"></i><i style="background:#1DDB5A" title="#1DDB5A"></i></span><span class="fonts">Archivo Black for values and headings, Public Sans for labels and body.</span></div>
-    <p class="avoid">Avoided: shadows, gradients outside the live view, border radius (only the round shutter), eyebrow labels, middle dots, monospace, cream or tinted backgrounds.</p>
-  </div>
-</article>
-<article class="card" id="d10">
-  <a class="frame" href="mockups/10-glass-cockpit.html" title="Open Glass Cockpit full size">
-    <iframe src="mockups/10-glass-cockpit.html" loading="lazy" tabindex="-1" title="Glass Cockpit preview"></iframe>
-  </a>
-  <div class="body">
-    <div class="head"><span class="num">10</span><h2>Glass Cockpit</h2><a class="open" href="mockups/10-glass-cockpit.html">Open full size</a></div>
-    <p class="idea">an aircraft primary flight display. Shutter and ISO are vertical tapes flanking the live view, exposure comp is a horizontal tape beneath it, the level is an artificial horizon drawn over the image, aperture is a round gauge: you read exposure like a pilot reads altitude.</p>
-    <div class="row"><span class="sw"><i style="background:#070A0D" title="#070A0D"></i><i style="background:#0D1318" title="#0D1318"></i><i style="background:#35D6E8" title="#35D6E8"></i><i style="background:#3DDC84" title="#3DDC84"></i><i style="background:#FFB020" title="#FFB020"></i><i style="background:#FF4FD8" title="#FF4FD8"></i><i style="background:#E6EEF2" title="#E6EEF2"></i></span><span class="fonts">Barlow for the interface, Barlow Semi Condensed for tape and gauge numerals.</span></div>
-    <p class="avoid">Avoided: a single acid-green accent, monospace everywhere, rounded cards with shadows, gradients outside the live view, eyebrow labels, decorative motion.</p>
   </div>
 </article>
 </section>

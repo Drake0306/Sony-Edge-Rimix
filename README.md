@@ -10,4 +10,4 @@ Right now this repository holds the research that will shape the app:
 
 ## Design directions
 
-`design/index.html` is a gallery of ten different looks for the app, each built as a full mockup in `design/mockups/`. `design/inspiration.md` collects how existing camera apps look, with links. Open the gallery in a browser to compare.
+`design/index.html` is a gallery of design directions for the app, each built as a full mockup in `design/mockups/`. Round two keeps the Viewfinder layout and the Remote Console settings list and explores six glass variants of them. `design/inspiration.md` collects how existing camera apps look, with links. Open the gallery in a browser to compare.
