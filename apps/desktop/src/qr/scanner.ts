@@ -70,6 +70,30 @@ export function createScanner(
     stream = null;
   };
 
+  const constraints = (deviceId: string | null | undefined): MediaStreamConstraints => ({
+    video: {
+      deviceId: deviceId ? { exact: deviceId } : undefined,
+      facingMode: 'user',
+      width: { ideal: 1280 },
+    },
+  });
+
+  /** The saved webcam, or the default one when the saved one is gone. */
+  const openWebcam = async (): Promise<MediaStream> => {
+    try {
+      return await getUserMedia(constraints(opts.deviceId));
+    } catch (e) {
+      const name = (e as { name?: unknown } | null)?.name;
+      const gone = name === 'OverconstrainedError' || name === 'NotFoundError';
+      if (!opts.deviceId || !gone) throw e;
+      try {
+        return await getUserMedia(constraints(null));
+      } catch {
+        throw e;
+      }
+    }
+  };
+
   const start = async (video: HTMLVideoElement, canvas: HTMLCanvasElement) => {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) {
@@ -77,13 +101,7 @@ export function createScanner(
     }
     stop();
     const mine = gen;
-    const s = await getUserMedia({
-      video: {
-        deviceId: opts.deviceId ? { exact: opts.deviceId } : undefined,
-        facingMode: 'user',
-        width: { ideal: 1280 },
-      },
-    });
+    const s = await openWebcam();
     if (gen !== mine) {
       s.getTracks().forEach((t) => t.stop());
       return;

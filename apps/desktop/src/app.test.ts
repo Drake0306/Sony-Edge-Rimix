@@ -1,7 +1,8 @@
 import { describe, expect, test, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import cameraState from './fixtures/camera-state.json';
-import { eventToast, startApp } from './app';
+import { eventToast, startApp, toastConnecting } from './app';
+import { createStore, initialState, type AppState } from './state';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
@@ -56,5 +57,46 @@ describe('event toasts', () => {
   test('a failed save is shown in Save to, not as a toast; a skipped repeat still toasts', () => {
     expect(eventToast({ CaptureFailed: { filename: 'DSC00001.JPG', error: 'Cannot save to /x: denied' } })).toBeNull();
     expect(eventToast({ CaptureSkipped: { filename: 'DSC00001.JPG' } })).toContain('DSC00001.JPG');
+  });
+});
+
+describe('connect screen', () => {
+  test('App settings is there before the first connection', async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === 'get_settings') return Promise.reject(new Error('none'));
+      if (cmd === 'get_state') return Promise.resolve(null);
+      if (cmd === 'discover') return Promise.resolve([]);
+      return Promise.resolve();
+    });
+    document.body.innerHTML = '';
+    const root = document.createElement('div');
+    document.body.append(root);
+    await startApp(root);
+    expect(root.querySelector('.screen.connect')).not.toBeNull();
+    const gear = root.querySelector<HTMLButtonElement>('.screen.connect .gear')!;
+    expect(gear).not.toBeNull();
+    const pop = root.querySelector<HTMLElement>('.screen.connect .apppop')!;
+    expect(pop.hidden).toBe(true);
+    gear.click();
+    expect(pop.hidden).toBe(false);
+    expect(pop.querySelector('[aria-label="Wi-Fi join"]')).not.toBeNull();
+    expect(pop.querySelector('select[aria-label="Webcam"]')).not.toBeNull();
+  });
+});
+
+describe('connect progress on the main screen', () => {
+  test('each new progress line is a toast on the main screen only', () => {
+    const store = createStore<AppState>({ ...initialState(), screen: 'main' });
+    const toast = vi.fn();
+    toastConnecting(store, toast);
+    store.set({ connecting: { phase: 'joining', text: 'Joining X' } });
+    store.set({ connecting: { phase: 'joining', text: 'Joining X' } });
+    store.set({ connecting: { phase: 'finding', text: 'Looking for the camera on X' } });
+    store.set({ connecting: null });
+    expect(toast.mock.calls).toEqual([['Joining X'], ['Looking for the camera on X']]);
+
+    store.set({ screen: 'connect' });
+    store.set({ connecting: { phase: 'joining', text: 'Joining Y' } });
+    expect(toast).toHaveBeenCalledTimes(2);
   });
 });

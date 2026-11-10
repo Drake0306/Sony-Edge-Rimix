@@ -222,4 +222,92 @@ describe('scanning', () => {
     expect(message().textContent).toBe(failure);
     expect(start).toHaveBeenCalledTimes(3);
   });
+
+  function scanning() {
+    vi.useFakeTimers();
+    vi.mocked(webcamSupported).mockReturnValue(true);
+    const start = vi.fn(() => Promise.resolve());
+    let report: (text: string) => void = () => {};
+    vi.mocked(createScanner).mockImplementation((opts) => {
+      report = opts.onResult;
+      return { start, stop: vi.fn() };
+    });
+    return { start, report: (t: string) => report(t) };
+  }
+
+  const SONY = 'W01:S:DIRECT-abc1:ZV-E10;P:12345678;C:ZV-E10;';
+  const OTHER = 'W01:S:DIRECT-xyz9:A7IV;P:87654321;C:ILCE-7M4;';
+  const FAILURE = 'Joined DIRECT-abc1:ZV-E10 but no camera answered.';
+
+  test('a scanned code fills the fields and the text box', async () => {
+    const { report } = scanning();
+    setup();
+    report(SONY);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(root.querySelector<HTMLInputElement>('#ssid')!.value).toBe('DIRECT-abc1:ZV-E10');
+    expect(root.querySelector<HTMLInputElement>('#pw')!.value).toBe('12345678');
+    const area = root.querySelector('textarea')!;
+    expect(area.value).toBe(SONY);
+    expect(area.closest('[hidden]')).toBeNull();
+  });
+
+  test('a failed scanned connect is not retried by reading the same code again', async () => {
+    const { start, report } = scanning();
+    setup();
+    vi.mocked(actions.connectWithWifi).mockImplementation(async () => {
+      store.set({ connecting: null, error: FAILURE });
+      return false;
+    });
+    expect(byText('Scan again').hidden).toBe(true);
+
+    report(SONY);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(actions.connectWithWifi).toHaveBeenCalledTimes(1);
+    expect(message().textContent).toBe(FAILURE);
+    expect(byText('Scan again').hidden).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(start).toHaveBeenCalledTimes(2);
+    report(SONY);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(actions.connectWithWifi).toHaveBeenCalledTimes(1);
+    expect(message().textContent).toBe(FAILURE);
+    expect(start).toHaveBeenCalledTimes(3);
+
+    // A different code connects.
+    report(OTHER);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(actions.connectWithWifi).toHaveBeenCalledTimes(2);
+    expect(actions.connectWithWifi).toHaveBeenLastCalledWith(expect.objectContaining({ ssid: 'DIRECT-xyz9:A7IV' }));
+  });
+
+  test('Scan again lets the same code connect again', async () => {
+    const { start, report } = scanning();
+    setup();
+    vi.mocked(actions.connectWithWifi).mockResolvedValue(false);
+    report(SONY);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(actions.connectWithWifi).toHaveBeenCalledTimes(1);
+
+    const again = byText('Scan again');
+    again.click();
+    expect(again.hidden).toBe(true);
+    expect(start).toHaveBeenCalledTimes(2);
+    report(SONY);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(actions.connectWithWifi).toHaveBeenCalledTimes(2);
+  });
+
+  test('the scanner follows the webcam chosen in App settings', async () => {
+    const { start } = scanning();
+    setup({ webcamId: 'cam-a' });
+    expect(vi.mocked(createScanner).mock.lastCall![0].deviceId).toBe('cam-a');
+    expect(start).toHaveBeenCalledTimes(1);
+    store.set({ settings: { ...store.get().settings!, webcamId: 'cam-b' } });
+    expect(vi.mocked(createScanner).mock.lastCall![0].deviceId).toBe('cam-b');
+    expect(start).toHaveBeenCalledTimes(2);
+    // Other settings changes leave the scanner alone.
+    store.set({ settings: { ...store.get().settings!, appearance: 'Light' } });
+    expect(start).toHaveBeenCalledTimes(2);
+  });
 });

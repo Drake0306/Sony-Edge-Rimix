@@ -35,6 +35,8 @@ export const controls: Mount = (root, store, actions) => {
 
 // App settings mounts before the controls so its Escape handler runs first.
 const MAIN: Mount[] = [liveview.mount, topbar.mount, appSettings.mount, sidePanels.mount, filmstrip.mount, controls];
+// App settings here too, so the webcam and Wi-Fi join can be set before the first connection.
+const CONNECT: Mount[] = [connectScreen.mount, appSettings.mount];
 
 function toaster(host: HTMLElement): (message: string) => void {
   return (message) => {
@@ -53,6 +55,16 @@ export function eventToast(event: CameraEvent): string | null {
   if (typeof event !== 'object') return null;
   if ('CaptureSkipped' in event) return `Skipped a repeat of ${event.CaptureSkipped.filename}`;
   return null;
+}
+
+/**
+ * On the main screen, each new progress line of a connect (from the
+ * Cameras panel, say) is a toast; the connect screen shows its own.
+ */
+export function toastConnecting(store: AppStore, toast: (message: string) => void): () => void {
+  return watch(store, (s) => s.connecting?.text ?? null, (text, s) => {
+    if (text && s.screen === 'main') toast(text);
+  });
 }
 
 /** Space shoots, R records, F focuses: once per press, never while typing. */
@@ -90,8 +102,10 @@ export async function startApp(root: HTMLElement): Promise<void> {
     unmount.forEach((u) => u());
     screen.className = `screen ${name}`;
     screen.setAttribute('aria-label', name === 'main' ? 'Main screen' : 'Connect screen');
-    unmount = (name === 'main' ? MAIN : [connectScreen.mount]).map((m) => m(screen, store, actions));
+    unmount = (name === 'main' ? MAIN : CONNECT).map((m) => m(screen, store, actions));
   });
+
+  toastConnecting(store, toast);
 
   // The connect screen shows its own errors; on the main screen they are toasts.
   watch(store, (s) => s.error, (error, s) => {

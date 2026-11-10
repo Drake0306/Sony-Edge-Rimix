@@ -174,4 +174,55 @@ describe('qr scanner', () => {
     expect(r.decode).toHaveBeenCalledTimes(3);
     r.scanner.stop();
   });
+
+  function fakeVideoAndCanvas() {
+    const video = document.createElement('video');
+    video.play = vi.fn(async () => {});
+    const canvas = document.createElement('canvas');
+    canvas.getContext = vi.fn(() => ({ drawImage: vi.fn(), getImageData: vi.fn() })) as unknown as typeof canvas.getContext;
+    return { video, canvas };
+  }
+
+  it.each(['OverconstrainedError', 'NotFoundError'])(
+    'falls back to the default webcam when the saved one is gone (%s)',
+    async (name) => {
+      const stream = { getTracks: () => [] } as unknown as MediaStream;
+      const getUserMedia = vi
+        .fn<(c: MediaStreamConstraints) => Promise<MediaStream>>()
+        .mockRejectedValueOnce(Object.assign(new Error('gone'), { name }))
+        .mockResolvedValue(stream);
+      const { video, canvas } = fakeVideoAndCanvas();
+      const scanner = createScanner({ deviceId: 'old-cam', onResult: vi.fn() }, { getUserMedia });
+      await scanner.start(video, canvas);
+      expect(getUserMedia).toHaveBeenCalledTimes(2);
+      expect((getUserMedia.mock.calls[1][0].video as MediaTrackConstraints).deviceId).toBeUndefined();
+      expect(video.srcObject).toBe(stream);
+      scanner.stop();
+    },
+  );
+
+  it('rejects with the first error when the default webcam fails too', async () => {
+    const first = Object.assign(new Error('gone'), { name: 'NotFoundError' });
+    const getUserMedia = vi
+      .fn<(c: MediaStreamConstraints) => Promise<MediaStream>>()
+      .mockRejectedValueOnce(first)
+      .mockRejectedValueOnce(Object.assign(new Error('none'), { name: 'NotFoundError' }));
+    const { video, canvas } = fakeVideoAndCanvas();
+    const scanner = createScanner({ deviceId: 'old-cam', onResult: vi.fn() }, { getUserMedia });
+    await expect(scanner.start(video, canvas)).rejects.toBe(first);
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a denied webcam or one with no saved id', async () => {
+    const denied = Object.assign(new Error('no'), { name: 'NotAllowedError' });
+    const getUserMedia = vi.fn<(c: MediaStreamConstraints) => Promise<MediaStream>>().mockRejectedValue(denied);
+    const { video, canvas } = fakeVideoAndCanvas();
+    await expect(createScanner({ deviceId: 'cam', onResult: vi.fn() }, { getUserMedia }).start(video, canvas)).rejects.toBe(denied);
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+
+    const missing = Object.assign(new Error('none'), { name: 'NotFoundError' });
+    getUserMedia.mockReset().mockRejectedValue(missing);
+    await expect(createScanner({ deviceId: null, onResult: vi.fn() }, { getUserMedia }).start(video, canvas)).rejects.toBe(missing);
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+  });
 });

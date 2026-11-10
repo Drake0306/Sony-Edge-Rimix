@@ -75,6 +75,10 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   preview.append(video, canvas, tag, el('div', 'brk'));
   const scanStatus = el('p', 'scanstatus');
   scanStatus.setAttribute('role', 'status');
+  const scanAgain = button('textbtn', 'Scan again');
+  scanAgain.hidden = true;
+  const scanRow = el('div', 'scanrow');
+  scanRow.append(scanStatus, scanAgain);
   const pasteToggle = button('textbtn', "Paste the code's text");
   const pasteBox = el('div', 'field paste');
   pasteBox.hidden = true;
@@ -87,7 +91,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   const qr = way(
     'Scan the QR code',
     preview,
-    scanStatus,
+    scanRow,
     el('p', '', 'On the camera: Menu, Network, Send to Smartphone Func., Send to Smartphone.'),
     pasteToggle,
     pasteBox,
@@ -154,15 +158,31 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
 
   let stopped = false;
   let rescanTimer = 0;
-  const scanner = createScanner({
-    deviceId: store.get().settings?.webcamId,
-    onResult: (text) => void useCode(text, true),
-  });
+  const newScanner = (deviceId: string | null | undefined) =>
+    createScanner({ deviceId, onResult: (text) => void useCode(text, true) });
+  let scanner = newScanner(store.get().settings?.webcamId);
   const startScanner = () => {
     scanStatus.textContent = SCANNING;
     scanner.start(video, canvas).catch((e) => {
       if (!stopped) scanStatus.textContent = webcamErrorMessage(e);
     });
+  };
+  /** Starts again at once, with the webcam the settings name now. */
+  const restartScanner = () => {
+    window.clearTimeout(rescanTimer);
+    scanner.stop();
+    scanner = newScanner(store.get().settings?.webcamId);
+    if (webcamSupported()) startScanner();
+  };
+
+  // The text of a scanned code whose connect failed. Reading it again does
+  // nothing, so a code left in view does not retry forever and the error stays.
+  let failedText: string | null = null;
+  // The webcam watch below fires once on mount, before the first start.
+  let scannerStarted = false;
+  const setFailedText = (text: string | null) => {
+    failedText = text;
+    scanAgain.hidden = text === null;
   };
 
   const showPaste = () => {
@@ -202,8 +222,24 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       rescan();
       return;
     }
-    const ok = store.get().connecting === null && (await actions.connectWithWifi(wifi));
-    if (!ok && fromScanner) rescan();
+    if (!fromScanner) {
+      if (store.get().connecting === null) await actions.connectWithWifi(wifi);
+      return;
+    }
+    if (text === failedText || store.get().connecting !== null) {
+      rescan();
+      return;
+    }
+    // Show what was read, so a failure can be corrected by hand.
+    ssid.value = wifi.ssid;
+    pw.value = wifi.password;
+    area.value = text;
+    showPaste();
+    const ok = await actions.connectWithWifi(wifi);
+    if (!ok) {
+      if (!stopped) setFailedText(text);
+      rescan();
+    }
   }
 
   pasteToggle.addEventListener('click', () => {
@@ -211,6 +247,10 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     area.focus();
   });
   useText.addEventListener('click', () => void useCode(area.value, false));
+  scanAgain.addEventListener('click', () => {
+    setFailedText(null);
+    restartScanner();
+  });
   show.addEventListener('click', () => {
     const hidden = pw.type === 'password';
     pw.type = hidden ? 'text' : 'password';
@@ -241,6 +281,9 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       message.textContent = s.connecting?.text ?? s.error ?? '';
       message.classList.toggle('error', !s.connecting && !!s.error);
       applyBusy();
+    }),
+    watch(store, (s) => s.settings?.webcamId ?? null, () => {
+      if (scannerStarted) restartScanner();
     }),
     watch(store, (s) => s.nearby, (list) => {
       if (list.length === 0) {
@@ -277,6 +320,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
 
   if (webcamSupported()) startScanner();
   else scanStatus.textContent = webcamErrorMessage(new Error('unsupported'));
+  scannerStarted = true;
 
   let timer = 0;
   const scan = async () => {

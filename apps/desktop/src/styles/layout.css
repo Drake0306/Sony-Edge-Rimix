@@ -284,6 +284,14 @@ body{overflow:hidden}
 /* connect screen: scan, paste, type */
 .preview video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .way .scanstatus{color:var(--ink);min-height:1.45em}
+.scanrow{display:flex;align-items:baseline;gap:10px}
+.scanrow .scanstatus{flex:1;min-width:0}
+.scanrow .textbtn{flex:none}
+.scanrow .textbtn[hidden]{display:none}
+/* App settings on the connect screen: nothing else sits top-right here */
+.connect .gear{right:16px}
+.connect .apppop{right:16px}
+.connect .aparrow{right:23px}
 .textbtn{align-self:flex-start;color:var(--ink-2);font-size:12.5px;font-weight:600;text-decoration:underline;text-underline-offset:2px;text-decoration-color:var(--hair-2)}
 .textbtn:hover{color:var(--ink)}
 .textbtn:focus-visible{box-shadow:var(--focus);border-radius:4px}
