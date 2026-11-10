@@ -12,6 +12,7 @@ path = "src/main.rs"
 sony-ptpip = { path = "../sony-ptpip" }
 rimix-wifi = { path = "../rimix-wifi" }
 rimix-sftp = { path = "../rimix-sftp" }
+rimix-ble = { path = "../rimix-ble" }
 clap = { version = "4", features = ["derive"] }
 tokio = { workspace = true }
 anyhow = { workspace = true }

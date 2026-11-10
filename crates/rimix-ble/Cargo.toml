@@ -1,0 +1,11 @@
+[package]
+name = "rimix-ble"
+version = "0.1.0"
+description = "Finding Sony cameras over Bluetooth LE and talking to them"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+btleplug = "0.13"
+uuid = { workspace = true }
+tokio = { workspace = true }

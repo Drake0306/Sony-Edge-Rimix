@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use rimix_ble::{BleAdapter, BleError, Found};
 use rimix_wifi::{SystemRunner, Wifi, WifiError};
 use sony_ptpip::capture::{Destination, DestinationMode};
 use sony_ptpip::ptp::PtpValue;
@@ -536,6 +537,120 @@ pub async fn wifi_join(ssid: String, password_stdin: bool) -> Result<()> {
         network_text(report.seen_ssid.as_deref(), report.address.as_deref())
     );
     println!("address: {}", report.address.as_deref().unwrap_or("none"));
+    Ok(())
+}
+
+/// How long `ble handoff` and `ble shoot` listen for the camera.
+const BLE_LOOKUP: Duration = Duration::from_secs(5);
+
+/// The rows of `ble scan`, columns padded to line up.
+pub fn ble_table(found: &[Found]) -> String {
+    let mut rows = vec![[
+        "name".to_string(),
+        "model".to_string(),
+        "pairing".to_string(),
+        "address".to_string(),
+    ]];
+    for f in found {
+        rows.push([
+            f.advert.name.clone().unwrap_or_else(|| "-".to_string()),
+            f.advert.model_code.clone(),
+            if f.advert.pairing_open {
+                "open"
+            } else {
+                "closed"
+            }
+            .to_string(),
+            f.address.clone(),
+        ]);
+    }
+    let width = |col: usize| {
+        rows.iter()
+            .map(|r| r[col].chars().count())
+            .max()
+            .unwrap_or(0)
+    };
+    let widths = [width(0), width(1), width(2)];
+    rows.iter()
+        .map(|r| {
+            format!(
+                "{:w0$}  {:w1$}  {:w2$}  {}\n",
+                r[0],
+                r[1],
+                r[2],
+                r[3],
+                w0 = widths[0],
+                w1 = widths[1],
+                w2 = widths[2]
+            )
+        })
+        .collect()
+}
+
+/// The one camera whose name or address is `wanted`, ignoring case.
+pub fn pick_camera<'a>(found: &'a [Found], wanted: &str) -> Result<&'a Found> {
+    let wanted_lower = wanted.to_lowercase();
+    let matches: Vec<&Found> = found
+        .iter()
+        .filter(|f| {
+            f.address.to_lowercase() == wanted_lower
+                || f.advert.name.as_deref().map(str::to_lowercase) == Some(wanted_lower.clone())
+        })
+        .collect();
+    match matches.as_slice() {
+        [one] => Ok(one),
+        [] => Err(anyhow::Error::new(BleError::NotFound)
+            .context(format!("no Sony camera called {wanted:?} was heard"))),
+        _ => Err(CliError::Usage(format!(
+            "{} cameras are called {wanted:?}; give the address instead",
+            matches.len()
+        ))
+        .into()),
+    }
+}
+
+/// Listens and returns the camera called `wanted`.
+async fn find_camera(adapter: &dyn BleAdapter, wanted: &str) -> Result<Found> {
+    let found = adapter.scan(BLE_LOOKUP).await?;
+    Ok(pick_camera(&found, wanted)?.clone())
+}
+
+fn camera_label(found: &Found) -> &str {
+    found.advert.name.as_deref().unwrap_or(&found.address)
+}
+
+/// `rimix ble scan`: the Sony cameras heard.
+pub async fn ble_scan(seconds: Duration) -> Result<()> {
+    let adapter = rimix_ble::adapter_from_env().await?;
+    let found = adapter.scan(seconds).await?;
+    if found.is_empty() {
+        println!("no Sony cameras heard");
+    } else {
+        print!("{}", ble_table(&found));
+    }
+    Ok(())
+}
+
+/// `rimix ble handoff`: the camera's Wi-Fi name; the password only as its
+/// length.
+pub async fn ble_handoff(wanted: &str) -> Result<()> {
+    let adapter = rimix_ble::adapter_from_env().await?;
+    let camera = find_camera(adapter.as_ref(), wanted).await?;
+    let creds = rimix_ble::handoff(adapter.as_ref(), &camera.address).await?;
+    println!("ssid: {}", creds.ssid);
+    println!(
+        "password: (hidden, {} chars)",
+        creds.password.chars().count()
+    );
+    Ok(())
+}
+
+/// `rimix ble shoot`: one photo through the Bluetooth remote shutter.
+pub async fn ble_shoot(wanted: &str) -> Result<()> {
+    let adapter = rimix_ble::adapter_from_env().await?;
+    let camera = find_camera(adapter.as_ref(), wanted).await?;
+    rimix_ble::shoot(adapter.as_ref(), &camera.address).await?;
+    println!("shot: {}", camera_label(&camera));
     Ok(())
 }
 

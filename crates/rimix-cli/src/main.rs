@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use clap::{Args, Parser, Subcommand};
 use commands::{CliError, Target};
+use rimix_ble::BleError;
 use rimix_wifi::WifiError;
 use sony_ptpip::error::Error;
 use sony_ptpip::SshConfig;
@@ -151,10 +152,35 @@ enum Cmd {
         #[command(subcommand)]
         action: WifiCmd,
     },
+    /// Find Sony cameras over Bluetooth, read their Wi-Fi details or shoot.
+    Ble {
+        #[command(subcommand)]
+        action: BleCmd,
+    },
     /// Receive the files a camera pushes with its FTP Transfer function.
     Sftp {
         #[command(subcommand)]
         action: SftpCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum BleCmd {
+    /// List the Sony cameras heard: name, model, pairing, address.
+    Scan {
+        /// Seconds to listen.
+        #[arg(long, default_value_t = 5)]
+        seconds: u64,
+    },
+    /// Read a camera's Wi-Fi network name (the password stays hidden).
+    Handoff {
+        /// The camera's name or address, as `ble scan` shows it.
+        camera: String,
+    },
+    /// Take a photo with the camera's Bluetooth remote shutter.
+    Shoot {
+        /// The camera's name or address, as `ble scan` shows it.
+        camera: String,
     },
 }
 
@@ -235,8 +261,16 @@ fn parse_code(text: &str) -> Result<u16, String> {
 /// 3 when the camera cannot be reached or its SSH fingerprint needs
 /// confirming, 4 when it refuses (including its SSH login), 5 for local I/O
 /// and capture failures, 2 for arguments clap cannot check, else 1. For
-/// Wi-Fi: 3 when the network is not visible, 4 for any other failure.
+/// Wi-Fi: 3 when the network is not visible, 4 for any other failure. For
+/// Bluetooth: 3 when it is unavailable or the camera is not heard, 4 when
+/// the camera fails.
 fn exit_code(err: &anyhow::Error) -> i32 {
+    if let Some(ble) = err.downcast_ref::<BleError>() {
+        return match ble {
+            BleError::Unavailable(_) | BleError::NotFound => 3,
+            BleError::Io(_) => 4,
+        };
+    }
     if let Some(wifi) = err.downcast_ref::<WifiError>() {
         return match wifi {
             WifiError::NotVisible(_) => 3,
@@ -360,6 +394,11 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 password_stdin,
             } => commands::wifi_join(ssid, password_stdin).await,
         },
+        Cmd::Ble { action } => match action {
+            BleCmd::Scan { seconds } => commands::ble_scan(Duration::from_secs(seconds)).await,
+            BleCmd::Handoff { camera } => commands::ble_handoff(&camera).await,
+            BleCmd::Shoot { camera } => commands::ble_shoot(&camera).await,
+        },
         Cmd::Sftp {
             action:
                 SftpCmd::Serve {
@@ -419,6 +458,14 @@ mod tests {
         assert_eq!(code(WifiError::Failed("X did not come up".into())), 4);
         assert_eq!(code(WifiError::NoWifi), 4);
         assert_eq!(code(WifiError::Unsupported), 4);
+    }
+
+    #[test]
+    fn bluetooth_unavailable_or_unheard_exits_3_and_camera_failures_4() {
+        let code = |e| exit_code(&anyhow::Error::new(e));
+        assert_eq!(code(BleError::Unavailable("off".into())), 3);
+        assert_eq!(code(BleError::NotFound), 3);
+        assert_eq!(code(BleError::Io("x".into())), 4);
     }
 
     #[test]

@@ -455,6 +455,68 @@ fn wifi_status_prints_the_device() {
         .stdout("device: fake0\nnetwork: none\naddress: none\n");
 }
 
+fn ble(args: &[&str], mode: &str) -> std::process::Output {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut cmd = rimix(&tmp.path().join("guid"));
+    cmd.env("RIMIX_BLE", mode).arg("ble").args(args);
+    cmd.output().unwrap()
+}
+
+#[test]
+fn ble_scan_in_fake_mode_lists_the_fake_camera() {
+    let out = ble(&["scan", "--seconds", "1"], "fake");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        stdout(&out),
+        "name    model  pairing  address\nZV-E10  E1     open     fake-zv-e10\n"
+    );
+}
+
+#[test]
+fn ble_scan_without_bluetooth_exits_3_and_says_why() {
+    let out = ble(&["scan"], "off");
+    assert_eq!(out.status.code(), Some(3));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("Bluetooth is off for this run"), "{err}");
+}
+
+#[test]
+fn ble_handoff_finds_the_camera_by_name_and_hides_the_password() {
+    let out = ble(&["handoff", "zv-e10"], "fake");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        stdout(&out),
+        "ssid: DIRECT-abc1:ZV-E10\npassword: (hidden, 8 chars)\n"
+    );
+}
+
+#[test]
+fn ble_shoot_by_address_succeeds() {
+    let out = ble(&["shoot", "FAKE-ZV-E10"], "fake");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(stdout(&out), "shot: ZV-E10\n");
+}
+
+#[test]
+fn ble_handoff_to_an_unknown_camera_exits_3() {
+    let out = ble(&["handoff", "a7-iv"], "fake");
+    assert_eq!(out.status.code(), Some(3));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("a7-iv"), "{err}");
+}
+
 #[test]
 fn wifi_join_in_fake_mode_prints_the_report() {
     let tmp = tempfile::tempdir().unwrap();
