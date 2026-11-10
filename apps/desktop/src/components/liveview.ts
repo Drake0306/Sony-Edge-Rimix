@@ -47,8 +47,10 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
   small.width = small.height = GRID;
   const sctx = small.getContext('2d', { willReadFrequently: true });
   const ctx = canvas.getContext('2d');
-  const palette = colours();
-  const stripes = makeStripes(palette);
+  // Colours are re-read on every draw so a theme change shows at once; the
+  // zebra pattern is rebuilt only when its colours change.
+  let stripes: CanvasPattern | null = null;
+  let stripesKey = '';
 
   let meta: LiveViewMeta = { focus_frames: [], level_deg: null, fps: 0 };
   let lum: Float32Array | null = null;
@@ -80,6 +82,12 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, b.cw, b.ch);
+    const palette = colours();
+    const key = `${palette.zebraDark} ${palette.zebraLight}`;
+    if (key !== stripesKey) {
+      stripesKey = key;
+      stripes = makeStripes(palette);
+    }
     if (store.get().overlays.zebra && lum && stripes) {
       ctx.fillStyle = stripes;
       const cw = b.w / GRID;

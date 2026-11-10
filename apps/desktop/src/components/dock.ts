@@ -25,7 +25,8 @@ function chip(label: string): HTMLButtonElement {
   return b;
 }
 
-function presets(): HTMLElement {
+/** The four preset slots; presets arrive in the next version. */
+export function presets(): HTMLElement {
   const segc = el('div', 'segc');
   segc.setAttribute('role', 'radiogroup');
   segc.setAttribute('aria-label', 'Presets');

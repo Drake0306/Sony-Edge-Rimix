@@ -1,5 +1,6 @@
 // The camera settings popover: the stacked settings list from the mockup,
-// anchored above whichever dock chip opened it.
+// anchored above whichever dock chip opened it, or shown as a panel beside
+// the control ring with a Done button.
 
 import type { Actions } from '../actions';
 import { button, el, icon } from '../dom';
@@ -31,11 +32,21 @@ const GROUPS: Group[] = [
   { title: 'Focus and drive', codes: () => [PROP.focus, PROP.drive], chevrons: true },
 ];
 
+/** A dock chip or a ring segment. */
+export type Anchor = HTMLElement | SVGElement;
+
+export interface PopoverOptions {
+  /** A panel beside the ring: no arrow, a Done button, and the anchor marked `on`. */
+  beside?: boolean;
+}
+
 export interface SettingsPopover {
   arrow: HTMLElement;
   pop: HTMLElement;
   /** Opens for the chip (or closes when it is already open there). */
-  toggle(chip: HTMLElement, code: number | null, label: string): void;
+  toggle(chip: Anchor, code: number | null, label: string): void;
+  /** Opens from `anchor`, titled with `label`, highlighting the row for `highlightCode`. */
+  open(anchor: Anchor, label: string, highlightCode?: number | null): void;
   close(): void;
   isOpen(): boolean;
   /** Re-anchors to the open chip, e.g. after a resize. */
@@ -43,21 +54,32 @@ export interface SettingsPopover {
   destroy(): void;
 }
 
-export function createSettingsPopover(store: AppStore, actions: Actions): SettingsPopover {
+export function createSettingsPopover(
+  store: AppStore,
+  actions: Actions,
+  { beside = false }: PopoverOptions = {},
+): SettingsPopover {
   const arrow = el('div', 'arrow');
   arrow.setAttribute('aria-hidden', 'true');
-  const pop = el('div', 'pop glass');
+  const pop = el(beside ? 'aside' : 'div', beside ? 'pop ringpanel glass' : 'pop glass');
   pop.id = 'pop';
   pop.setAttribute('role', 'dialog');
   pop.setAttribute('aria-label', 'Camera settings');
   const ttl = el('div', 'ttl', 'Settings ');
   const from = el('span');
   ttl.append(from);
+  if (beside) {
+    const done = button('done', 'Done');
+    done.addEventListener('click', () => setOpen(null, null, ''));
+    ttl.append(done);
+  }
+  // Dock chips are disclosure buttons; ring segments are toggle buttons.
+  const [onClass, stateAttr] = beside ? ['on', 'aria-pressed'] : ['open', 'aria-expanded'];
   const body = el('div');
   pop.append(ttl, body);
   arrow.hidden = pop.hidden = true;
 
-  let anchor: HTMLElement | null = null;
+  let anchor: Anchor | null = null;
   let activeCode: number | null = null;
   let layoutKey = '';
   const rows = new Map<number, HTMLElement>();
@@ -133,6 +155,8 @@ export function createSettingsPopover(store: AppStore, actions: Actions): Settin
     });
     const code = Number(row.dataset.code);
     row.classList.toggle('active', code === activeCode);
+    if (code === activeCode) row.setAttribute('aria-current', 'true');
+    else row.removeAttribute('aria-current');
     row.classList.toggle('pending', pending.has(code));
   }
 
@@ -167,7 +191,7 @@ export function createSettingsPopover(store: AppStore, actions: Actions): Settin
 
   function place(): void {
     const wrap = pop.offsetParent;
-    if (!anchor || pop.hidden || !wrap) return;
+    if (beside || !anchor || pop.hidden || !wrap) return;
     const cr = anchor.getBoundingClientRect();
     const wr = wrap.getBoundingClientRect();
     const cx = cr.left - wr.left + cr.width / 2;
@@ -175,15 +199,16 @@ export function createSettingsPopover(store: AppStore, actions: Actions): Settin
     arrow.style.left = `${cx}px`;
   }
 
-  function setOpen(chip: HTMLElement | null, code: number | null, label: string): void {
-    anchor?.classList.remove('open');
-    anchor?.setAttribute('aria-expanded', 'false');
+  function setOpen(chip: Anchor | null, code: number | null, label: string): void {
+    anchor?.classList.remove(onClass);
+    anchor?.setAttribute(stateAttr, 'false');
     anchor = chip;
     activeCode = code;
-    pop.hidden = arrow.hidden = !chip;
+    pop.hidden = !chip;
+    arrow.hidden = beside || !chip;
     if (!chip) return;
-    chip.classList.add('open');
-    chip.setAttribute('aria-expanded', 'true');
+    chip.classList.add(onClass);
+    chip.setAttribute(stateAttr, 'true');
     from.textContent = `opened from ${label}`;
     render(store.get().camera);
     place();
@@ -193,6 +218,7 @@ export function createSettingsPopover(store: AppStore, actions: Actions): Settin
     arrow,
     pop,
     toggle: (chip, code, label) => setOpen(anchor === chip ? null : chip, code, label),
+    open: (chip, label, highlightCode = null) => setOpen(chip, highlightCode, label),
     close: () => setOpen(null, null, ''),
     isOpen: () => !pop.hidden,
     place,

@@ -1,6 +1,6 @@
 /* Colour, type and material tokens, ported from design/mockups/20-rimix-final.html.
-   Only the dark theme for now; every component reads these tokens, so the
-   light theme can be added as another block of the same names. */
+   Dark is the default on :root; the light theme below redefines the same
+   names, so every component works in both. */
 :root{
   --font:"Inter",-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
   --scheme:dark;
@@ -98,4 +98,82 @@
   --preview-ts:0 1px 2px rgba(0,0,0,.40);
   --preview-tag:rgba(255,255,255,.14);
   --error-ink:#FFB4AE;
+  --shoot-ink:#1D1D1F;
+}
+
+/* Light theme (design 16), ported verbatim from the mockup's light block.
+   theme.ts sets data-theme="light" for Light, and for System when the OS
+   is light. Tokens not listed here are the same in both themes. */
+:root[data-theme="light"]{
+  --scheme:light;
+  --bg:#E9EBEF;
+  --ink:#1D1D1F;
+  --ink-2:#4A4A4F;
+  --ink-3:#73737A;
+  --hair:rgba(0,0,0,.10);
+  --hair-2:rgba(0,0,0,.14);
+  --well:rgba(0,0,0,.05);
+  --well-2:rgba(0,0,0,.08);
+  --group-bg:rgba(255,255,255,.55);
+  --group-ring:rgba(0,0,0,.09);
+  --hov:rgba(0,0,0,.06);
+  --hov-2:rgba(0,0,0,.10);
+  --row-active:rgba(255,255,255,.88);
+  --chip:rgba(255,255,255,.45);
+  --chip-hov:rgba(255,255,255,.75);
+  --chip-open:rgba(255,255,255,.96);
+  --chip-open-shadow:0 1px 3px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.08);
+  --sel:#1D1D1F;
+  --sel-ink:#FFFFFF;
+  --sel-ink-2:rgba(255,255,255,.70);
+  --sel-shadow:none;
+  --ctl:rgba(255,255,255,.92);
+  --ctl-hov:#FFFFFF;
+  --ctl-ring:rgba(0,0,0,.12);
+  --shoot-well:rgba(0,0,0,.05);
+  --shoot-ring:#1D1D1F;
+  --switch:rgba(0,0,0,.16);
+  --switch-hov:rgba(0,0,0,.24);
+  --icon:#4A4A4F;
+  --thumb-ring:rgba(0,0,0,.16);
+  --thumb-hov:rgba(29,29,31,.80);
+  --thumb-n:rgba(255,255,255,.60);
+  --glass:linear-gradient(180deg,rgba(255,255,255,.35),rgba(255,255,255,.10)),rgba(255,255,255,.56);
+  --glass-primary:linear-gradient(180deg,rgba(255,255,255,.40),rgba(255,255,255,.15)),rgba(255,255,255,.68);
+  --glass-quiet:linear-gradient(180deg,rgba(255,255,255,.25),rgba(255,255,255,.08)),rgba(255,255,255,.52);
+  --glass-deep:linear-gradient(180deg,rgba(255,255,255,.30),rgba(255,255,255,.10)),rgba(255,255,255,.66);
+  --glass-pop:linear-gradient(180deg,rgba(255,255,255,.40),rgba(255,255,255,.15)),rgba(255,255,255,.78);
+  --spec:inset 0 1px 0 rgba(255,255,255,.95), inset 1px 0 0 rgba(255,255,255,.60), inset -1px 0 0 rgba(255,255,255,.30);
+  --lift:0 0 0 .5px rgba(0,0,0,.07), 0 1px 2px rgba(20,24,32,.10), 0 12px 32px rgba(20,24,32,.18);
+  --lift-quiet:0 0 0 .5px rgba(0,0,0,.06), 0 8px 24px rgba(20,24,32,.12);
+  --ts:none;
+  --focus:0 0 0 2px #1D1D1F, 0 0 0 4px rgba(255,255,255,.90);
+  --lvl-1:rgba(0,0,0,.25);
+  --lvl-2:rgba(0,0,0,.45);
+  --lvl-3:rgba(0,0,0,.30);
+  --badge-bg:rgba(255,255,255,.82);
+  --badge-ring:0 0 0 .5px rgba(0,0,0,.08);
+  --connect-bg:#DADDE3;
+  --webcam:blur(26px) brightness(1.08) saturate(.65);
+  --vignette:radial-gradient(80% 70% at 50% 45%,transparent 35%,rgba(20,24,32,.22) 100%);
+  --reticle:rgba(29,29,31,.60);
+  --headline-ts:none;
+  --input-bg:#FFFFFF;
+  --input-hov:#FFFFFF;
+  --input-ring:rgba(0,0,0,.16);
+  --ring-bg:linear-gradient(rgba(255,255,255,.35),rgba(255,255,255,.10)),rgba(255,255,255,.56);
+  --ring-shadow:inset 0 1px 0 rgba(255,255,255,.95), inset 1px 0 0 rgba(255,255,255,.60), 0 24px 60px rgba(20,24,32,.24), 0 1px 2px rgba(20,24,32,.10), 0 0 0 .5px rgba(0,0,0,.07);
+  --tick:rgba(0,0,0,.35);
+  --seg:rgba(255,255,255,.40);
+  --seg-hov:rgba(255,255,255,.72);
+  --seg-on:rgba(255,255,255,.94);
+  --seg-on-hov:#FFFFFF;
+  --seg-stroke:rgba(0,0,0,.08);
+  --seg-on-stroke:rgba(0,0,0,.18);
+  --act-fill:rgba(255,255,255,.55);
+  --act-hov:rgba(255,255,255,.85);
+  --act-stroke:rgba(0,0,0,.08);
+  --txt-stroke:transparent;
+  /* App tokens beyond the mockup's list. */
+  --error-ink:#B3261E;
 }

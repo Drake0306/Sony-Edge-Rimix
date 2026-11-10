@@ -1,10 +1,9 @@
-// The status capsule (Rimix, model, link, battery, firmware) and the App
-// settings button with its popover. For now the popover holds Save to only.
+// The status capsule: Rimix, model, link, battery and firmware. The App
+// settings button beside it is in appSettings.ts.
 
 import type { Actions } from '../actions';
-import { button, el, icon } from '../dom';
+import { el } from '../dom';
 import { watch, type AppStore } from '../state';
-import { saveToSection } from './sidePanels';
 
 function pair(...children: (Node | string)[]): HTMLElement {
   const p = el('span', 'pair');
@@ -12,7 +11,7 @@ function pair(...children: (Node | string)[]): HTMLElement {
   return p;
 }
 
-export function mount(root: HTMLElement, store: AppStore, actions: Actions): () => void {
+export function mount(root: HTMLElement, store: AppStore, _actions: Actions): () => void {
   const status = el('header', 'status glass capsule');
   status.setAttribute('aria-label', 'Camera status');
   const model = el('span', 'cam');
@@ -30,36 +29,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   status.append(el('span', 'brand', 'Rimix'), model, pair(bars, link), battPair, pair('Firmware ', fw));
   status.lastElementChild!.classList.add('fw');
 
-  const gear = button('gear glass quiet', undefined, 'App settings');
-  gear.setAttribute('aria-haspopup', 'dialog');
-  gear.setAttribute('aria-expanded', 'false');
-  gear.setAttribute('aria-controls', 'apppop');
-  gear.append(icon('gearglyph', '', '0 0 20 20'), el('span', 'lbl', 'App settings'));
-
-  const aparrow = el('div', 'aparrow');
-  aparrow.setAttribute('aria-hidden', 'true');
-  const app = el('div', 'apppop glass');
-  app.id = 'apppop';
-  app.setAttribute('role', 'dialog');
-  app.setAttribute('aria-label', 'App settings');
-  const saveTo = saveToSection(store, actions);
-  app.append(el('div', 'ttl', 'App settings'), saveTo.el);
-  app.hidden = aparrow.hidden = true;
-
-  const setOpen = (open: boolean) => {
-    app.hidden = aparrow.hidden = !open;
-    gear.setAttribute('aria-expanded', String(open));
-    if (open) app.querySelector<HTMLElement>('button')?.focus();
-  };
-  gear.addEventListener('click', () => setOpen(app.hidden));
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Escape' && !app.hidden) {
-      setOpen(false);
-      gear.focus();
-    }
-  };
-  document.addEventListener('keydown', onKey);
-  root.append(status, gear, aparrow, app);
+  root.append(status);
 
   const off = watch(
     store,
@@ -79,8 +49,6 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
 
   return () => {
     off();
-    saveTo.destroy();
-    document.removeEventListener('keydown', onKey);
-    [status, gear, aparrow, app].forEach((e) => e.remove());
+    status.remove();
   };
 }

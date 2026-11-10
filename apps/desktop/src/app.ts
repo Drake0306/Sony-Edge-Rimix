@@ -1,22 +1,41 @@
 // Wires the store to the camera events and swaps between the connect screen
-// and the main screen. Also owns toasts and the single-key shortcuts.
+// and the main screen, with the dock or the ring as its controls. Also owns
+// toasts, the single-key shortcuts and applying the saved theme and layout.
 
 import { createActions, type Actions } from './actions';
+import * as appSettings from './components/appSettings';
 import * as connectScreen from './components/connectScreen';
 import * as dock from './components/dock';
 import * as filmstrip from './components/filmstrip';
 import * as liveview from './components/liveview';
+import * as ring from './components/ring';
 import * as sidePanels from './components/sidePanels';
 import * as topbar from './components/topbar';
 import { el, isTyping } from './dom';
 import { getSettings, getState, onCameraEvent, type CameraEvent } from './ipc';
 import { applyEvent, createStore, initialState, watch, type AppStore } from './state';
+import { applyAppearance, applyLayout } from './theme';
 
 const TOAST_MS = 4000;
 
 type Mount = (root: HTMLElement, store: AppStore, actions: Actions) => () => void;
 
-const MAIN: Mount[] = [liveview.mount, topbar.mount, sidePanels.mount, filmstrip.mount, dock.mount];
+/** The dock or the ring, whichever `data-layout` names; swapped when it changes. */
+export const controls: Mount = (root, store, actions) => {
+  let unmount = () => {};
+  const off = watch(store, (s) => s.settings?.layout ?? 'Dock', () => {
+    unmount();
+    const layout = document.documentElement.getAttribute('data-layout');
+    unmount = (layout === 'ring' ? ring.mount : dock.mount)(root, store, actions);
+  });
+  return () => {
+    off();
+    unmount();
+  };
+};
+
+// App settings mounts before the controls so its Escape handler runs first.
+const MAIN: Mount[] = [liveview.mount, topbar.mount, appSettings.mount, sidePanels.mount, filmstrip.mount, controls];
 
 function toaster(host: HTMLElement): (message: string) => void {
   return (message) => {
@@ -47,7 +66,16 @@ export function handleShortcut(e: KeyboardEvent, store: AppStore, actions: Actio
 }
 
 export async function startApp(root: HTMLElement): Promise<void> {
-  const store = createStore(initialState());
+  let settingsError: unknown = null;
+  const settings = await getSettings().catch((e: unknown) => {
+    settingsError = e;
+    return null;
+  });
+  const store = createStore({ ...initialState(), settings });
+  // Theme and layout go on <html> before anything renders (Dark and Dock
+  // when settings fail to load) and follow the settings from then on.
+  watch(store, (s) => s.settings?.appearance ?? 'Dark', (a) => applyAppearance(a));
+  watch(store, (s) => s.settings?.layout ?? 'Dock', (l) => applyLayout(l));
   const toasts = el('div', 'toasts');
   const toast = toaster(toasts);
   const actions = createActions(store, toast);
@@ -84,8 +112,8 @@ export async function startApp(root: HTMLElement): Promise<void> {
   });
 
   try {
-    const [settings, camera] = await Promise.all([getSettings(), getState()]);
-    store.set({ settings });
+    if (settingsError) throw settingsError;
+    const camera = await getState();
     if (camera) {
       store.set({
         camera,
