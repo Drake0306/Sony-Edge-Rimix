@@ -11,17 +11,22 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(() => Promise.resolve(()
 
 const camera = cameraState as unknown as CameraState;
 
+const unmounts: Array<() => void> = [];
+
 function setup(): { root: HTMLElement; store: AppStore } {
   document.body.innerHTML = '';
   const root = document.createElement('div');
   document.body.append(root);
   const store = createStore({ ...initialState(), screen: 'main' as const, camera });
-  mount(root, store, createActions(store));
+  unmounts.push(mount(root, store, createActions(store)));
   return { root, store };
 }
 
 describe('dock', () => {
-  beforeEach(() => vi.mocked(invoke).mockClear());
+  beforeEach(() => {
+    unmounts.splice(0).forEach((u) => u());
+    vi.mocked(invoke).mockClear();
+  });
 
   test('dock_renders_ten_chips_with_short_labels', () => {
     const { root } = setup();
@@ -90,6 +95,40 @@ describe('dock', () => {
     expect(row.classList.contains('pending')).toBe(true);
     row.querySelectorAll<HTMLButtonElement>('.step button')[1].click();
     expect(invoke).toHaveBeenCalledWith('step_property', { code: 0xd20d, delta: 1 });
+  });
+
+  test('arrow keys step the open chip and nothing when closed', () => {
+    const { root } = setup();
+    const press = (key: string, init: KeyboardEventInit = {}) =>
+      document.dispatchEvent(new KeyboardEvent('keydown', { key, cancelable: true, ...init }));
+    const steps = () => vi.mocked(invoke).mock.calls.filter((c) => c[0] === 'step_property');
+    press('ArrowRight');
+    expect(steps()).toHaveLength(0);
+    root.querySelectorAll<HTMLButtonElement>('.chip')[1].click();
+    press('ArrowRight');
+    expect(invoke).toHaveBeenLastCalledWith('step_property', { code: 0xd20d, delta: 1 });
+    press('ArrowLeft');
+    expect(invoke).toHaveBeenLastCalledWith('step_property', { code: 0xd20d, delta: -1 });
+    press('ArrowUp');
+    expect(invoke).toHaveBeenLastCalledWith('step_property', { code: 0xd20d, delta: 1 });
+    press('ArrowDown');
+    expect(invoke).toHaveBeenLastCalledWith('step_property', { code: 0xd20d, delta: -1 });
+    expect(steps()).toHaveLength(4);
+    press('ArrowRight', { metaKey: true });
+    expect(steps()).toHaveLength(4);
+    press('Escape');
+    press('ArrowRight');
+    expect(steps()).toHaveLength(4);
+  });
+
+  test('arrow keys do nothing while typing', () => {
+    const { root } = setup();
+    root.querySelectorAll<HTMLButtonElement>('.chip')[1].click();
+    const input = document.createElement('input');
+    document.body.append(input);
+    input.focus();
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(vi.mocked(invoke).mock.calls.filter((c) => c[0] === 'step_property')).toHaveLength(0);
   });
 
   test('Escape closes the popover', () => {

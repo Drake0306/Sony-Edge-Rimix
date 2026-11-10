@@ -6,7 +6,7 @@ import { button, el } from '../dom';
 import { chipValue, CHIP_CODES, findProp, SETTING_NAMES } from '../props';
 import { watch, type AppState, type AppStore } from '../state';
 import { presetsControl } from './presetsControl';
-import { createSettingsPopover } from './settingsPopover';
+import { createSettingsPopover, stepOnArrow } from './settingsPopover';
 
 const FOCUS_GLYPH =
   '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M13 3h2a2 2 0 0 1 2 2v2M17 13v2a2 2 0 0 1-2 2h-2M7 17H5a2 2 0 0 1-2-2v-2"/><circle cx="10" cy="10" r="2.2"/></svg>';
@@ -97,6 +97,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       popover.close();
       chipEl?.focus();
     }
+    stepOnArrow(e, popover, store, actions);
   };
   const onResize = () => popover.place();
   document.addEventListener('keydown', onKey);

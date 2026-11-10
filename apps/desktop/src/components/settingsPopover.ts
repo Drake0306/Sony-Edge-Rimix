@@ -3,7 +3,7 @@
 // the control ring with a Done button.
 
 import type { Actions } from '../actions';
-import { button, el, icon } from '../dom';
+import { button, el, icon, isTyping } from '../dom';
 import type { CameraState, PropertySummary } from '../ipc';
 import { findProp, isColourTemp, isUsable, PROP, sameRaw, SETTING_NAMES, shortText } from '../props';
 import { watch, type AppStore } from '../state';
@@ -49,6 +49,8 @@ export interface SettingsPopover {
   open(anchor: Anchor, label: string, highlightCode?: number | null): void;
   close(): void;
   isOpen(): boolean;
+  /** The code of the highlighted row; null when closed or opened without one. */
+  activeCode(): number | null;
   /** Re-anchors to the open chip, e.g. after a resize. */
   place(): void;
   destroy(): void;
@@ -221,7 +223,28 @@ export function createSettingsPopover(
     open: (chip, label, highlightCode = null) => setOpen(chip, highlightCode, label),
     close: () => setOpen(null, null, ''),
     isOpen: () => !pop.hidden,
+    activeCode: () => (pop.hidden ? null : activeCode),
     place,
     destroy: unwatch,
   };
+}
+
+const ARROW_STEP: Record<string, number> = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 };
+
+/** Arrow keys step the setting whose row is highlighted; returns whether the key was used. */
+export function stepOnArrow(
+  e: KeyboardEvent,
+  popover: SettingsPopover,
+  store: AppStore,
+  actions: Actions,
+): boolean {
+  const delta = ARROW_STEP[e.key];
+  const code = popover.activeCode();
+  if (delta === undefined || code === null || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) {
+    return false;
+  }
+  if (!isUsable(findProp(store.get().camera, code))) return false;
+  e.preventDefault();
+  actions.stepProperty(code, delta);
+  return true;
 }

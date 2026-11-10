@@ -129,4 +129,37 @@ describe('ring', () => {
     unmount();
     expect(root.querySelector('.ring, .ringpanel, .ringbar')).toBeNull();
   });
+  test('arrow keys step the open chip and nothing when closed', () => {
+    const { root } = setup();
+    const press = (key: string, init: KeyboardEventInit = {}) =>
+      document.dispatchEvent(new KeyboardEvent('keydown', { key, cancelable: true, ...init }));
+    const steps = () => vi.mocked(invoke).mock.calls.filter((c) => c[0] === 'step_property');
+    press('ArrowRight');
+    expect(steps()).toHaveLength(0);
+    root.querySelectorAll<SVGGElement>('.ring .seg')[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    press('ArrowRight');
+    expect(invoke).toHaveBeenLastCalledWith('step_property', { code: 0xd20d, delta: 1 });
+    press('ArrowLeft');
+    expect(invoke).toHaveBeenLastCalledWith('step_property', { code: 0xd20d, delta: -1 });
+    press('ArrowUp');
+    expect(invoke).toHaveBeenLastCalledWith('step_property', { code: 0xd20d, delta: 1 });
+    press('ArrowDown');
+    expect(invoke).toHaveBeenLastCalledWith('step_property', { code: 0xd20d, delta: -1 });
+    expect(steps()).toHaveLength(4);
+    press('ArrowRight', { metaKey: true });
+    expect(steps()).toHaveLength(4);
+    press('Escape');
+    press('ArrowRight');
+    expect(steps()).toHaveLength(4);
+  });
+
+  test('arrow keys do nothing while typing', () => {
+    const { root } = setup();
+    root.querySelectorAll<SVGGElement>('.ring .seg')[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const input = document.createElement('input');
+    document.body.append(input);
+    input.focus();
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(vi.mocked(invoke).mock.calls.filter((c) => c[0] === 'step_property')).toHaveLength(0);
+  });
 });

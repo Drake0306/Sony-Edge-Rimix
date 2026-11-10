@@ -9,7 +9,7 @@ import { chipValue, CHIP_CODES, findProp, PROP, SETTING_NAMES } from '../props';
 import { watch, type AppStore } from '../state';
 import { statusText } from './dock';
 import { presetsControl } from './presetsControl';
-import { createSettingsPopover } from './settingsPopover';
+import { createSettingsPopover, stepOnArrow } from './settingsPopover';
 
 /** Segment outline and value position in the 400 by 400 viewBox, in CHIP_CODES order then Picture profile. */
 const SEGMENTS: [d: string, x: number, y: number][] = [
@@ -115,6 +115,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       popover.close();
       seg?.focus();
     }
+    stepOnArrow(e, popover, store, actions);
   };
   document.addEventListener('keydown', onKey);
 
