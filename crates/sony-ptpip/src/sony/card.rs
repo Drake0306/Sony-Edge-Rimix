@@ -146,11 +146,48 @@ pub async fn list_objects(
     Ok(out)
 }
 
+/// The partial file name of a card file: `.rimix-card-<name>.<bytes>.part`.
+fn part_name(name: &str, bytes: u64) -> String {
+    format!(".rimix-card-{name}.{bytes}.part")
+}
+
+/// True when `file` is a partial file of a card file called `name`, of any
+/// size.
+fn is_part_of(file: &str, name: &str) -> bool {
+    file.strip_prefix(".rimix-card-")
+        .and_then(|rest| rest.strip_prefix(name))
+        .and_then(|rest| rest.strip_prefix('.'))
+        .and_then(|rest| rest.strip_suffix(".part"))
+        .is_some_and(|size| !size.is_empty() && size.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Deletes the partial files in `dir` of other card files called `name`
+/// (other sizes), except `keep` and any being written in this process.
+fn remove_stale_parts(
+    dir: &Path,
+    name: &str,
+    keep: &Path,
+    active: &HashSet<PathBuf>,
+) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        let stale = path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .is_some_and(|f| is_part_of(f, name));
+        if stale && path != keep && !active.contains(&path) {
+            tracing::info!(part = %path.display(), "removing a partial file of another card file");
+            std::fs::remove_file(&path)?;
+        }
+    }
+    Ok(())
+}
+
 /// Partial files being written in this process, so two downloads never
 /// append to the same one.
 static ACTIVE: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
 
-/// A download in progress: `dir/.rimix-<name>.part` holds the bytes
+/// A download in progress: `dir/.rimix-card-<name>.<bytes>.part` holds the bytes
 /// received so far. Fetch chunks with [`PartialDownload::next_chunk`] until
 /// [`PartialDownload::done`], then [`PartialDownload::finish`].
 ///
@@ -168,20 +205,26 @@ pub struct PartialDownload {
 
 impl PartialDownload {
     /// Prepares downloading `obj` into `dest_dir`, which is created if
-    /// needed. An existing partial file is resumed from its length, or
-    /// discarded if it is longer than the file.
+    /// needed. The partial file is `.rimix-card-<name>.<bytes>.part`; one
+    /// left by an earlier try is resumed from its length, or discarded if it
+    /// is longer than the file. Partial files of the same name with another
+    /// size (another camera's file, or one from before a card format) are
+    /// deleted, never resumed.
     pub fn begin(obj: &CardObject, dest_dir: &Path) -> Result<PartialDownload, Error> {
         let name = check_filename(&obj.filename)?.to_string();
         std::fs::create_dir_all(dest_dir)?;
-        let part = dest_dir.join(format!(".rimix-{name}.part"));
+        let part = dest_dir.join(part_name(&name, obj.bytes));
         {
             let mut active = ACTIVE.lock().unwrap_or_else(|e| e.into_inner());
-            if !active.get_or_insert_with(HashSet::new).insert(part.clone()) {
+            let active = active.get_or_insert_with(HashSet::new);
+            if active.contains(&part) {
                 return Err(Error::Io(std::io::Error::new(
                     std::io::ErrorKind::AlreadyExists,
                     format!("{name} is already downloading into {}", dest_dir.display()),
                 )));
             }
+            remove_stale_parts(dest_dir, &name, &part, active)?;
+            active.insert(part.clone());
         }
         // From here on, Drop releases the claim.
         let mut dl = PartialDownload {
@@ -296,7 +339,7 @@ impl Drop for PartialDownload {
 }
 
 /// Downloads `obj` into `dest_dir` in chunks of `chunk` bytes, resuming
-/// from `.rimix-<name>.part` if an earlier try left one, and renames it into
+/// from `.rimix-card-<name>.<bytes>.part` if an earlier try left one, and renames it into
 /// place once complete. `progress(received, total)` is called after every
 /// chunk. On error the partial file is kept for the next try.
 pub async fn download(
@@ -354,6 +397,16 @@ mod tests {
         assert_eq!(CardKind::of(0x3000, "DSC1.arw"), CardKind::Raw);
         assert_eq!(CardKind::of(0x3000, "C1.MP4"), CardKind::Video);
         assert_eq!(CardKind::of(0x3000, "INDEX.XML"), CardKind::Other);
+    }
+
+    #[test]
+    fn part_names_carry_the_size_and_match_only_their_file() {
+        assert_eq!(part_name("C0001.MP4", 42), ".rimix-card-C0001.MP4.42.part");
+        assert!(is_part_of(".rimix-card-C0001.MP4.999.part", "C0001.MP4"));
+        assert!(!is_part_of(".rimix-card-C0001.MP4..part", "C0001.MP4"));
+        assert!(!is_part_of(".rimix-card-C0001.MP4.5.100.part", "C0001.MP4"));
+        assert!(!is_part_of(".rimix-card-C0001.MP4X.1.part", "C0001.MP4"));
+        assert!(!is_part_of(".rimix-C0001.MP4.1.part", "C0001.MP4"));
     }
 
     #[test]

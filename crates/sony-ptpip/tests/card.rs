@@ -144,6 +144,11 @@ async fn a_drop_mid_file_resumes_from_the_part_length() {
     let mut conn = connect(&sim).await;
     let storage = list_storages(&mut conn).await.unwrap()[0];
     let clip = list_objects(&mut conn, storage).await.unwrap().remove(0);
+    // A leftover partial file of another file with the same name (another
+    // camera, or before a card format) has a different size in its name:
+    // it is removed, not resumed.
+    let stale = tmp.path().join(".rimix-card-C0001.MP4.999.part");
+    std::fs::write(&stale, vec![7u8; 100]).unwrap();
 
     let err = download(&mut conn, &clip, tmp.path(), CARD_CHUNK, |_, _| {})
         .await
@@ -151,8 +156,13 @@ async fn a_drop_mid_file_resumes_from_the_part_length() {
     assert!(matches!(err, Error::Disconnected | Error::Io(_)), "{err:?}");
     // Only the complete first chunk is kept, and nothing short is renamed
     // into place.
-    assert_eq!(names(tmp.path()), vec![".rimix-C0001.MP4.part"]);
-    let part = tmp.path().join(".rimix-C0001.MP4.part");
+    assert!(!stale.exists());
+    assert_eq!(partial_offsets(&sim, 0)[0], 0);
+    assert_eq!(
+        names(tmp.path()),
+        vec![".rimix-card-C0001.MP4.4194304.part"]
+    );
+    let part = tmp.path().join(".rimix-card-C0001.MP4.4194304.part");
     assert_eq!(std::fs::metadata(&part).unwrap().len(), MIB);
     drop(conn);
 
@@ -181,7 +191,7 @@ async fn a_part_longer_than_the_file_is_discarded() {
     .await;
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(
-        tmp.path().join(".rimix-C0001.MP4.part"),
+        tmp.path().join(".rimix-card-C0001.MP4.4194304.part"),
         vec![0u8; 5 * MIB as usize],
     )
     .unwrap();
