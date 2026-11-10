@@ -11,13 +11,13 @@ use rimix_wifi::{SystemRunner, Wifi, WifiError};
 use sony_ptpip::capture::{Destination, DestinationMode};
 use sony_ptpip::ptp::PtpValue;
 use sony_ptpip::{
-    default_host_name, load_or_create_guid, Camera, CameraConfig, CameraEvent, PropertySummary,
-    SshConfig,
+    default_host_name, load_or_create_guid, Camera, CameraConfig, CameraEvent, CardObject,
+    PropertySummary, SshConfig,
 };
 use tokio::sync::broadcast::{error::RecvError, Receiver};
 use tokio::time::{timeout_at, Instant};
 
-use crate::format::{hex_code, props_table, DOCK_PROPS};
+use crate::format::{card_table, hex_code, props_table, size_text, sort_card, DOCK_PROPS};
 
 /// How long shoot and liveview wait for the camera.
 const WAIT: Duration = Duration::from_secs(20);
@@ -333,6 +333,98 @@ pub async fn liveview(target: &Target, frames: u32, out: &Path) -> Result<()> {
     result
 }
 
+/// `rimix card list`: the card's files, newest first.
+pub async fn card_list(target: &Target) -> Result<()> {
+    let camera = open(target, None, None, false, false).await?;
+    let card = camera.card_list().await;
+    camera.disconnect().await;
+    let mut card = card?;
+    sort_card(&mut card);
+    print!("{}", card_table(&card));
+    Ok(())
+}
+
+/// The card file `wanted` names: its handle (decimal or `0x` hex) or its
+/// name, compared without case.
+pub fn resolve<'a>(card: &'a [CardObject], wanted: &str) -> Result<&'a CardObject> {
+    let usage = |m: String| anyhow::Error::new(CliError::Usage(m));
+    let handle = match wanted
+        .strip_prefix("0x")
+        .or_else(|| wanted.strip_prefix("0X"))
+    {
+        Some(hex) => u32::from_str_radix(hex, 16).ok(),
+        None => wanted.parse::<u32>().ok(),
+    };
+    if let Some(obj) = handle.and_then(|h| card.iter().find(|o| o.handle == h)) {
+        return Ok(obj);
+    }
+    let named: Vec<&CardObject> = card
+        .iter()
+        .filter(|o| o.filename.eq_ignore_ascii_case(wanted))
+        .collect();
+    match named.as_slice() {
+        [one] => Ok(one),
+        [] => Err(usage(format!("no file named {wanted} on the card"))),
+        many => Err(usage(format!(
+            "{} files are named {wanted}; give the handle instead",
+            many.len()
+        ))),
+    }
+}
+
+/// One progress line: `DSC00010.JPG: 1.0 MB of 2.0 MB (50%)`.
+pub fn progress_text(filename: &str, received: u64, total: u64) -> String {
+    let percent = (received * 100).checked_div(total).unwrap_or(100);
+    format!(
+        "{filename}: {} of {} ({percent}%)",
+        size_text(received),
+        size_text(total)
+    )
+}
+
+/// `rimix card get`: downloads one card file into `out`, resuming a partial
+/// file an earlier try left there. Progress goes to stderr, a line updated
+/// in place per chunk; the saved path to stdout.
+pub async fn card_get(target: &Target, wanted: &str, out: &Path) -> Result<()> {
+    std::fs::create_dir_all(out).map_err(|e| io_error("cannot create the output folder", e))?;
+    let camera = open(target, None, Some(out), false, false).await?;
+    let mut rx = camera.subscribe();
+    let result = async {
+        let card = camera.card_list().await?;
+        let obj = resolve(&card, wanted)?;
+        let download = camera.card_download(obj.handle);
+        tokio::pin!(download);
+        let show = |event: CameraEvent| {
+            if let CameraEvent::CardDownloadProgress {
+                filename,
+                received,
+                total,
+                ..
+            } = event
+            {
+                eprint!("\r{}", progress_text(&filename, received, total));
+            }
+        };
+        let path = loop {
+            tokio::select! {
+                done = &mut download => break done,
+                event = rx.recv() => if let Ok(event) = event { show(event) },
+            }
+        };
+        // Progress sent just before the end is still queued.
+        while let Ok(event) = rx.try_recv() {
+            show(event);
+        }
+        eprintln!();
+        let path = path?;
+        println!("{}", path.display());
+        Ok(())
+    }
+    .await;
+    camera.disconnect().await;
+    result
+}
+
 /// Whether a `Disconnected` reason means the camera refused this computer
 /// for good (a refused SSH login or a changed fingerprint), so reconnecting
 /// has stopped.
@@ -478,5 +570,60 @@ mod wifi_tests {
             "hidden by the system"
         );
         assert_eq!(network_text(None, None), "none");
+    }
+}
+
+#[cfg(test)]
+mod card_tests {
+    use super::*;
+    use sony_ptpip::CardKind;
+
+    fn obj(handle: u32, filename: &str) -> CardObject {
+        CardObject {
+            handle,
+            storage: 1,
+            filename: filename.into(),
+            bytes: 1,
+            size_known: true,
+            format: 0x3801,
+            kind: CardKind::Still,
+            captured: None,
+        }
+    }
+
+    fn usage_text(r: Result<&CardObject>) -> String {
+        let e = r.unwrap_err();
+        assert!(matches!(
+            e.downcast_ref::<CliError>(),
+            Some(CliError::Usage(_))
+        ));
+        e.to_string()
+    }
+
+    #[test]
+    fn a_file_is_found_by_handle_or_by_name_without_case() {
+        let card = [obj(257, "DSC00010.JPG"), obj(258, "DSC00010.ARW")];
+        assert_eq!(resolve(&card, "258").unwrap().handle, 258);
+        assert_eq!(resolve(&card, "0x101").unwrap().handle, 257);
+        assert_eq!(resolve(&card, "dsc00010.arw").unwrap().handle, 258);
+        assert_eq!(
+            usage_text(resolve(&card, "C0001.MP4")),
+            "no file named C0001.MP4 on the card"
+        );
+    }
+
+    #[test]
+    fn two_files_with_one_name_need_the_handle() {
+        let card = [obj(257, "DSC00010.JPG"), obj(0x0002_0001, "DSC00010.JPG")];
+        assert!(usage_text(resolve(&card, "DSC00010.JPG")).contains("give the handle"));
+    }
+
+    #[test]
+    fn progress_reads_received_of_total() {
+        assert_eq!(
+            progress_text("C0001.MP4", 1 << 20, 4 << 20),
+            "C0001.MP4: 1.0 MB of 4.0 MB (25%)"
+        );
+        assert_eq!(progress_text("E", 0, 0), "E: 0 B of 0 B (100%)");
     }
 }

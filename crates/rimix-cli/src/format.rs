@@ -1,6 +1,6 @@
-//! Text output for the camera's state.
+//! Text output for the camera's state and card.
 
-use sony_ptpip::PropertySummary;
+use sony_ptpip::{CardKind, CardObject, PropertySummary};
 
 /// The ten properties the desktop dock shows, in its order.
 pub const DOCK_PROPS: [u16; 10] = [
@@ -43,23 +43,94 @@ pub fn props_table(props: &[&PropertySummary]) -> String {
             p.choices.len().to_string(),
         ]);
     }
-    let mut widths = [0usize; 5];
-    for row in &rows {
+    table(&rows, " | ")
+}
+
+/// Rows padded to their columns' widths and joined by `sep`.
+fn table<const N: usize>(rows: &[[String; N]], sep: &str) -> String {
+    let mut widths = [0usize; N];
+    for row in rows {
         for (w, cell) in widths.iter_mut().zip(row) {
             *w = (*w).max(cell.chars().count());
         }
     }
     let mut out = String::new();
-    for row in &rows {
+    for row in rows {
         let cells: Vec<String> = row
             .iter()
             .zip(widths)
             .map(|(cell, w)| format!("{cell:<w$}"))
             .collect();
-        out.push_str(cells.join(" | ").trim_end());
+        out.push_str(cells.join(sep).trim_end());
         out.push('\n');
     }
     out
+}
+
+/// A size as the card browser shows it, in binary units: `512 B`, `2.0 MB`,
+/// `64 MB`, `1.2 GB` (one decimal under 10).
+pub fn size_text(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64 / 1024.0;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if value < 9.95 {
+        format!("{value:.1} {}", UNITS[unit])
+    } else {
+        format!("{value:.0} {}", UNITS[unit])
+    }
+}
+
+/// The size column: [`size_text`], or `4 GB+` when the camera cannot say.
+pub fn card_size(obj: &CardObject) -> String {
+    if obj.size_known {
+        size_text(obj.bytes)
+    } else {
+        "4 GB+".into()
+    }
+}
+
+pub fn kind_text(kind: CardKind) -> &'static str {
+    match kind {
+        CardKind::Still => "Still",
+        CardKind::Raw => "Raw",
+        CardKind::Video => "Video",
+        CardKind::Other => "Other",
+    }
+}
+
+/// The card newest first, by capture date then by handle; undated files last.
+pub fn sort_card(card: &mut [CardObject]) {
+    card.sort_by(|a, b| (b.captured, b.handle).cmp(&(a.captured, a.handle)));
+}
+
+/// The `card list` table: a header and one row per file, columns padded and
+/// two spaces apart.
+pub fn card_table(card: &[CardObject]) -> String {
+    let mut rows: Vec<[String; 5]> = vec![[
+        "Kind".into(),
+        "Size".into(),
+        "Date".into(),
+        "Handle".into(),
+        "Name".into(),
+    ]];
+    for o in card {
+        rows.push([
+            kind_text(o.kind).into(),
+            card_size(o),
+            o.captured
+                .map_or_else(|| "-".into(), |d| d.format("%Y-%m-%d %H:%M").to_string()),
+            o.handle.to_string(),
+            o.filename.clone(),
+        ]);
+    }
+    table(&rows, "  ")
 }
 
 #[cfg(test)]
@@ -93,5 +164,15 @@ mod tests {
         let lines: Vec<&str> = table.lines().collect();
         assert_eq!(lines[0], "Code   | Setting | Value | Writable | Choices");
         assert_eq!(lines[1], "0xD21E | ISO     | 1600  | yes      | 0");
+    }
+
+    #[test]
+    fn sizes_read_like_the_card_browser() {
+        assert_eq!(size_text(512), "512 B");
+        assert_eq!(size_text(2 << 20), "2.0 MB");
+        assert_eq!(size_text(64 << 20), "64 MB");
+        assert_eq!(size_text(1288 << 20), "1.3 GB");
+        assert_eq!(size_text((12 << 30) / 10), "1.2 GB");
+        assert_eq!(size_text(1536), "1.5 KB");
     }
 }

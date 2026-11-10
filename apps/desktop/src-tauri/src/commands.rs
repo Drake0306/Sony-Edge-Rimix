@@ -1,6 +1,6 @@
 //! Tauri commands: thin wrappers over the functions in `state.rs`.
 
-use sony_ptpip::{CameraState, DiscoveredCamera};
+use sony_ptpip::{CameraState, CardObject, DiscoveredCamera};
 use tauri::ipc::Response;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
@@ -143,6 +143,35 @@ pub async fn toggle_record(
     camera_id: Option<CameraId>,
 ) -> Result<(), String> {
     state::toggle_record(&state, camera_id).await
+}
+
+/// Every file on the camera's cards.
+#[tauri::command]
+pub async fn card_list(
+    state: State<'_, AppState>,
+    camera_id: Option<CameraId>,
+) -> Result<Vec<CardObject>, String> {
+    state::card_list(&state, camera_id).await
+}
+
+/// Downloads a card file and resolves with where it was saved. It may take
+/// minutes; the webview follows its `CardDownloadProgress` events.
+#[tauri::command]
+pub async fn card_download(
+    state: State<'_, AppState>,
+    camera_id: Option<CameraId>,
+    handle: u32,
+) -> Result<String, String> {
+    state::card_download(&state, camera_id, handle).await
+}
+
+/// `same-session` or `needs-transfer-mode`.
+#[tauri::command]
+pub async fn card_mode(
+    state: State<'_, AppState>,
+    camera_id: Option<CameraId>,
+) -> Result<String, String> {
+    state::card_mode(&state, camera_id).await
 }
 
 /// The camera's latest JPEG as a raw body (an ArrayBuffer in the webview).

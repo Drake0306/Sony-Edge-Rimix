@@ -11,7 +11,8 @@ use sony_ptpip::discovery::{DiscoverySource, PTP_PORT};
 use sony_ptpip::error::Error;
 use sony_ptpip::ptp::PtpValue;
 use sony_ptpip::{
-    Camera, CameraConfig, CameraEvent, CameraState, DiscoveredCamera, ReconnectHook, SshConfig,
+    Camera, CameraConfig, CameraEvent, CameraState, CardBrowse, CardObject, DiscoveredCamera,
+    ReconnectHook, SshConfig,
 };
 use tokio::sync::broadcast::{self, error::RecvError};
 
@@ -664,6 +665,45 @@ pub async fn focus(state: &AppState, id: Option<CameraId>) -> Result<(), String>
 pub async fn toggle_record(state: &AppState, id: Option<CameraId>) -> Result<(), String> {
     let camera = state.camera(id.as_ref()).await?;
     camera.toggle_record().await.map_err(|e| e.to_string())
+}
+
+/// Every file on the camera's cards.
+pub async fn card_list(state: &AppState, id: Option<CameraId>) -> Result<Vec<CardObject>, String> {
+    let camera = state.camera(id.as_ref()).await?;
+    camera.card_list().await.map_err(|e| e.to_string())
+}
+
+/// Downloads the card file `handle` into the destination folder and returns
+/// where it was saved. Runs until the file is complete; progress arrives as
+/// `CardDownloadProgress` events. Only the camera's own connection lock is
+/// taken, one chunk at a time, so other commands keep working meanwhile.
+pub async fn card_download(
+    state: &AppState,
+    id: Option<CameraId>,
+    handle: u32,
+) -> Result<String, String> {
+    let camera = state.camera(id.as_ref()).await?;
+    let path = camera
+        .card_download(handle)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
+}
+
+/// How the UI names a [`CardBrowse`].
+pub fn card_mode_name(mode: CardBrowse) -> &'static str {
+    match mode {
+        CardBrowse::SameSession => "same-session",
+        CardBrowse::NeedsTransferMode => "needs-transfer-mode",
+    }
+}
+
+/// How the camera lets its card be browsed: `same-session` or
+/// `needs-transfer-mode`.
+pub async fn card_mode(state: &AppState, id: Option<CameraId>) -> Result<String, String> {
+    let camera = state.camera(id.as_ref()).await?;
+    let model = camera.state().model;
+    Ok(card_mode_name(sony_ptpip::quirks_for(&model).card_browse).to_string())
 }
 
 /// The camera's latest live view JPEG; empty when there is none or no camera.
@@ -1828,4 +1868,169 @@ mod tests {
         assert_eq!(list[0].id, id_b);
         shutdown([a, b], &state).await;
     }
+
+    /// The simulator's byte `i` of the card file `handle`.
+    fn sim_byte(handle: u32, i: u64) -> u8 {
+        i.wrapping_mul(31).wrapping_add(u64::from(handle)) as u8
+    }
+
+    #[tokio::test]
+    async fn card_commands_need_a_camera() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state = app_state(tmp.path());
+        assert_eq!(card_list(&state, None).await.unwrap_err(), NOT_CONNECTED);
+        assert_eq!(
+            card_download(&state, None, 0x101).await.unwrap_err(),
+            NOT_CONNECTED
+        );
+        assert_eq!(card_mode(&state, None).await.unwrap_err(), NOT_CONNECTED);
+    }
+
+    #[tokio::test]
+    async fn card_list_returns_the_cards_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (sim, state, _) = connected(tmp.path()).await;
+        let card = card_list(&state, None).await.unwrap();
+        let names: Vec<&str> = card.iter().map(|o| o.filename.as_str()).collect();
+        assert_eq!(names, ["DSC00010.JPG", "DSC00010.ARW", "C0001.MP4"]);
+        assert_eq!(card[0].kind, sony_ptpip::CardKind::Still);
+        assert!(card.iter().all(|o| o.size_known));
+        // Named by id too.
+        let id = list_cameras(&state).await[0].id.clone();
+        assert_eq!(card_list(&state, Some(id)).await.unwrap().len(), 3);
+        stop(sim, &state).await;
+    }
+
+    #[tokio::test]
+    async fn card_mode_is_same_session_for_the_zv_e10() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (sim, state, _) = connected(tmp.path()).await;
+        assert_eq!(card_mode(&state, None).await.unwrap(), "same-session");
+        stop(sim, &state).await;
+    }
+
+    #[test]
+    fn card_browse_names_are_kebab_case() {
+        assert_eq!(
+            card_mode_name(sony_ptpip::CardBrowse::SameSession),
+            "same-session"
+        );
+        assert_eq!(
+            card_mode_name(sony_ptpip::CardBrowse::NeedsTransferMode),
+            "needs-transfer-mode"
+        );
+    }
+
+    #[tokio::test]
+    async fn card_download_saves_the_file_with_tagged_progress() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sim = spawn(SimConfig::default()).await;
+        let state = app_state(tmp.path());
+        let (id, _, rx) = connect(&state, &sim.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        let card = card_list(&state, None).await.unwrap();
+        let jpeg = card[0].clone();
+        let tagged = Arc::new(StdMutex::new(Vec::<String>::new()));
+        let seen = tagged.clone();
+        let forward = tokio::spawn(forward_events(id.clone(), rx, move |e| {
+            lock(&seen).push(serde_json::to_string(&e).unwrap());
+        }));
+        let path = card_download(&state, Some(id.clone()), jpeg.handle)
+            .await
+            .unwrap();
+        let path = PathBuf::from(path);
+        assert!(path.starts_with(tmp.path().join("shots")));
+        let data = std::fs::read(&path).unwrap();
+        assert_eq!(data.len() as u64, jpeg.bytes);
+        assert!(data
+            .iter()
+            .enumerate()
+            .all(|(i, b)| *b == sim_byte(jpeg.handle, i as u64)));
+        timeout(WAIT, async {
+            while !lock(&tagged).iter().any(|e| e.contains("CaptureSaved")) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("no CaptureSaved forwarded");
+        let events = lock(&tagged).clone();
+        let progress: Vec<&String> = events
+            .iter()
+            .filter(|e| e.contains("CardDownloadProgress"))
+            .collect();
+        assert_eq!(progress.len(), 2, "{events:?}");
+        assert!(progress[1].starts_with(&format!(r#"{{"camera_id":"{id}","event""#)));
+        assert!(progress[1].contains(r#""received":2097152,"total":2097152"#));
+        stop(sim, &state).await;
+        forward.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn card_download_leaves_other_commands_free_while_it_runs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sim = spawn(SimConfig::default()).await;
+        let state = app_state(tmp.path());
+        let (_, _, mut rx) = connect(&state, &sim.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        let clip = card_list(&state, None)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|o| o.kind == sony_ptpip::CardKind::Video)
+            .unwrap();
+        let download = card_download(&state, None, clip.handle);
+        let probe = async {
+            loop {
+                match rx.recv().await {
+                    Ok(CameraEvent::CardDownloadProgress { .. }) => break,
+                    Ok(_) => {}
+                    Err(e) => panic!("{e}"),
+                }
+            }
+            // Mid-download: the slots are free and the camera answers.
+            assert!(state.cameras.try_lock().is_ok());
+            assert_eq!(list_cameras(&state).await.len(), 1);
+            assert!(get_state(&state, None).await.unwrap().connected);
+        };
+        let (path, ()) = timeout(Duration::from_secs(60), async {
+            tokio::join!(download, probe)
+        })
+        .await
+        .unwrap();
+        assert_eq!(std::fs::metadata(path.unwrap()).unwrap().len(), clip.bytes);
+        stop(sim, &state).await;
+    }
+
+    #[tokio::test]
+    async fn a_refused_card_download_says_why() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (sim, state, _) = connected(tmp.path()).await;
+        let err = card_download(&state, None, 0xDEAD).await.unwrap_err();
+        assert!(!err.is_empty());
+        stop(sim, &state).await;
+    }
+
+    /// Pins the JSON of one card file; the same string is
+    /// `src/fixtures/card-object.json`, used by `src/ipc.test.ts`.
+    #[test]
+    fn card_object_json_is_stable() {
+        let obj = sony_ptpip::CardObject {
+            handle: 0x101,
+            storage: 0x0001_0001,
+            filename: "DSC00010.JPG".into(),
+            bytes: 2 * 1024 * 1024,
+            size_known: true,
+            format: sony_ptpip::ptp::codes::FMT_JPEG,
+            kind: sony_ptpip::CardKind::Still,
+            captured: sony_ptpip::card::parse_ptp_date("20261111T140300"),
+        };
+        assert_eq!(
+            serde_json::to_string(&obj).unwrap(),
+            CARD_OBJECT_FIXTURE.trim()
+        );
+    }
+
+    const CARD_OBJECT_FIXTURE: &str = include_str!("../../src/fixtures/card-object.json");
 }

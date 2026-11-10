@@ -141,10 +141,37 @@ enum Cmd {
         #[arg(long, hide = true, value_name = "SECS")]
         exit_after: Option<u64>,
     },
+    /// List the files on the camera's card or download one.
+    Card {
+        #[command(subcommand)]
+        action: CardCmd,
+    },
     /// Show or join this computer's Wi-Fi network (add -v to see each command).
     Wifi {
         #[command(subcommand)]
         action: WifiCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum CardCmd {
+    /// Print the card's files, newest first: kind, size, date, handle, name.
+    List {
+        #[arg(value_parser = parse_addr)]
+        ip: SocketAddr,
+        #[command(flatten)]
+        ssh: SshArgs,
+    },
+    /// Download one file, resuming a partial download left in the folder.
+    Get {
+        #[arg(value_parser = parse_addr)]
+        ip: SocketAddr,
+        #[command(flatten)]
+        ssh: SshArgs,
+        /// The file's handle (from `card list`) or its name.
+        file: String,
+        #[arg(long, default_value = ".")]
+        out: PathBuf,
     },
 }
 
@@ -295,6 +322,12 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
             out,
             exit_after,
         } => commands::watch(&target(ip, ssh)?, &out, exit_after.map(Duration::from_secs)).await,
+        Cmd::Card { action } => match action {
+            CardCmd::List { ip, ssh } => commands::card_list(&target(ip, ssh)?).await,
+            CardCmd::Get { ip, ssh, file, out } => {
+                commands::card_get(&target(ip, ssh)?, &file, &out).await
+            }
+        },
         Cmd::Wifi { action } => match action {
             WifiCmd::Status => commands::wifi_status().await,
             WifiCmd::Join {

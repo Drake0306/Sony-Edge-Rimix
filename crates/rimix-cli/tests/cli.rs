@@ -472,3 +472,164 @@ fn wifi_join_in_fake_mode_prints_the_report() {
     assert!(text.contains("attempts: 1"), "{text}");
     assert!(!text.contains("12345678"), "{text}");
 }
+
+const MIB: u64 = 1 << 20;
+
+/// A hash of `bytes`, to compare a downloaded file with what it should hold.
+fn hash_of(bytes: impl IntoIterator<Item = u8>) -> u64 {
+    use std::hash::Hasher;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for b in bytes {
+        h.write_u8(b);
+    }
+    h.finish()
+}
+
+/// The hash of the simulator's card file `handle` of `len` bytes: byte `i`
+/// is `(i * 31 + handle) as u8`.
+fn sim_hash(handle: u32, len: u64) -> u64 {
+    hash_of((0..len).map(|i| i.wrapping_mul(31).wrapping_add(u64::from(handle)) as u8))
+}
+
+fn file_hash(path: &Path) -> u64 {
+    hash_of(std::fs::read(path).unwrap())
+}
+
+fn stderr(out: &std::process::Output) -> String {
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_list_prints_the_files_newest_first() {
+    let env = Env::new(SimConfig::default()).await;
+    let mut cmd = rimix(&env.guid());
+    cmd.args(["card", "list", &env.addr()]);
+    let out = run(cmd).await;
+    assert!(out.status.success(), "{out:?}");
+    let text = stdout(&out);
+    let rows: Vec<Vec<&str>> = text
+        .lines()
+        .map(|l| {
+            l.split("  ")
+                .map(str::trim)
+                .filter(|c| !c.is_empty())
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            vec!["Kind", "Size", "Date", "Handle", "Name"],
+            vec!["Video", "64 MB", "2026-11-10 10:20", "259", "C0001.MP4"],
+            vec!["Raw", "24 MB", "2026-11-10 10:15", "258", "DSC00010.ARW"],
+            vec!["Still", "2.0 MB", "2026-11-10 10:15", "257", "DSC00010.JPG"],
+        ],
+        "{text}"
+    );
+    env.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_get_by_name_saves_the_simulators_bytes() {
+    let env = Env::new(SimConfig::default()).await;
+    let out_dir = env.out();
+    let mut cmd = rimix(&env.guid());
+    cmd.args(["card", "get", &env.addr(), "dsc00010.jpg", "--out"])
+        .arg(&out_dir);
+    let out = run(cmd).await;
+    assert!(out.status.success(), "{out:?}");
+    let saved = out_dir.join("DSC00010.JPG");
+    assert_eq!(stdout(&out).trim(), saved.display().to_string());
+    assert_eq!(file_hash(&saved), sim_hash(257, 2 * MIB));
+    let progress = stderr(&out);
+    assert!(progress.contains("1.0 MB of 2.0 MB"), "{progress}");
+    assert!(progress.contains("2.0 MB of 2.0 MB (100%)"), "{progress}");
+    env.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_get_by_handle_saves_the_file() {
+    let env = Env::new(SimConfig::default()).await;
+    let out_dir = env.out();
+    let mut cmd = rimix(&env.guid());
+    cmd.args(["card", "get", &env.addr(), "258", "--out"])
+        .arg(&out_dir);
+    let out = run(cmd).await;
+    assert!(out.status.success(), "{out:?}");
+    let saved = out_dir.join("DSC00010.ARW");
+    assert_eq!(file_hash(&saved), sim_hash(258, 24 * MIB));
+    env.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_get_resumes_after_a_drop() {
+    let env = Env::new(SimConfig {
+        drop_during_card_download_at: Some(1_500_000),
+        ..SimConfig::default()
+    })
+    .await;
+    let out_dir = env.out();
+    let get = || {
+        let mut cmd = rimix(&env.guid());
+        cmd.args(["card", "get", &env.addr(), "DSC00010.JPG", "--out"])
+            .arg(&out_dir);
+        cmd
+    };
+    let out = run(get()).await;
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    assert!(!out_dir.join("DSC00010.JPG").exists());
+    let from = env.sim.log.lock().unwrap().len();
+
+    let out = run(get()).await;
+    assert!(out.status.success(), "{out:?}");
+    let saved = out_dir.join("DSC00010.JPG");
+    assert_eq!(file_hash(&saved), sim_hash(257, 2 * MIB));
+    // The second run asked only for what the first did not keep.
+    let log = env.sim.log.lock().unwrap()[from..].join("\n");
+    assert!(log.contains("offset=1048576"), "{log}");
+    assert!(!log.contains("offset=0 "), "{log}");
+    env.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_get_of_an_unknown_name_exits_2() {
+    let env = Env::new(SimConfig::default()).await;
+    let mut cmd = rimix(&env.guid());
+    cmd.args(["card", "get", &env.addr(), "NOPE.JPG"]);
+    let out = run(cmd).await;
+    assert_eq!(out.status.code(), Some(2), "{out:?}");
+    assert!(stderr(&out).contains("NOPE.JPG"), "{}", stderr(&out));
+    env.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_get_of_a_4_gib_file_exits_4() {
+    let mut card = SimConfig::default().card;
+    card[2].bytes = 5 * 1024 * MIB;
+    let env = Env::new(SimConfig {
+        card,
+        ..SimConfig::default()
+    })
+    .await;
+    let mut cmd = rimix(&env.guid());
+    cmd.args(["card", "list", &env.addr()]);
+    let out = run(cmd).await;
+    assert!(stdout(&out).contains("4 GB+"), "{}", stdout(&out));
+    let out_dir = env.out();
+    let mut cmd = rimix(&env.guid());
+    cmd.args(["card", "get", &env.addr(), "C0001.MP4", "--out"])
+        .arg(&out_dir);
+    let out = run(cmd).await;
+    assert_eq!(out.status.code(), Some(4), "{out:?}");
+    assert!(stderr(&out).contains("4 GiB"), "{}", stderr(&out));
+    env.finish().await;
+}
+
+#[test]
+fn card_get_needs_a_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    rimix(&tmp.path().join("guid"))
+        .args(["card", "get", "127.0.0.1"])
+        .assert()
+        .code(2);
+}
