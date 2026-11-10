@@ -35,22 +35,21 @@ Later, for a test on your home router instead of Wi-Fi Direct, set "PC Remote Cn
 
 ## 2. The QR test (Changes the plan)
 
-This tells us whether the QR code on the camera leads to the same network the computer control uses. If it does, Rimix can onboard by scanning the QR. If not, we use a guided screen with two fields for the name and password instead.
+This tells us whether the QR code on the camera leads to the same network the computer control uses, and whether Rimix can join that network by itself.
 
 1. On the camera: Menu, Network, "Send to Smartphone Func.", "Send to Smartphone". A QR code appears.
-2. Scan it with your phone's camera app. Do not install anything. The phone will show some text, possibly a network name and password. Copy that text exactly.
-3. Join your Mac to the camera's network (the DIRECT-xxxx name from step 1; the password is the one from Wi-Fi Direct Info). Then check whether the QR text names the same network and password.
-4. In Terminal, run:
+2. Start the Rimix app (step 7 shows how). On the connect screen, use the "Scan the QR code" card and hold the camera's screen up to the Mac's webcam. Note what the message on the card says, and what the status line says while Rimix works. Check whether the Mac joined the DIRECT-xxxx network by itself.
+3. Now scan the same QR code with your phone's camera app. Do not install anything. The phone will show some text, possibly a network name and password. Copy that text exactly, and paste it into "Paste the code's text" under the QR card in Rimix. Note the status line again.
+4. If the Mac did not join by itself, join it yourself to the DIRECT-xxxx name from step 1 (the password is the one from Wi-Fi Direct Info).
+5. In Terminal, run:
 
    ```
-   rimix discover
    nc -vz 192.168.122.1 15740
    ```
 
-   The first command looks for cameras. The second checks whether the camera answers on the port Rimix uses. "succeeded" or "open" means yes. "refused" or a timeout means no.
-5. If `nc` says no, put the camera on the PC Remote screen (step 1) and try once more.
+   This checks whether the camera answers on the port Rimix uses. "succeeded" or "open" means yes. "refused" or a timeout means no. If it says no, put the camera on the PC Remote screen (step 1) and try once more.
 
-**What to send back:** the text the QR code gave (blank the password if you prefer, but say whether it matched the Wi-Fi Direct Info screen), the output of both commands, and whether the Mac joined the DIRECT-xxxx network. Say plainly: "the port answered" or "the port did not answer".
+**What to send back:** the text the phone decoded (blank the password if you prefer, but say whether it matched the Wi-Fi Direct Info screen), what Rimix's status line said, whether the Mac joined the DIRECT-xxxx network by itself, and the output of `nc -vz 192.168.122.1 15740`. Say plainly: "the port answered" or "the port did not answer".
 
 ## 3. Pairing (Changes the plan)
 
@@ -110,7 +109,7 @@ This saves 30 live view frames as JPEG files.
    pnpm tauri dev
    ```
 
-2. Enter `192.168.122.1` and press Connect. The Mac must still be on the camera's network. (The "Scan the QR code" option is not built yet.)
+2. Enter `192.168.122.1` and press Connect. The Mac must still be on the camera's network.
 3. Check that live view shows.
 4. Press Shoot. Check a picture arrives in the filmstrip.
 5. Change ISO using the ISO chip in the dock.

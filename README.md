@@ -46,6 +46,51 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
+## Install on a Mac
+
+Download the latest `Rimix_..._universal.dmg` from the [Releases](../../releases) page, open it and drag Rimix into Applications. Rimix needs macOS 14 or newer.
+
+The download is unsigned until the project owner adds Apple signing secrets (see "Release a version"), so macOS will warn about it the first time. Either right-click Rimix in Applications and choose Open, or run this once in Terminal:
+
+```
+xattr -d com.apple.quarantine /Applications/Rimix.app
+```
+
+Rimix asks for camera permission on first launch. It uses the webcam only to scan the QR code on your camera's screen. To join the camera's Wi-Fi network, Rimix uses macOS's own `networksetup` command, which needs no admin rights.
+
+## Connect your camera
+
+The connect screen has three ways in:
+
+1. **Scan the QR code.** On the camera choose Menu, Network, Send to Smartphone Func., Send to Smartphone, then hold the screen up to the Mac's webcam. If the webcam can't read it, scan the code with your phone and use "Paste the code's text" under the QR card.
+2. **Nearby.** If the camera and the Mac are on the same router, the camera shows up in the list. Pick it.
+3. **Type the Wi-Fi name and password.** On the camera choose Menu, Network, PC Remote Function, Wi-Fi Direct Info, then type the name (it starts with DIRECT-) and the password. The Mac joins the camera's network by itself.
+
+"Advanced: connect by address" holds the old IP address field. Rimix remembers cameras you have used. In App settings, the Connection section lets you choose whether Wi-Fi joins happen automatically or ask first, pick the webcam, and forget remembered cameras.
+
+## Release a version
+
+Tag the commit and push the tag:
+
+```
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The Release workflow builds a universal Mac app and creates a draft release with the DMG attached. Review the draft, then publish it.
+
+For a signed and notarized build, add these repository secrets (Settings, Secrets and variables, Actions): `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`. Without them the workflow still runs and the DMG is unsigned.
+
+## Develop without a camera
+
+Two environment variables let you run the whole app against the simulated camera. `RIMIX_WIFI=fake` makes Wi-Fi joins succeed instantly, and `RIMIX_CAMERA_ADDR=127.0.0.1:15740` says where the "camera" is after joining.
+
+```
+cargo run -p sony-ptpip-sim -- --port 15740
+cd apps/desktop
+RIMIX_WIFI=fake RIMIX_CAMERA_ADDR=127.0.0.1:15740 pnpm tauri dev
+```
+
 ## Testing with a real camera
 
 [docs/camera-testing.md](docs/camera-testing.md) is a step-by-step checklist for a Sony ZV-E10, written for the camera's owner. It takes about 30 minutes and says what to send back after each step.
