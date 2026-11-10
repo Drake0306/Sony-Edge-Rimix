@@ -14,9 +14,11 @@ mod frames;
 mod props;
 mod server;
 mod ssdp;
+mod ssh;
 
 pub use props::load_fixture;
 pub use server::spawn;
+pub use ssh::SshSimConfig;
 
 /// How the simulated camera behaves.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +66,9 @@ pub struct SimConfig {
     pub ssdp_port: Option<u16>,
     /// Where to listen for PTP/IP; `None` picks a free port on 127.0.0.1.
     pub bind_addr: Option<SocketAddr>,
+    /// Put an SSH server in front of the PTP/IP port, as cameras with
+    /// Access Authentication do; `None` leaves PTP/IP open directly.
+    pub ssh: Option<SshSimConfig>,
 }
 
 impl Default for SimConfig {
@@ -85,6 +90,7 @@ impl Default for SimConfig {
             files_per_shot: 1,
             ssdp_port: None,
             bind_addr: None,
+            ssh: None,
         }
     }
 }
@@ -117,4 +123,10 @@ pub struct SimHandle {
     pub http_addr: Option<SocketAddr>,
     /// Where the SSDP responder listens, when `ssdp_port` is set.
     pub ssdp_addr: Option<SocketAddr>,
+    /// Where the SSH front listens, when `ssh` is set.
+    pub ssh_addr: Option<SocketAddr>,
+    /// The SSH host key's fingerprint in OpenSSH form, `SHA256:<base64>`.
+    pub fingerprint_sha256: Option<String>,
+    /// The SSH host key's MD5 fingerprint, `aa:bb:...`.
+    pub fingerprint_md5: Option<String>,
 }

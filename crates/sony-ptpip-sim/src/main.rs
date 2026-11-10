@@ -1,16 +1,18 @@
 //! Runs the simulated camera until Ctrl-C: `sony-ptpip-sim [--port 15740]
-//! [--ssdp] [--fixture PATH]`.
+//! [--ssdp] [--fixture PATH] [--ssh USER:PASSWORD]`.
 
 use std::net::{SocketAddr, UdpSocket};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use sony_ptpip_sim::{spawn, SimCommand, SimConfig};
+use sony_ptpip_sim::{spawn, SimCommand, SimConfig, SshSimConfig};
 
 const SSDP_PORT: u16 = 1900;
 
 fn usage() -> ExitCode {
-    eprintln!("usage: sony-ptpip-sim [--port 15740] [--ssdp] [--fixture PATH]");
+    eprintln!(
+        "usage: sony-ptpip-sim [--port 15740] [--ssdp] [--fixture PATH] [--ssh USER:PASSWORD]"
+    );
     ExitCode::from(2)
 }
 
@@ -31,6 +33,15 @@ async fn main() -> ExitCode {
                 Some(path) => config.fixture = PathBuf::from(path),
                 None => return usage(),
             },
+            "--ssh" => match args.next().as_deref().and_then(|v| v.split_once(':')) {
+                Some((user, password)) if !user.is_empty() => {
+                    config.ssh = Some(SshSimConfig {
+                        user: user.into(),
+                        password: password.into(),
+                    });
+                }
+                _ => return usage(),
+            },
             _ => return usage(),
         }
     }
@@ -48,6 +59,15 @@ async fn main() -> ExitCode {
     }
     let sim = spawn(config).await;
     println!("Simulator listening on {}", sim.addr);
+    if let Some(addr) = sim.ssh_addr {
+        println!("SSH front listening on {addr}");
+        if let Some(fp) = &sim.fingerprint_sha256 {
+            println!("SSH host key {fp}");
+        }
+        if let Some(fp) = &sim.fingerprint_md5 {
+            println!("SSH host key MD5:{fp}");
+        }
+    }
     let _ = tokio::signal::ctrl_c().await;
     let _ = sim.events.send(SimCommand::Shutdown).await;
     ExitCode::SUCCESS

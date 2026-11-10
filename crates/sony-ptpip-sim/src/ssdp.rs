@@ -28,21 +28,30 @@ fn dd_xml(http: SocketAddr) -> String {
     )
 }
 
-const DIGITAL_IMAGING_DESC: &str = r#"<?xml version="1.0"?>
+fn digital_imaging_desc(ssh: bool) -> String {
+    format!(
+        r#"<?xml version="1.0"?>
 <root xmlns="urn:schemas-sony-com:av">
   <X_PTP_Information>
     <X_PTP_Versions>3.00</X_PTP_Versions>
     <X_PTP_PairingNecessity>true</X_PTP_PairingNecessity>
-    <X_SSH_Support>false</X_SSH_Support>
+    <X_SSH_Support>{ssh}</X_SSH_Support>
   </X_PTP_Information>
 </root>
-"#;
+"#
+    )
+}
 
 /// Binds the SSDP responder on 127.0.0.1:`ssdp_port` and the HTTP server on
-/// an OS-chosen port, spawning both into `tasks`.
+/// an OS-chosen port, spawning both into `tasks`. `ssh` is what the
+/// description reports as `X_SSH_Support`.
 ///
 /// Returns the SSDP and HTTP addresses.
-pub(crate) async fn start(ssdp_port: u16, tasks: &mut JoinSet<()>) -> (SocketAddr, SocketAddr) {
+pub(crate) async fn start(
+    ssdp_port: u16,
+    ssh: bool,
+    tasks: &mut JoinSet<()>,
+) -> (SocketAddr, SocketAddr) {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind simulator HTTP server");
@@ -51,7 +60,7 @@ pub(crate) async fn start(ssdp_port: u16, tasks: &mut JoinSet<()>) -> (SocketAdd
         .await
         .expect("bind simulator SSDP responder");
     let ssdp_addr = socket.local_addr().expect("SSDP responder address");
-    tasks.spawn(serve_http(listener, http_addr));
+    tasks.spawn(serve_http(listener, http_addr, ssh));
     tasks.spawn(answer_searches(socket, http_addr));
     (ssdp_addr, http_addr)
 }
@@ -79,14 +88,14 @@ async fn answer_searches(socket: UdpSocket, http: SocketAddr) {
     }
 }
 
-async fn serve_http(listener: TcpListener, http: SocketAddr) {
+async fn serve_http(listener: TcpListener, http: SocketAddr, ssh: bool) {
     // Dropping the set when this task is aborted ends every connection.
     let mut connections = JoinSet::new();
     loop {
         tokio::select! {
             accepted = listener.accept() => match accepted {
                 Ok((stream, _)) => {
-                    connections.spawn(respond(stream, http));
+                    connections.spawn(respond(stream, http, ssh));
                 }
                 Err(e) => tracing::warn!(error = %e, "simulator HTTP accept failed"),
             },
@@ -96,7 +105,7 @@ async fn serve_http(listener: TcpListener, http: SocketAddr) {
 }
 
 /// Answers one GET with a description, or 404.
-async fn respond(stream: TcpStream, http: SocketAddr) {
+async fn respond(stream: TcpStream, http: SocketAddr, ssh: bool) {
     let mut reader = BufReader::new(stream);
     let mut request_line = String::new();
     if reader.read_line(&mut request_line).await.is_err() {
@@ -114,7 +123,7 @@ async fn respond(stream: TcpStream, http: SocketAddr) {
     let path = request_line.split_whitespace().nth(1).unwrap_or("");
     let body = match path {
         "/dd.xml" => Some(dd_xml(http)),
-        "/DigitalImagingDesc.xml" => Some(DIGITAL_IMAGING_DESC.to_owned()),
+        "/DigitalImagingDesc.xml" => Some(digital_imaging_desc(ssh)),
         _ => None,
     };
     let response = match body {

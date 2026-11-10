@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use sony_ptpip::discovery::{fetch_description, ssdp_search};
 use sony_ptpip::{DiscoveredCamera, DiscoverySource};
-use sony_ptpip_sim::{spawn, SimCommand, SimConfig, SimHandle};
+use sony_ptpip_sim::{spawn, SimCommand, SimConfig, SimHandle, SshSimConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use url::Url;
@@ -48,6 +48,24 @@ async fn ssdp_finds_the_simulator() {
             source: DiscoverySource::Ssdp,
         }
     );
+    stop(sim).await;
+}
+
+#[tokio::test]
+async fn description_reports_ssh_when_the_simulator_has_an_ssh_front() {
+    let sim = spawn(SimConfig {
+        ssdp_port: Some(0),
+        ssh: Some(SshSimConfig {
+            user: "cam".into(),
+            password: "12345678".into(),
+        }),
+        ..SimConfig::default()
+    })
+    .await;
+    let http_addr = sim.http_addr.expect("simulator HTTP address");
+    let location = Url::parse(&format!("http://{http_addr}/dd.xml")).unwrap();
+    let camera = fetch_description(&location).await.unwrap();
+    assert_eq!(camera.ssh_supported, Some(true));
     stop(sim).await;
 }
 

@@ -17,7 +17,7 @@ use tokio::task::JoinSet;
 use crate::controls::{Controls, Outcome};
 use crate::frames::{self, LiveView};
 use crate::props::{load_fixture, PropStore};
-use crate::ssdp;
+use crate::{ssdp, ssh};
 use crate::{SimCommand, SimConfig, SimHandle};
 
 const PROTOCOL_VERSION: u32 = 0x0001_0000;
@@ -100,10 +100,14 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
     let mut tasks = JoinSet::new();
     let (ssdp_addr, http_addr) = match shared.config.ssdp_port {
         Some(port) => {
-            let (ssdp, http) = ssdp::start(port, &mut tasks).await;
+            let (ssdp, http) = ssdp::start(port, shared.config.ssh.is_some(), &mut tasks).await;
             (Some(ssdp), Some(http))
         }
         None => (None, None),
+    };
+    let ssh = match shared.config.ssh.clone() {
+        Some(account) => Some(ssh::start(account, addr.ip(), addr, &mut tasks).await),
+        None => None,
     };
     let (tx, rx) = mpsc::channel(16);
     tokio::spawn(run(listener, shared, rx, tasks));
@@ -113,6 +117,9 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
         log,
         http_addr,
         ssdp_addr,
+        ssh_addr: ssh.as_ref().map(|s| s.addr),
+        fingerprint_sha256: ssh.as_ref().map(|s| s.fingerprint_sha256.clone()),
+        fingerprint_md5: ssh.map(|s| s.fingerprint_md5),
     }
 }
 
