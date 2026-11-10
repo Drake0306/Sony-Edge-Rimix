@@ -26,6 +26,10 @@ const OPEN_TIMEOUT: Duration = Duration::from_secs(15);
 const KEEPALIVE: Duration = Duration::from_secs(10);
 /// Keyboard-interactive prompt rounds answered before trying a password.
 const MAX_PROMPT_ROUNDS: usize = 3;
+/// The camera-side host each forward asks for, in order: `localhost` as
+/// Sony's own tools use, then the loopback address if the camera refuses
+/// that spelling.
+const FORWARD_HOSTS: [&str; 2] = ["localhost", "127.0.0.1"];
 
 fn default_ssh_port() -> u16 {
     22
@@ -168,7 +172,8 @@ impl SshTunnel {
     /// Connects to the camera's SSH server at `camera` (port 22 on real
     /// cameras), checks its host key against `cfg.expected_fingerprint`,
     /// logs in, and listens on 127.0.0.1 for connections to forward to
-    /// `("127.0.0.1", forward_to_port)` on the camera.
+    /// `("localhost", forward_to_port)` on the camera (or `127.0.0.1` when
+    /// the camera refuses `localhost`).
     pub async fn open(
         camera: SocketAddr,
         cfg: &SshConfig,
@@ -360,20 +365,26 @@ async fn forward(
     port: u16,
 ) {
     let _ = local.set_nodelay(true);
-    let channel = match handle
-        .channel_open_direct_tcpip(
-            "127.0.0.1",
-            u32::from(port),
-            peer.ip().to_string(),
-            u32::from(peer.port()),
-        )
-        .await
-    {
-        Ok(channel) => channel,
-        Err(e) => {
-            tracing::debug!(error = %e, port, "SSH forward refused");
-            return;
+    let mut channel = None;
+    for host in FORWARD_HOSTS {
+        match handle
+            .channel_open_direct_tcpip(
+                host,
+                u32::from(port),
+                peer.ip().to_string(),
+                u32::from(peer.port()),
+            )
+            .await
+        {
+            Ok(opened) => {
+                channel = Some(opened);
+                break;
+            }
+            Err(e) => tracing::debug!(error = %e, host, port, "SSH forward refused"),
         }
+    }
+    let Some(channel) = channel else {
+        return;
     };
     let mut remote = channel.into_stream();
     if let Err(e) = tokio::io::copy_bidirectional(&mut local, &mut remote).await {

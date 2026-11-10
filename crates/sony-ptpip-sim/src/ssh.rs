@@ -43,6 +43,7 @@ pub(crate) struct SshFront {
 /// or `... refused` (never the password).
 pub(crate) async fn start(
     account: Arc<Mutex<SshSimConfig>>,
+    reject_host: Option<String>,
     log: Arc<Mutex<Vec<String>>>,
     bind_ip: IpAddr,
     ptp: SocketAddr,
@@ -75,7 +76,7 @@ pub(crate) async fn start(
         }
         _ => ptp,
     };
-    tasks.spawn(serve(listener, config, account, ptp, log));
+    tasks.spawn(serve(listener, config, account, reject_host, ptp, log));
     SshFront {
         addr,
         fingerprint_sha256,
@@ -98,6 +99,7 @@ async fn serve(
     listener: TcpListener,
     config: Arc<server::Config>,
     account: Arc<Mutex<SshSimConfig>>,
+    reject_host: Option<String>,
     ptp: SocketAddr,
     log: Arc<Mutex<Vec<String>>>,
 ) {
@@ -108,6 +110,7 @@ async fn serve(
                 Ok((tcp, _)) => {
                     let handler = Camera {
                         account: account.clone(),
+                        reject_host: reject_host.clone(),
                         ptp,
                         log: log.clone(),
                         failures: 0,
@@ -146,6 +149,8 @@ async fn serve_connection(mut tcp: TcpStream, config: Arc<server::Config>, handl
 /// One connection's view of the camera's SSH server.
 struct Camera {
     account: Arc<Mutex<SshSimConfig>>,
+    /// A forward host to refuse, from [`crate::SimConfig::ssh_reject_host`].
+    reject_host: Option<String>,
     ptp: SocketAddr,
     log: Arc<Mutex<Vec<String>>>,
     failures: u32,
@@ -225,7 +230,19 @@ impl server::Handler for Camera {
         reply: ChannelOpenHandle,
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
-        if port_to_connect != PTP_PORT {
+        let host_refused = self.reject_host.as_deref() == Some(host_to_connect);
+        let outcome = if port_to_connect != PTP_PORT || host_refused {
+            "refused"
+        } else {
+            "accepted"
+        };
+        self.log
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(format!(
+                "ssh forward {host_to_connect} {port_to_connect} {outcome}"
+            ));
+        if port_to_connect != PTP_PORT || host_refused {
             tracing::debug!(
                 host_to_connect,
                 port_to_connect,

@@ -113,6 +113,65 @@ async fn tunnel_connects_a_camera_behind_ssh() {
     sim.events.send(SimCommand::Shutdown).await.unwrap();
 }
 
+fn forward_lines(sim: &SimHandle) -> Vec<String> {
+    sim.log
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|l| l.starts_with("ssh forward"))
+        .cloned()
+        .collect()
+}
+
+#[tokio::test]
+async fn forwards_ask_for_localhost_first() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sim = sim().await;
+    let fp = sim.fingerprint_sha256.clone();
+    let camera = Camera::connect(config(&sim, tmp.path(), ssh_config(&sim, PASSWORD, fp)))
+        .await
+        .unwrap();
+    assert!(camera.state().secured);
+    let lines = forward_lines(&sim);
+    assert!(!lines.is_empty());
+    assert!(
+        lines
+            .iter()
+            .all(|l| l == "ssh forward localhost 15740 accepted"),
+        "{lines:?}"
+    );
+    camera.disconnect().await;
+    sim.events.send(SimCommand::Shutdown).await.unwrap();
+}
+
+#[tokio::test]
+async fn forward_falls_back_to_the_loopback_address() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sim = spawn(SimConfig {
+        ssh: Some(SshSimConfig {
+            user: USER.into(),
+            password: PASSWORD.into(),
+        }),
+        ssh_reject_host: Some("localhost".into()),
+        ..SimConfig::default()
+    })
+    .await;
+    let fp = sim.fingerprint_sha256.clone();
+    let camera = Camera::connect(config(&sim, tmp.path(), ssh_config(&sim, PASSWORD, fp)))
+        .await
+        .unwrap();
+    let state = camera.state();
+    assert!(state.connected && state.secured, "{state:?}");
+    let lines = forward_lines(&sim);
+    assert_eq!(lines[0], "ssh forward localhost 15740 refused", "{lines:?}");
+    assert_eq!(
+        lines[1], "ssh forward 127.0.0.1 15740 accepted",
+        "{lines:?}"
+    );
+    camera.disconnect().await;
+    sim.events.send(SimCommand::Shutdown).await.unwrap();
+}
+
 #[tokio::test]
 async fn md5_fingerprint_is_accepted_too() {
     let tmp = tempfile::tempdir().unwrap();

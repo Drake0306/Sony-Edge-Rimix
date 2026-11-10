@@ -46,13 +46,30 @@ pub struct Quirks {
 /// The quirks for a model name as the camera reports it. Unknown models get
 /// the same defaults as the ZV-E10.
 pub fn quirks_for(model: &str) -> Quirks {
-    match model {
-        "ZV-E10" => DEFAULT_QUIRKS,
-        "ILCE-7M4" | "ILCE-7RM5" | "ILCE-6700" | "ILCE-7CM2" | "ZV-E1" | "ILME-FX3"
-        | "ILME-FX30" => GEN4_QUIRKS,
-        _ => DEFAULT_QUIRKS,
+    if GEN4_MODELS.contains(&model) {
+        GEN4_QUIRKS
+    } else {
+        DEFAULT_QUIRKS
     }
 }
+
+/// Bodies driven the Gen4 way, with Access Authentication. The a7 IV and
+/// FX3 only offer it from firmware 2.00; on older firmware discovery says
+/// so and [`quirks_from`] turns it off.
+pub const GEN4_MODELS: &[&str] = &[
+    "ILCE-7M4",
+    "ILCE-7RM5",
+    "ILCE-7CR",
+    "ILCE-7CM2",
+    "ILCE-7M5",
+    "ILCE-6700",
+    "ILCE-9M3",
+    "ILCE-1M2",
+    "ZV-E1",
+    "ZV-E10M2",
+    "ILME-FX3",
+    "ILME-FX30",
+];
 
 /// Like [`quirks_for`], but a known discovery answer about SSH wins over the
 /// table.
@@ -88,6 +105,18 @@ mod tests {
         let q = quirks_for("ILCE-7M4");
         assert_eq!(q.generation, Generation::Gen4);
         assert!(q.access_authentication);
+    }
+
+    #[test]
+    fn every_gen4_model_has_ssh() {
+        for model in GEN4_MODELS {
+            let q = quirks_for(model);
+            assert_eq!(q.generation, Generation::Gen4, "{model}");
+            assert!(q.access_authentication, "{model}");
+        }
+        for model in ["ILCE-7CR", "ZV-E10M2", "ILCE-9M3", "ILCE-1M2", "ILCE-7M5"] {
+            assert!(GEN4_MODELS.contains(&model), "{model}");
+        }
     }
 
     #[test]

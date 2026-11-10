@@ -111,7 +111,17 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
         .clone()
         .map(|account| Arc::new(Mutex::new(account)));
     let ssh = match ssh_account.clone() {
-        Some(account) => Some(ssh::start(account, log.clone(), addr.ip(), addr, &mut tasks).await),
+        Some(account) => Some(
+            ssh::start(
+                account,
+                shared.config.ssh_reject_host.clone(),
+                log.clone(),
+                addr.ip(),
+                addr,
+                &mut tasks,
+            )
+            .await,
+        ),
         None => None,
     };
     let (tx, rx) = mpsc::channel(16);

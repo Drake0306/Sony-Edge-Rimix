@@ -69,6 +69,11 @@ pub struct SimConfig {
     /// Put an SSH server in front of the PTP/IP port, as cameras with
     /// Access Authentication do; `None` leaves PTP/IP open directly.
     pub ssh: Option<SshSimConfig>,
+    /// Refuse `direct-tcpip` forwards to this host string with
+    /// AdministrativelyProhibited, as cameras that only accept one spelling
+    /// of their own address do. `None` accepts any host.
+    #[serde(default)]
+    pub ssh_reject_host: Option<String>,
 }
 
 impl Default for SimConfig {
@@ -91,6 +96,7 @@ impl Default for SimConfig {
             ssdp_port: None,
             bind_addr: None,
             ssh: None,
+            ssh_reject_host: None,
         }
     }
 }
