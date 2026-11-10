@@ -633,3 +633,127 @@ fn card_get_needs_a_file() {
         .assert()
         .code(2);
 }
+
+struct AnyHost;
+
+impl russh::client::Handler for AnyHost {
+    type Error = russh::Error;
+
+    async fn check_server_key(
+        &mut self,
+        _key: &russh::keys::PublicKeyOrCertificate,
+    ) -> Result<bool, Self::Error> {
+        Ok(true)
+    }
+}
+
+fn sftp_serve(tmp: &Path, port: &str) -> std::process::Command {
+    let mut cmd = std::process::Command::new(assert_cmd::cargo::cargo_bin("rimix"));
+    cmd.env("RIMIX_WIFI", "fake")
+        .args(["sftp", "serve", "--dir"])
+        .arg(tmp.join("in"))
+        .args(["--port", port, "--password-stdin", "--host-key"])
+        .arg(tmp.join("host_key"));
+    cmd
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sftp_serve_prints_how_to_log_in_and_each_received_file() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::Stdio;
+    use tokio::io::AsyncWriteExt;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let mut child = sftp_serve(tmp.path(), "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"pass1234\n")
+        .unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let (head, mut lines) = tokio::task::spawn_blocking(move || {
+        let head: Vec<String> = (0..3).map(|_| lines.next().unwrap().unwrap()).collect();
+        (head, lines)
+    })
+    .await
+    .unwrap();
+    assert!(
+        head[0].starts_with("address: this computer's address:"),
+        "{head:?}"
+    );
+    assert_eq!(head[1], "user: rimix");
+    assert!(head[2].starts_with("fingerprint: SHA256:"), "{head:?}");
+    let port: u16 = head[0].rsplit(':').next().unwrap().parse().unwrap();
+
+    let addr: std::net::SocketAddr = ([127, 0, 0, 1], port).into();
+    let mut ssh = russh::client::connect(
+        std::sync::Arc::new(russh::client::Config::default()),
+        addr,
+        AnyHost,
+    )
+    .await
+    .unwrap();
+    let auth = ssh
+        .authenticate_password("rimix", "pass1234")
+        .await
+        .unwrap();
+    assert!(auth.success());
+    let channel = ssh.channel_open_session().await.unwrap();
+    channel.request_subsystem(true, "sftp").await.unwrap();
+    let sftp = russh_sftp::client::SftpSession::new(channel.into_stream())
+        .await
+        .unwrap();
+    let mut file = sftp.create("/DSC00001.JPG").await.unwrap();
+    file.write_all(b"12345").await.unwrap();
+    file.shutdown().await.unwrap();
+
+    let line = tokio::task::spawn_blocking(move || lines.next().unwrap().unwrap())
+        .await
+        .unwrap();
+    let saved = tmp.path().join("in").join("DSC00001.JPG");
+    assert_eq!(line, format!("received {} (5 B)", saved.display()));
+    assert_eq!(std::fs::read(&saved).unwrap(), b"12345");
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn sftp_serve_needs_a_password_on_stdin() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = sftp_serve(tmp.path(), "0")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    Command::cargo_bin("rimix")
+        .unwrap()
+        .args(["sftp", "serve", "--dir", "x"])
+        .assert()
+        .code(2);
+}
+
+#[test]
+fn sftp_serve_on_a_port_in_use_exits_5() {
+    let tmp = tempfile::tempdir().unwrap();
+    let taken = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
+    let port = taken.local_addr().unwrap().port().to_string();
+    let mut child = sftp_serve(tmp.path(), &port)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(&mut child.stdin.take().unwrap(), b"pass1234\n").unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(5));
+    assert!(
+        stderr(&out).contains(&format!("Port {port} is in use")),
+        "{}",
+        stderr(&out)
+    );
+}

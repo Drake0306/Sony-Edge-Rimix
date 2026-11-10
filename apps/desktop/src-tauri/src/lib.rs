@@ -3,6 +3,7 @@
 pub mod commands;
 pub mod logging;
 pub mod settings;
+pub mod sftp;
 pub mod state;
 
 use tauri::Manager;
@@ -26,6 +27,7 @@ pub fn run() {
             tracing::info!(version = env!("CARGO_PKG_VERSION"), "Rimix started");
             let guid = sony_ptpip::load_or_create_guid(&dir.join("guid"))?;
             app.manage(state::AppState::new(guid, dir.join("settings.json")));
+            commands::start_sftp(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -56,7 +58,17 @@ pub fn run() {
             commands::current_network,
             commands::wait_for_camera,
             commands::open_logs,
+            commands::sftp_status,
+            commands::sftp_set_enabled,
+            commands::sftp_regenerate_password,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Rimix");
+        .build(tauri::generate_context!())
+        .expect("error while running Rimix")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<state::AppState>() {
+                    tauri::async_runtime::block_on(sftp::stop(&state));
+                }
+            }
+        });
 }

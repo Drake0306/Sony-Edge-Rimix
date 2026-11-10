@@ -151,6 +151,31 @@ enum Cmd {
         #[command(subcommand)]
         action: WifiCmd,
     },
+    /// Receive the files a camera pushes with its FTP Transfer function.
+    Sftp {
+        #[command(subcommand)]
+        action: SftpCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum SftpCmd {
+    /// Run an SFTP server and print each file the camera sends, until Ctrl-C.
+    Serve {
+        /// Where received files are saved.
+        #[arg(long, value_name = "DIR")]
+        dir: PathBuf,
+        #[arg(long, default_value_t = 2222)]
+        port: u16,
+        #[arg(long, default_value = "rimix")]
+        user: String,
+        /// Read the password the camera logs in with from the first line of stdin.
+        #[arg(long, required = true)]
+        password_stdin: bool,
+        /// The server's key (default: `sftp_host_key` in the Rimix config folder).
+        #[arg(long, hide = true, value_name = "PATH")]
+        host_key: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -335,6 +360,22 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
                 password_stdin,
             } => commands::wifi_join(ssid, password_stdin).await,
         },
+        Cmd::Sftp {
+            action:
+                SftpCmd::Serve {
+                    dir,
+                    port,
+                    user,
+                    password_stdin: _,
+                    host_key,
+                },
+        } => {
+            let password = commands::read_password(std::io::stdin().lock())?.ok_or_else(|| {
+                CliError::Usage("--password-stdin found no password on stdin".into())
+            })?;
+            let host_key = host_key.unwrap_or_else(|| guid_file.with_file_name("sftp_host_key"));
+            commands::sftp_serve(&dir, port, user, password, &host_key).await
+        }
     }
 }
 

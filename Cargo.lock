@@ -3990,7 +3990,10 @@ dependencies = [
  "clap",
  "directories",
  "predicates",
+ "rimix-sftp",
  "rimix-wifi",
+ "russh",
+ "russh-sftp",
  "sony-ptpip",
  "sony-ptpip-sim",
  "tempfile",
@@ -4003,7 +4006,11 @@ name = "rimix-desktop"
 version = "0.1.0"
 dependencies = [
  "directories",
+ "rand",
+ "rimix-sftp",
  "rimix-wifi",
+ "russh",
+ "russh-sftp",
  "serde",
  "serde_json",
  "sony-ptpip",

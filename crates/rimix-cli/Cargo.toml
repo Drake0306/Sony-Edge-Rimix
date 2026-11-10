@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 sony-ptpip = { path = "../sony-ptpip" }
 rimix-wifi = { path = "../rimix-wifi" }
+rimix-sftp = { path = "../rimix-sftp" }
 clap = { version = "4", features = ["derive"] }
 tokio = { workspace = true }
 anyhow = { workspace = true }
@@ -22,4 +23,6 @@ sony-ptpip-sim = { path = "../sony-ptpip-sim" }
 assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
+russh = { version = "0.65.1", default-features = false, features = ["ring"] }
+russh-sftp = "3"
 tokio = { workspace = true }

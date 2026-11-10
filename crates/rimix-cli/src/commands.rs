@@ -539,6 +539,59 @@ pub async fn wifi_join(ssid: String, password_stdin: bool) -> Result<()> {
     Ok(())
 }
 
+/// How the camera should reach this computer: the Wi-Fi address, or a
+/// placeholder when it is unknown.
+fn lan_address(port: u16) -> String {
+    match wifi().current_address() {
+        Ok(Some(ip)) => format!("{ip}:{port}"),
+        _ => format!("this computer's address:{port}"),
+    }
+}
+
+/// `rimix sftp serve`: receives files until Ctrl-C, one line per file.
+pub async fn sftp_serve(
+    dir: &Path,
+    port: u16,
+    user: String,
+    password: String,
+    host_key: &Path,
+) -> Result<()> {
+    let host_key =
+        rimix_sftp::load_or_create_host_key(host_key).map_err(|e| io_error("host key", e))?;
+    let cfg = rimix_sftp::ReceiverConfig {
+        bind: SocketAddr::from(([0, 0, 0, 0], port)),
+        user: user.clone(),
+        password,
+        host_key,
+        destination: dir.to_path_buf(),
+    };
+    let receiver = rimix_sftp::Receiver::start(cfg, |file| {
+        println!(
+            "received {} ({})",
+            file.path.display(),
+            size_text(file.bytes)
+        );
+    })
+    .await
+    .map_err(|e| {
+        let text = match e {
+            rimix_sftp::Error::Io(io) if io.kind() == std::io::ErrorKind::AddrInUse => {
+                format!("Port {port} is in use")
+            }
+            e => format!("cannot start the SFTP server: {e}"),
+        };
+        anyhow::Error::new(CliError::Io(text))
+    })?;
+    let bound = receiver.local_addr().port();
+    let address = tokio::task::spawn_blocking(move || lan_address(bound)).await?;
+    println!("address: {address}");
+    println!("user: {user}");
+    println!("fingerprint: {}", receiver.fingerprint_sha256());
+    let _ = tokio::signal::ctrl_c().await;
+    receiver.stop().await;
+    Ok(())
+}
+
 #[cfg(test)]
 mod wifi_tests {
     use super::*;

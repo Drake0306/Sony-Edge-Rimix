@@ -74,6 +74,61 @@ pub struct RecentCamera {
     pub ssh_fingerprint: Option<String>,
 }
 
+/// The receiver the camera's FTP Transfer function pushes files to. The
+/// password is Rimix's own, made on first use and shown in the UI so it can
+/// be typed into the camera; it is never logged.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SftpSettings {
+    pub enabled: bool,
+    pub port: u16,
+    pub user: String,
+    pub password: String,
+}
+
+impl Default for SftpSettings {
+    fn default() -> Self {
+        SftpSettings {
+            enabled: false,
+            port: 2222,
+            user: "rimix".to_string(),
+            password: String::new(),
+        }
+    }
+}
+
+impl std::fmt::Debug for SftpSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SftpSettings")
+            .field("enabled", &self.enabled)
+            .field("port", &self.port)
+            .field("user", &self.user)
+            .field("password", &"<hidden>")
+            .finish()
+    }
+}
+
+impl SftpSettings {
+    /// Makes a password when there is none; true when it did.
+    pub fn ensure_password(&mut self) -> bool {
+        if !self.password.is_empty() {
+            return false;
+        }
+        self.password = new_sftp_password();
+        true
+    }
+}
+
+/// Twelve characters from `a-z0-9`: easy to type on the camera.
+pub fn new_sftp_password() -> String {
+    use rand::RngExt;
+    const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let mut rng = rand::rng();
+    (0..12)
+        .map(|_| CHARS[rng.random_range(0..CHARS.len())] as char)
+        .collect()
+}
+
 /// Everything the app remembers between runs. Missing fields take their
 /// defaults, so older files still load.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -89,6 +144,7 @@ pub struct AppSettings {
     /// The webcam the camera appears as, when the user picked one.
     pub webcam_id: Option<String>,
     pub presets: Vec<Preset>,
+    pub sftp: SftpSettings,
 }
 
 impl Default for AppSettings {
@@ -103,6 +159,7 @@ impl Default for AppSettings {
             wifi_join: WifiJoin::default(),
             webcam_id: None,
             presets: Vec::new(),
+            sftp: SftpSettings::default(),
         }
     }
 }
@@ -467,6 +524,56 @@ mod tests {
             s.recent_cameras[0].ssh_fingerprint.as_deref(),
             Some("SHA256:new")
         );
+    }
+
+    #[test]
+    fn sftp_defaults_to_off_on_port_2222_as_rimix() {
+        let s = AppSettings::default();
+        assert!(!s.sftp.enabled);
+        assert_eq!(s.sftp.port, 2222);
+        assert_eq!(s.sftp.user, "rimix");
+        assert_eq!(s.sftp.password, "");
+    }
+
+    #[test]
+    fn a_settings_file_without_sftp_loads_with_its_defaults() {
+        let text = r#"{"layout":"Ring","presets":[]}"#;
+        let s: AppSettings = serde_json::from_str(text).unwrap();
+        assert_eq!(s.sftp, SftpSettings::default());
+        // A partial sftp object keeps what it has and defaults the rest.
+        let s: AppSettings = serde_json::from_str(r#"{"sftp":{"enabled":true}}"#).unwrap();
+        assert!(s.sftp.enabled);
+        assert_eq!(s.sftp.port, 2222);
+        assert_eq!(s.sftp.user, "rimix");
+        let back = serde_json::to_string(&s).unwrap();
+        assert!(
+            back.contains(r#""sftp":{"enabled":true,"port":2222,"user":"rimix","password":"""#),
+            "{back}"
+        );
+    }
+
+    #[test]
+    fn the_sftp_password_is_made_once_from_lowercase_letters_and_digits() {
+        let mut s = SftpSettings::default();
+        assert!(s.ensure_password());
+        assert_eq!(s.password.len(), 12);
+        assert!(s
+            .password
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()));
+        let first = s.password.clone();
+        assert!(!s.ensure_password());
+        assert_eq!(s.password, first);
+        assert_ne!(new_sftp_password(), new_sftp_password());
+    }
+
+    #[test]
+    fn the_sftp_password_is_not_in_debug_output() {
+        let s = SftpSettings {
+            password: "abc123secret".into(),
+            ..SftpSettings::default()
+        };
+        assert!(!format!("{s:?}").contains("abc123secret"));
     }
 
     #[test]

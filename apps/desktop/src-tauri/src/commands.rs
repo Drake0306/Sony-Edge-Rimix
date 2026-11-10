@@ -2,7 +2,7 @@
 
 use sony_ptpip::{CameraState, CardObject, DiscoveredCamera};
 use tauri::ipc::Response;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -267,4 +267,39 @@ pub async fn open_logs(app: AppHandle) -> Result<(), String> {
     app.opener()
         .open_path(dir.display().to_string(), None::<&str>)
         .map_err(|e| e.to_string())
+}
+
+/// Whether Receive from camera runs, its address, login and fingerprint.
+#[tauri::command]
+pub async fn sftp_status(state: State<'_, AppState>) -> Result<crate::sftp::SftpStatus, String> {
+    Ok(crate::sftp::status(&state).await)
+}
+
+/// Turns Receive from camera on or off; a failure to start shows in
+/// `sftp_status`.
+#[tauri::command]
+pub async fn sftp_set_enabled(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    crate::sftp::set_enabled(&state, enabled).await
+}
+
+/// Makes a new SFTP password; a running receiver restarts with it.
+#[tauri::command]
+pub async fn sftp_regenerate_password(state: State<'_, AppState>) -> Result<(), String> {
+    crate::sftp::regenerate_password(&state).await
+}
+
+/// Sends received files to the webview as `CaptureSaved` events tagged
+/// `sftp`, then starts the receiver if it is on.
+pub fn start_sftp(app: &AppHandle) {
+    let handle = app.clone();
+    let state = app.state::<AppState>();
+    state.sftp.set_emit(std::sync::Arc::new(move |event| {
+        if let Err(e) = handle.emit(CAMERA_EVENT, event) {
+            tracing::warn!(error = %e, "cannot send a received file to the window");
+        }
+    }));
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        crate::sftp::start_if_enabled(&app.state::<AppState>()).await;
+    });
 }

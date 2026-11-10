@@ -82,6 +82,8 @@ pub struct AppState {
     pub guid: [u8; 16],
     pub settings_path: PathBuf,
     pub wifi: Wifi,
+    /// Receive from camera: the SFTP server the camera pushes files to.
+    pub sftp: crate::sftp::SftpService,
 }
 
 /// Locks a std mutex, carrying on if a panicking holder poisoned it.
@@ -107,6 +109,7 @@ impl AppState {
             guid,
             settings_path,
             wifi: Wifi::from_env(Arc::new(SystemRunner)),
+            sftp: crate::sftp::SftpService::default(),
         }
     }
 
@@ -735,13 +738,23 @@ pub fn get_settings(state: &AppState) -> AppSettings {
     lock(&state.settings).clone()
 }
 
-/// Stores the settings and points every connected camera at the new destination.
-pub async fn save_settings(state: &AppState, s: AppSettings) -> Result<(), String> {
+/// Stores the settings and points every connected camera, and the SFTP
+/// receiver, at the new destination. The receiver's own settings are kept:
+/// only the `sftp_*` commands change them.
+pub async fn save_settings(state: &AppState, mut s: AppSettings) -> Result<(), String> {
+    let moved = {
+        let current = lock(&state.settings);
+        s.sftp = current.sftp.clone();
+        current.destination_base != s.destination_base
+    };
     settings::save(&state.settings_path, &s).map_err(|e| format!("Cannot save settings: {e}"))?;
     let destination = s.destination();
     *lock(&state.settings) = s;
     for slot in state.cameras.lock().await.iter() {
         slot.camera.set_destination(destination.clone());
+    }
+    if moved {
+        crate::sftp::restart_if_enabled(state).await;
     }
     Ok(())
 }
@@ -2033,4 +2046,210 @@ mod tests {
     }
 
     const CARD_OBJECT_FIXTURE: &str = include_str!("../../src/fixtures/card-object.json");
+
+    // ---- Receive from camera (SFTP) ----
+
+    struct AnyHost;
+
+    impl russh::client::Handler for AnyHost {
+        type Error = russh::Error;
+
+        async fn check_server_key(
+            &mut self,
+            _key: &russh::keys::PublicKeyOrCertificate,
+        ) -> Result<bool, Self::Error> {
+            Ok(true)
+        }
+    }
+
+    /// Logs in to the receiver on `port` the way the camera would; `None`
+    /// when the login is refused.
+    async fn sftp_login(
+        port: u16,
+        user: &str,
+        password: &str,
+    ) -> Option<(
+        russh::client::Handle<AnyHost>,
+        russh_sftp::client::SftpSession,
+    )> {
+        let addr: SocketAddr = ([127, 0, 0, 1], port).into();
+        let config = Arc::new(russh::client::Config::default());
+        let mut handle = russh::client::connect(config, addr, AnyHost)
+            .await
+            .expect("ssh connect");
+        let auth = handle.authenticate_password(user, password).await.unwrap();
+        if !auth.success() {
+            return None;
+        }
+        let channel = handle.channel_open_session().await.unwrap();
+        channel.request_subsystem(true, "sftp").await.unwrap();
+        let session = russh_sftp::client::SftpSession::new(channel.into_stream())
+            .await
+            .unwrap();
+        Some((handle, session))
+    }
+
+    async fn upload(port: u16, user: &str, password: &str, name: &str, data: &[u8]) {
+        use tokio::io::AsyncWriteExt;
+        let (_ssh, sftp) = sftp_login(port, user, password)
+            .await
+            .expect("login refused");
+        let mut file = sftp.create(name).await.unwrap();
+        file.write_all(data).await.unwrap();
+        file.shutdown().await.unwrap();
+    }
+
+    /// An app state receiving on a free port, with a fake Wi-Fi, whose
+    /// emitted events are collected as JSON.
+    fn sftp_state(dir: &Path) -> (AppState, Arc<StdMutex<Vec<String>>>) {
+        let path = dir.join("config").join("settings.json");
+        let mut settings = AppSettings {
+            destination_base: dir.join("shots"),
+            destination_mode: DestinationMode::CustomFolder,
+            ..AppSettings::default()
+        };
+        settings.sftp.port = 0;
+        settings::save(&path, &settings).unwrap();
+        let mut state = AppState::new([0x42; 16], path);
+        state.wifi = rimix_wifi::Wifi::fake();
+        let seen: Arc<StdMutex<Vec<String>>> = Arc::default();
+        let sink = seen.clone();
+        state.sftp.set_emit(Arc::new(move |ev: TaggedEvent<'_>| {
+            lock(&sink).push(serde_json::to_string(&ev).unwrap());
+        }));
+        (state, seen)
+    }
+
+    async fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
+        timeout(WAIT, async {
+            while !done() {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("{what}"));
+    }
+
+    #[tokio::test]
+    async fn enabling_sftp_receives_an_upload_into_the_destination_tagged_sftp() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, seen) = sftp_state(tmp.path());
+        let off = crate::sftp::status(&state).await;
+        assert!(!off.running);
+        assert_eq!(off.password.len(), 12, "made on first use");
+        assert_eq!(get_settings(&state).sftp.password, off.password);
+
+        crate::sftp::set_enabled(&state, true).await.unwrap();
+        let st = crate::sftp::status(&state).await;
+        assert!(!off.enabled);
+        assert!(st.enabled);
+        assert!(st.running, "{:?}", st.error);
+        assert_ne!(st.port, 0);
+        assert_eq!(st.user, "rimix");
+        assert_eq!(st.password, off.password);
+        assert!(st.fingerprint.as_deref().unwrap().starts_with("SHA256:"));
+        assert_eq!(st.error, None);
+        assert_eq!(st.address, None, "the fake Wi-Fi has no address");
+        assert!(tmp.path().join("config").join("sftp_host_key").exists());
+        assert!(settings::load(&state.settings_path).sftp.enabled);
+
+        upload(st.port, &st.user, &st.password, "/DSC00001.JPG", b"jpeg").await;
+        let saved = tmp.path().join("shots").join("DSC00001.JPG");
+        wait_for("no event forwarded", || {
+            lock(&seen).iter().any(|e| e.contains("CaptureSaved"))
+        })
+        .await;
+        assert_eq!(std::fs::read(&saved).unwrap(), b"jpeg");
+        let event = lock(&seen)[0].clone();
+        let json: serde_json::Value = serde_json::from_str(&event).unwrap();
+        assert_eq!(json["camera_id"], "sftp");
+        let r = &json["event"]["CaptureSaved"];
+        assert_eq!(r["filename"], "DSC00001.JPG");
+        assert_eq!(r["camera_filename"], "/DSC00001.JPG");
+        assert_eq!(r["bytes"], 4);
+        assert_eq!(r["path"], saved.display().to_string());
+
+        crate::sftp::set_enabled(&state, false).await.unwrap();
+        assert!(!crate::sftp::status(&state).await.running);
+        assert!(!settings::load(&state.settings_path).sftp.enabled);
+        assert!(tokio::net::TcpStream::connect(("127.0.0.1", st.port))
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn a_port_in_use_is_shown_as_the_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _) = sftp_state(tmp.path());
+        let taken = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
+        let port = taken.local_addr().unwrap().port();
+        lock(&state.settings).sftp.port = port;
+        crate::sftp::set_enabled(&state, true).await.unwrap();
+        let st = crate::sftp::status(&state).await;
+        assert!(!st.running);
+        assert_eq!(st.error, Some(format!("Port {port} is in use")));
+        assert_eq!(st.port, port);
+        crate::sftp::set_enabled(&state, false).await.unwrap();
+        assert_eq!(crate::sftp::status(&state).await.error, None);
+    }
+
+    #[tokio::test]
+    async fn a_new_destination_restarts_the_receiver_there_and_keeps_its_settings() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _) = sftp_state(tmp.path());
+        crate::sftp::set_enabled(&state, true).await.unwrap();
+        let before = crate::sftp::status(&state).await;
+        // The webview saves settings without the sftp fields.
+        let mut s = get_settings(&state);
+        s.destination_base = tmp.path().join("elsewhere");
+        s.sftp = settings::SftpSettings::default();
+        save_settings(&state, s).await.unwrap();
+        let after = crate::sftp::status(&state).await;
+        assert!(after.running);
+        assert_eq!(after.password, before.password);
+        assert_eq!(after.fingerprint, before.fingerprint);
+        assert!(settings::load(&state.settings_path).sftp.enabled);
+        upload(after.port, &after.user, &after.password, "/A.JPG", b"a").await;
+        let moved = tmp.path().join("elsewhere").join("A.JPG");
+        wait_for("not saved in the new destination", || moved.exists()).await;
+        crate::sftp::stop(&state).await;
+    }
+
+    #[tokio::test]
+    async fn a_new_password_is_saved_and_the_old_one_stops_working() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _) = sftp_state(tmp.path());
+        crate::sftp::set_enabled(&state, true).await.unwrap();
+        let old = crate::sftp::status(&state).await;
+        crate::sftp::regenerate_password(&state).await.unwrap();
+        let new = crate::sftp::status(&state).await;
+        assert!(new.running);
+        assert_ne!(new.password, old.password);
+        assert_eq!(new.password.len(), 12);
+        assert_eq!(
+            settings::load(&state.settings_path).sftp.password,
+            new.password
+        );
+        assert!(sftp_login(new.port, "rimix", &old.password).await.is_none());
+        assert!(sftp_login(new.port, "rimix", &new.password).await.is_some());
+        crate::sftp::stop(&state).await;
+    }
+
+    #[test]
+    fn sftp_status_json_is_stable() {
+        let st = crate::sftp::SftpStatus {
+            enabled: true,
+            running: true,
+            address: Some("192.168.1.20:2222".into()),
+            port: 2222,
+            user: "rimix".into(),
+            password: "abc".into(),
+            fingerprint: Some("SHA256:x".into()),
+            error: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&st).unwrap(),
+            r#"{"enabled":true,"running":true,"address":"192.168.1.20:2222","port":2222,"user":"rimix","password":"abc","fingerprint":"SHA256:x","error":null}"#
+        );
+    }
 }
