@@ -3178,6 +3178,7 @@ name = "rimix-desktop"
 version = "0.1.0"
 dependencies = [
  "directories",
+ "rimix-wifi",
  "serde",
  "serde_json",
  "sony-ptpip",
@@ -3190,6 +3191,10 @@ dependencies = [
  "tokio",
  "tracing",
 ]
+
+[[package]]
+name = "rimix-wifi"
+version = "0.1.0"
 
 [[package]]
 name = "rustc-hash"

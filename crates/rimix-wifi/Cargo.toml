@@ -1,0 +1,6 @@
+[package]
+name = "rimix-wifi"
+version = "0.1.0"
+description = "Joining a camera's Wi-Fi network from Rimix"
+edition.workspace = true
+license.workspace = true

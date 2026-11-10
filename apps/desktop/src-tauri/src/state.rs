@@ -12,7 +12,7 @@ use sony_ptpip::{Camera, CameraConfig, CameraEvent, CameraState, DiscoveredCamer
 use tokio::sync::broadcast::{self, error::RecvError};
 
 use crate::settings::{self, AppSettings, PresetValue};
-use crate::wifi::{SystemRunner, Wifi};
+use rimix_wifi::{SystemRunner, Wifi};
 
 /// The error every camera command gives while no camera is connected.
 pub const NOT_CONNECTED: &str = "Not connected to a camera";
@@ -933,7 +933,7 @@ mod tests {
     async fn join_network_goes_through_the_wifi_and_current_network_reports_it() {
         let dir = tempfile::tempdir().unwrap();
         let mut state = app_state(dir.path());
-        state.wifi = crate::wifi::Wifi::fake();
+        state.wifi = rimix_wifi::Wifi::fake();
         join_network(&state, "DIRECT-abc1:ZV-E10", Some("12345678"))
             .await
             .unwrap();

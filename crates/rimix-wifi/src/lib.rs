@@ -6,6 +6,11 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+use macos::{system_current_network, system_device};
+
 /// How long to wait for a joined network to come up.
 pub const JOIN_WAIT: Duration = Duration::from_secs(20);
 /// How often to check whether it has.
@@ -138,48 +143,6 @@ impl Wifi {
     }
 }
 
-#[cfg(target_os = "macos")]
-impl Wifi {
-    /// Joins `ssid`. Success is the network name reading back, or the Wi-Fi
-    /// interface getting an address: recent macOS often will not print the
-    /// current network name even while joined.
-    fn system_join(
-        &self,
-        runner: &dyn Runner,
-        ssid: &str,
-        password: Option<&str>,
-    ) -> Result<(), WifiError> {
-        let device = system_device(runner)?;
-        if network_on(runner, &device)?.as_deref() == Some(ssid) {
-            return Ok(());
-        }
-        let mut args = vec!["-setairportnetwork", device.as_str(), ssid];
-        if let Some(p) = password.filter(|p| !p.is_empty()) {
-            args.push(p);
-        }
-        let out = runner
-            .run("networksetup", &args)
-            .map_err(|e| WifiError::Failed(format!("Could not run networksetup: {e}")))?;
-        if !out.success || out.stdout.contains("Failed") || out.stdout.contains("Could not") {
-            let text = format!("{}{}", out.stdout, out.stderr);
-            return Err(WifiError::Failed(text.trim().to_string()));
-        }
-        let deadline = (self.now)() + JOIN_WAIT;
-        loop {
-            if network_on(runner, &device)?.as_deref() == Some(ssid) {
-                return Ok(());
-            }
-            if has_address(runner, &device) {
-                return Ok(());
-            }
-            if (self.now)() >= deadline {
-                return Err(WifiError::Failed(format!("{ssid} did not come up")));
-            }
-            (self.sleep)(JOIN_POLL);
-        }
-    }
-}
-
 #[cfg(not(target_os = "macos"))]
 impl Wifi {
     fn system_join(&self, _: &dyn Runner, _: &str, _: Option<&str>) -> Result<(), WifiError> {
@@ -188,45 +151,14 @@ impl Wifi {
     }
 }
 
-#[cfg(target_os = "macos")]
-fn system_device(runner: &dyn Runner) -> Result<String, WifiError> {
-    let out = runner
-        .run("networksetup", &["-listallhardwareports"])
-        .map_err(|e| WifiError::Failed(format!("Could not run networksetup: {e}")))?;
-    parse_wifi_device(&out.stdout).ok_or(WifiError::NoWifi)
-}
-
 #[cfg(not(target_os = "macos"))]
 fn system_device(_: &dyn Runner) -> Result<String, WifiError> {
     Err(WifiError::Unsupported)
 }
 
-#[cfg(target_os = "macos")]
-fn system_current_network(runner: &dyn Runner) -> Result<Option<String>, WifiError> {
-    let device = system_device(runner)?;
-    network_on(runner, &device)
-}
-
 #[cfg(not(target_os = "macos"))]
 fn system_current_network(_: &dyn Runner) -> Result<Option<String>, WifiError> {
     Ok(None)
-}
-
-#[cfg(target_os = "macos")]
-fn network_on(runner: &dyn Runner, device: &str) -> Result<Option<String>, WifiError> {
-    let out = runner
-        .run("networksetup", &["-getairportnetwork", device])
-        .map_err(|e| WifiError::Failed(format!("Could not run networksetup: {e}")))?;
-    Ok(parse_current_network(&out.stdout))
-}
-
-/// Whether `ipconfig getifaddr` prints an IPv4 address for `device`.
-#[cfg(target_os = "macos")]
-fn has_address(runner: &dyn Runner, device: &str) -> bool {
-    match runner.run("ipconfig", &["getifaddr", device]) {
-        Ok(out) => out.success && out.stdout.trim().parse::<std::net::Ipv4Addr>().is_ok(),
-        Err(_) => false,
-    }
 }
 
 /// The `Device:` of the `Wi-Fi` port in `networksetup -listallhardwareports`.
