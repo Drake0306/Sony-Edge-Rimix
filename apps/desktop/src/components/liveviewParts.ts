@@ -66,7 +66,33 @@ export function colours() {
     shadow: get('--footage-shadow'),
     zebraDark: get('--zebra-dark'),
     zebraLight: get('--zebra-light'),
+    scopeTrace: get('--scope-trace'),
+    scopeBg: get('--scope-bg'),
+    falseColour: Object.fromEntries(
+      Object.entries(FC_TOKENS).map(([label, token]) => [label, parseHex(get(token))]),
+    ) as Record<string, [number, number, number]>,
   };
+}
+
+const FC_TOKENS: Record<string, string> = {
+  crushed: '--fc-crushed',
+  shadows: '--fc-shadows',
+  low: '--fc-low',
+  'skin-dark': '--fc-skin-dark',
+  mid: '--fc-mid',
+  skin: '--fc-skin',
+  high: '--fc-high',
+  highlights: '--fc-highlights',
+  'near-clip': '--fc-near-clip',
+  clipped: '--fc-clipped',
+};
+
+/** `#rgb` or `#rrggbb` to [r, g, b]; anything else is black. */
+export function parseHex(hex: string): [number, number, number] {
+  let h = hex.trim().replace(/^#/, '');
+  if (h.length === 3) h = [...h].map((c) => c + c).join('');
+  if (!/^[0-9a-f]{6}$/i.test(h)) return [0, 0, 0];
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
 }
 
 export type Colours = ReturnType<typeof colours>;

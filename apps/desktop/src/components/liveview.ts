@@ -5,12 +5,15 @@ import type { Actions } from '../actions';
 import { el } from '../dom';
 import { liveViewFrame, liveViewMeta, type LiveViewMeta } from '../ipc';
 import { watch, type AppStore } from '../state';
+import { WAVEFORM_COLUMNS, WAVEFORM_ROWS, falseColour, waveform } from '../scopes';
 import { colours, corners, createFrameSwap, histogramPath, luminance, makeStripes } from './liveviewParts';
 
 const FRAME_MS = 33; // at most 30 fps
 const META_MS = 100;
 const HIST_MS = 250;
 const GRID = 64;
+const SCOPE_W = 128;
+const SCOPE_H = 72;
 const ZEBRA = 0.95 * 255;
 
 const LEVEL_SVG =
@@ -39,7 +42,20 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
   hist.setAttribute('aria-label', 'Histogram');
   hist.innerHTML = HIST_SVG;
   hist.append(el('small', '', 'Histogram'));
-  root.append(scene, thirds, canvas, label, level, hist);
+  const fcCanvas = el('canvas', 'falsecolour');
+  fcCanvas.width = SCOPE_W;
+  fcCanvas.height = SCOPE_H;
+  fcCanvas.hidden = true;
+  fcCanvas.setAttribute('aria-hidden', 'true');
+  const wave = el('div', 'wave glass deep');
+  wave.setAttribute('role', 'img');
+  wave.setAttribute('aria-label', 'Waveform');
+  wave.hidden = true;
+  const waveCanvas = el('canvas');
+  waveCanvas.width = WAVEFORM_COLUMNS;
+  waveCanvas.height = WAVEFORM_ROWS;
+  wave.append(waveCanvas);
+  root.append(scene, fcCanvas, thirds, canvas, label, level, hist, wave);
 
   const bubble = level.querySelector('.bub')!;
   const histPath = hist.querySelector('path')!;
@@ -47,6 +63,15 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
   small.width = small.height = GRID;
   const sctx = small.getContext('2d', { willReadFrequently: true });
   const ctx = canvas.getContext('2d');
+  const scopeSmall = document.createElement('canvas');
+  scopeSmall.width = SCOPE_W;
+  scopeSmall.height = SCOPE_H;
+  const scopeCtx = scopeSmall.getContext('2d', { willReadFrequently: true });
+  const fcCtx = fcCanvas.getContext('2d');
+  const waveCtx = waveCanvas.getContext('2d');
+  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  const SCOPE_MS = reduced ? HIST_MS * 4 : HIST_MS;
+  const fcImage = fcCtx ? fcCtx.createImageData(SCOPE_W, SCOPE_H) : null;
   // Colours are re-read on every draw so a theme change shows at once; the
   // zebra pattern is rebuilt only when its colours change.
   let stripes: CanvasPattern | null = null;
@@ -73,6 +98,7 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
 
   function draw(): void {
     const b = box();
+    Object.assign(fcCanvas.style, { left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px` });
     Object.assign(thirds.style, { left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px` });
     if (!ctx) return;
     const dpr = window.devicePixelRatio || 1;
@@ -150,6 +176,34 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
     if (!stopped) metaTimer = window.setTimeout(pollMeta, META_MS);
   };
 
+  function drawScopes(): void {
+    const o = store.get().overlays;
+    if ((!o.waveform && !o.falseColour) || !scopeCtx || !img.naturalWidth) return;
+    scopeCtx.drawImage(img, 0, 0, SCOPE_W, SCOPE_H);
+    const { lum: l } = luminance(scopeCtx.getImageData(0, 0, SCOPE_W, SCOPE_H).data);
+    const palette = colours();
+    if (o.falseColour && fcCtx && fcImage) {
+      falseColour(l, fcImage.data, palette.falseColour);
+      fcCtx.putImageData(fcImage, 0, 0);
+    }
+    if (o.waveform && waveCtx) {
+      const cells = waveform(l, SCOPE_W, SCOPE_H);
+      const cols = new Uint16Array(WAVEFORM_COLUMNS);
+      cells.forEach((n, i) => (cols[i % WAVEFORM_COLUMNS] = Math.max(cols[i % WAVEFORM_COLUMNS], n)));
+      waveCtx.fillStyle = palette.scopeBg;
+      waveCtx.fillRect(0, 0, WAVEFORM_COLUMNS, WAVEFORM_ROWS);
+      waveCtx.fillStyle = palette.scopeTrace;
+      for (let i = 0; i < cells.length; i++) {
+        if (!cells[i]) continue;
+        const col = i % WAVEFORM_COLUMNS;
+        waveCtx.globalAlpha = Math.max(0.15, cells[i] / cols[col]);
+        waveCtx.fillRect(col, WAVEFORM_ROWS - 1 - Math.floor(i / WAVEFORM_COLUMNS), 1, 1);
+      }
+      waveCtx.globalAlpha = 1;
+    }
+  }
+  const scopeTimer = window.setInterval(drawScopes, SCOPE_MS);
+
   const histTimer = window.setInterval(() => {
     if (!sctx || !img.naturalWidth) return;
     sctx.drawImage(img, 0, 0, GRID, GRID);
@@ -163,6 +217,8 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
   raf = requestAnimationFrame(loop);
   const off = watch(store, (s) => s.overlays, (o) => {
     thirds.hidden = !o.thirds;
+    fcCanvas.hidden = !o.falseColour;
+    wave.hidden = !o.waveform;
     draw();
   });
   window.addEventListener('resize', draw);
@@ -172,10 +228,11 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
     cancelAnimationFrame(raf);
     window.clearTimeout(metaTimer);
     window.clearInterval(histTimer);
+    window.clearInterval(scopeTimer);
     window.removeEventListener('resize', draw);
     off();
     swap.dispose();
-    [scene, thirds, canvas, label, level, hist].forEach((e) => e.remove());
+    [scene, fcCanvas, thirds, canvas, label, level, hist, wave].forEach((e) => e.remove());
   };
 }
 

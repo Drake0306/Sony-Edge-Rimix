@@ -47,3 +47,12 @@ describe('createFrameSwap', () => {
     expect(revoked.sort()).toEqual([...created].sort());
   });
 });
+
+describe('parseHex', () => {
+  test('reads long and short hex, black otherwise', async () => {
+    const { parseHex } = await import('./liveviewParts');
+    expect(parseHex('#ff8000')).toEqual([255, 128, 0]);
+    expect(parseHex('#0f8')).toEqual([0, 255, 136]);
+    expect(parseHex('nope')).toEqual([0, 0, 0]);
+  });
+});

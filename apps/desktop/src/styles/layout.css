@@ -369,3 +369,8 @@ body{overflow:hidden}
 .remembered .r .pathbtn{flex:none;height:20px;padding:0 8px;border-radius:7px;font-size:11px;font-weight:500;background:var(--well-2);color:var(--ink)}
 .remembered .r .pathbtn:hover{background:var(--hov-2)}
 .remembered .quiet{padding:6px 11px;font-size:11.5px;color:var(--ink-2)}
+
+/* ---------- scopes: waveform box and false colour layer ---------- */
+.wave{position:absolute;left:16px;bottom:16px;padding:6px;border-radius:12px;line-height:0}
+.wave canvas{width:256px;height:128px;display:block;border-radius:6px;image-rendering:pixelated}
+.falsecolour{position:absolute;pointer-events:none;image-rendering:pixelated}

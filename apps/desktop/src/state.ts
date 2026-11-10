@@ -60,7 +60,7 @@ export interface AppState {
   saveError: SaveError | null;
   status: { fps: number; lastShotAt: number | null };
   /** Live view overlays switched from the Scopes panel. */
-  overlays: { thirds: boolean; zebra: boolean };
+  overlays: { thirds: boolean; zebra: boolean; waveform: boolean; falseColour: boolean };
   /** Reconnect attempt while the link is down, otherwise null. */
   reconnecting: number | null;
   /** Progress of a connect started from the connect screen, otherwise null. */
@@ -113,7 +113,7 @@ export const initialState = (): AppState => ({
   transfers: {},
   saveError: null,
   status: { fps: 0, lastShotAt: null },
-  overlays: { thirds: true, zebra: false },
+  overlays: { thirds: true, zebra: false, waveform: false, falseColour: false },
   reconnecting: null,
   connecting: null,
   error: null,

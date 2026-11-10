@@ -124,8 +124,8 @@ function scopes(store: AppStore, actions: Actions): { el: HTMLElement; destroy: 
   const offOverlays = watch(store, (s) => s.overlays, (o) => {
     switches.forEach((r) => r.remove());
     switches = [
-      switchRow('Waveform', false),
-      switchRow('False colour', false),
+      switchRow('Waveform', o.waveform, flip('waveform')),
+      switchRow('False colour', o.falseColour, flip('falseColour')),
       switchRow('Zebra', o.zebra, flip('zebra')),
       switchRow('Thirds grid', o.thirds, flip('thirds')),
     ];

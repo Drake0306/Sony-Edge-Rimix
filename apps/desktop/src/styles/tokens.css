@@ -83,6 +83,18 @@
   --focus-idle:rgba(255,255,255,.70);
   --zebra-dark:rgba(0,0,0,.55);
   --zebra-light:rgba(255,255,255,.85);
+  --scope-trace:#5fe08a;
+  --scope-bg:rgba(0,0,0,.35);
+  --fc-crushed:#7b2cbf;
+  --fc-shadows:#2a5bd7;
+  --fc-low:#5f7fa8;
+  --fc-skin-dark:#1f7a3a;
+  --fc-mid:#8a8a8a;
+  --fc-skin:#f08fb0;
+  --fc-high:#c8c8c8;
+  --fc-highlights:#f2d21b;
+  --fc-near-clip:#f08a1c;
+  --fc-clipped:#e5252a;
   --lock-pill:rgba(48,209,88,.16);
   --rec-glow:0 0 10px rgba(255,69,58,.50);
   --rec-well:rgba(255,69,58,.22);

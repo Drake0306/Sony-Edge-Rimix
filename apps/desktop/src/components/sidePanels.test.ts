@@ -146,4 +146,20 @@ describe('Scopes and timer', () => {
     expect(root.querySelector('.interval-pop')).toBeNull();
     root.remove();
   });
+
+  test('Waveform and False colour switches flip their overlays', () => {
+    const store = createStore<AppState>({ ...initialState(), screen: 'main', settings });
+    const root = document.createElement('div');
+    document.body.append(root);
+    const unmount = mount(root, store, createActions(store));
+    expect(store.get().overlays.waveform).toBe(false);
+    expect(store.get().overlays.falseColour).toBe(false);
+    root.querySelector<HTMLButtonElement>('[aria-label="Waveform"]')!.click();
+    root.querySelector<HTMLButtonElement>('[aria-label="False colour"]')!.click();
+    expect(store.get().overlays.waveform).toBe(true);
+    expect(store.get().overlays.falseColour).toBe(true);
+    expect(root.querySelector('[aria-label="Waveform"]')!.getAttribute('aria-checked')).toBe('true');
+    unmount();
+    root.remove();
+  });
 });
