@@ -4634,6 +4634,7 @@ dependencies = [
 name = "sony-ptpip-sim"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "image",
  "md5",
  "rand",

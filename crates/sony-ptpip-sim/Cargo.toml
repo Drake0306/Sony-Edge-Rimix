@@ -9,6 +9,7 @@ sony-ptpip = { path = "../sony-ptpip" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+chrono = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 tracing = { workspace = true }
 russh = { version = "0.65.1", default-features = false, features = ["ring"] }

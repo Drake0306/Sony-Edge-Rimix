@@ -83,7 +83,10 @@ export type CameraEvent =
   | { CaptureProgress: { filename: string; received: number; total: number } }
   | { CaptureSaved: Received }
   | { CaptureSkipped: { filename: string } }
-  | { CaptureFailed: { filename: string; error: string } };
+  | { CaptureFailed: { filename: string; error: string } }
+  | {
+      CardDownloadProgress: { handle: number; filename: string; received: number; total: number };
+    };
 
 type Tagged<K extends string> = Extract<CameraEvent, Record<K, unknown>>;
 
@@ -108,6 +111,8 @@ export const isCaptureSkipped = (e: CameraEvent): e is Tagged<'CaptureSkipped'> 
   hasTag(e, 'CaptureSkipped');
 export const isCaptureFailed = (e: CameraEvent): e is Tagged<'CaptureFailed'> =>
   hasTag(e, 'CaptureFailed');
+export const isCardDownloadProgress = (e: CameraEvent): e is Tagged<'CardDownloadProgress'> =>
+  hasTag(e, 'CardDownloadProgress');
 
 /** A camera's id: its Wi-Fi name when connected through it, else `ip:port`. */
 export type CameraId = string;

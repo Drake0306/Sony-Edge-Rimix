@@ -183,16 +183,20 @@ static PART_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::ne
 fn save(dir: &Path, name: &str, data: &[u8]) -> std::io::Result<(PathBuf, String)> {
     let seq = PART_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let part = dir.join(format!(".rimix-{name}.{}-{seq}.part", std::process::id()));
-    let result = std::fs::write(&part, data).and_then(|()| {
-        let _naming = NAMING.lock().unwrap_or_else(|e| e.into_inner());
-        let (path, filename) = free_name(dir, name)?;
-        std::fs::rename(&part, &path)?;
-        Ok((path, filename))
-    });
+    let result = std::fs::write(&part, data).and_then(|()| place(&part, dir, name));
     if result.is_err() {
         let _ = std::fs::remove_file(&part);
     }
     result
+}
+
+/// Renames the complete file `part` to a free name for `name` in `dir`
+/// (see [`free_name`]), holding the naming lock; returns the path and name.
+pub(crate) fn place(part: &Path, dir: &Path, name: &str) -> std::io::Result<(PathBuf, String)> {
+    let _naming = NAMING.lock().unwrap_or_else(|e| e.into_inner());
+    let (path, filename) = free_name(dir, name)?;
+    std::fs::rename(part, &path)?;
+    Ok((path, filename))
 }
 
 /// Keeps a shot that could not be saved (`cause`) in `recovery`. Returns
@@ -229,7 +233,7 @@ fn recover(recovery: &Path, name: &str, data: &[u8], cause: std::io::Error) -> E
 }
 
 /// Refuses camera-supplied names that would escape the target folder.
-fn check_filename(name: &str) -> Result<&str, Error> {
+pub(crate) fn check_filename(name: &str) -> Result<&str, Error> {
     let plain =
         !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\', ':', '\0']);
     if plain {
@@ -242,7 +246,7 @@ fn check_filename(name: &str) -> Result<&str, Error> {
 }
 
 /// `dir/name`, or `dir/<stem>-N.<ext>` with the first free N up to 999.
-fn free_name(dir: &Path, name: &str) -> std::io::Result<(PathBuf, String)> {
+pub(crate) fn free_name(dir: &Path, name: &str) -> std::io::Result<(PathBuf, String)> {
     let path = dir.join(name);
     if !path.exists() {
         return Ok((path, name.to_string()));

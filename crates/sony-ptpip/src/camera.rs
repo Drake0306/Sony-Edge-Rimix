@@ -34,6 +34,7 @@ use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
 use crate::capture::{Destination, Received};
+use crate::card::{self, CardObject, PartialDownload, CARD_CHUNK};
 use crate::error::Error;
 use crate::liveview::{self, LiveViewFrame};
 use crate::ptp::codes::{OP_GET_DEVICE_INFO, PROP_FOCUS_MODE};
@@ -183,6 +184,14 @@ pub enum CameraEvent {
     CaptureFailed {
         filename: String,
         error: String,
+    },
+    /// A chunk of a file downloaded from the card with
+    /// [`Camera::card_download`] arrived; `filename` is the camera's name.
+    CardDownloadProgress {
+        handle: u32,
+        filename: String,
+        received: u64,
+        total: u64,
     },
 }
 
@@ -463,6 +472,97 @@ impl Camera {
         let mut guard = self.inner.conn.lock().await;
         let conn = guard.as_mut().ok_or(Error::Disconnected)?;
         control::toggle_record(conn).await
+    }
+
+    /// Every file on the camera's cards, storage by storage. The connection
+    /// is held for one PTP operation at a time, so live view keeps going.
+    pub async fn card_list(&self) -> Result<Vec<CardObject>, Error> {
+        let storages = {
+            let mut guard = self.inner.conn.lock().await;
+            card::list_storages(guard.as_mut().ok_or(Error::Disconnected)?).await?
+        };
+        let mut out = Vec::new();
+        for storage in storages {
+            let handles = {
+                let mut guard = self.inner.conn.lock().await;
+                card::object_handles(guard.as_mut().ok_or(Error::Disconnected)?, storage).await?
+            };
+            for handle in handles {
+                tokio::task::yield_now().await;
+                let mut guard = self.inner.conn.lock().await;
+                let conn = guard.as_mut().ok_or(Error::Disconnected)?;
+                out.extend(card::object(conn, handle).await?);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Downloads the card file `handle` into the destination folder,
+    /// resuming a partial file an earlier try left there. Emits
+    /// [`CameraEvent::CardDownloadProgress`] after every chunk and
+    /// [`CameraEvent::CaptureSaved`] at the end, or
+    /// [`CameraEvent::CaptureFailed`] on error. The connection is held for
+    /// one chunk at a time, so live view keeps going.
+    pub async fn card_download(&self, handle: u32) -> Result<PathBuf, Error> {
+        let looked_up = async {
+            let mut guard = self.inner.conn.lock().await;
+            let conn = guard.as_mut().ok_or(Error::Disconnected)?;
+            card::object(conn, handle)
+                .await?
+                .ok_or(Error::Unsupported("that card object is a folder"))
+        }
+        .await;
+        let obj = looked_up.map_err(|e| self.card_failed(format!("object {handle:#x}"), e))?;
+        match self.card_fetch(&obj).await {
+            Ok(saved) => {
+                let path = saved.path.clone();
+                self.inner.emit(CameraEvent::CaptureSaved(saved));
+                Ok(path)
+            }
+            Err(e) => Err(self.card_failed(obj.filename, e)),
+        }
+    }
+
+    /// The chunk loop of [`Camera::card_download`].
+    async fn card_fetch(&self, obj: &CardObject) -> Result<Received, Error> {
+        let dest = lock(&self.inner.destination).clone();
+        let dir = dest.ensure_writable(chrono::Local::now().date_naive())?;
+        let mut dl = PartialDownload::begin(obj, &dir)?;
+        while !dl.done() {
+            {
+                let mut guard = self.inner.conn.lock().await;
+                let conn = guard.as_mut().ok_or(Error::Disconnected)?;
+                dl.next_chunk(conn, CARD_CHUNK).await?;
+            }
+            self.inner.emit(CameraEvent::CardDownloadProgress {
+                handle: obj.handle,
+                filename: obj.filename.clone(),
+                received: dl.received(),
+                total: dl.total(),
+            });
+            tokio::task::yield_now().await;
+        }
+        let path = dl.finish()?;
+        let filename = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        Ok(Received {
+            path,
+            bytes: obj.bytes,
+            filename,
+            camera_filename: obj.filename.clone(),
+        })
+    }
+
+    /// Emits [`CameraEvent::CaptureFailed`] for a card download; returns `e`.
+    fn card_failed(&self, filename: String, e: Error) -> Error {
+        tracing::warn!(file = %filename, error = %e, "card download failed");
+        self.inner.emit(CameraEvent::CaptureFailed {
+            filename,
+            error: e.to_string(),
+        });
+        e
     }
 
     /// Changes where later shots are saved.

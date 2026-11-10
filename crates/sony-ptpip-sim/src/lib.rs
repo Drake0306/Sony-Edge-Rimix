@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use sony_ptpip::ptp::PtpValue;
 use tokio::sync::mpsc;
 
+mod card;
 mod controls;
 mod frames;
 mod props;
@@ -16,6 +17,7 @@ mod server;
 mod ssdp;
 mod ssh;
 
+pub use card::SimCardFile;
 pub use props::load_fixture;
 pub use server::spawn;
 pub use ssh::SshSimConfig;
@@ -74,6 +76,15 @@ pub struct SimConfig {
     /// of their own address do. `None` accepts any host.
     #[serde(default)]
     pub ssh_reject_host: Option<String>,
+    /// The files on the memory card, served flat (no folders) on one
+    /// storage. Their bytes are generated: byte `i` of the object with
+    /// handle `h` is `(i * 31 + h) as u8`.
+    #[serde(default = "card::default_card")]
+    pub card: Vec<SimCardFile>,
+    /// Once in the simulator's life, close both sockets after this many
+    /// bytes of card data (GetPartialObject or GetObject) have been sent.
+    #[serde(default)]
+    pub drop_during_card_download_at: Option<u64>,
 }
 
 impl Default for SimConfig {
@@ -97,6 +108,8 @@ impl Default for SimConfig {
             bind_addr: None,
             ssh: None,
             ssh_reject_host: None,
+            card: card::default_card(),
+            drop_during_card_download_at: None,
         }
     }
 }

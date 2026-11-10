@@ -28,6 +28,16 @@ impl Generation {
     }
 }
 
+/// How a camera lets the host browse its memory card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CardBrowse {
+    /// The card can be listed and read in the remote-control session.
+    SameSession,
+    /// The camera must be switched to its transfer mode first (kept for a
+    /// later real-camera finding; no model uses it yet).
+    NeedsTransferMode,
+}
+
 /// Static facts about a camera model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Quirks {
@@ -41,6 +51,8 @@ pub struct Quirks {
     /// for now, meaning "try direct, then step"; a real-camera test can fill
     /// it in later.
     pub direct_write_properties: &'static [u16],
+    /// How the card is browsed.
+    pub card_browse: CardBrowse,
 }
 
 /// The quirks for a model name as the camera reports it. Unknown models get
@@ -88,6 +100,7 @@ const DEFAULT_QUIRKS: Quirks = Quirks {
     generation: Generation::Gen3,
     access_authentication: false,
     direct_write_properties: &[],
+    card_browse: CardBrowse::SameSession,
 };
 
 const GEN4_QUIRKS: Quirks = Quirks {
@@ -116,6 +129,17 @@ mod tests {
         }
         for model in ["ILCE-7CR", "ZV-E10M2", "ILCE-9M3", "ILCE-1M2", "ILCE-7M5"] {
             assert!(GEN4_MODELS.contains(&model), "{model}");
+        }
+    }
+
+    #[test]
+    fn every_model_browses_the_card_in_the_same_session() {
+        for model in GEN4_MODELS.iter().copied().chain(["ZV-E10", "Mystery"]) {
+            assert_eq!(
+                quirks_for(model).card_browse,
+                CardBrowse::SameSession,
+                "{model}"
+            );
         }
     }
 

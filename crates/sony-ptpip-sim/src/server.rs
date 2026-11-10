@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -14,6 +14,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 
+use crate::card;
 use crate::controls::{Controls, Outcome};
 use crate::frames::{self, LiveView};
 use crate::props::{load_fixture, PropStore};
@@ -32,12 +33,17 @@ const EXT_VERSION: u16 = 0x012C;
 const PACED_PACKETS: usize = 5;
 /// How long a held half press takes to find focus.
 const FOCUS_DELAY: Duration = Duration::from_millis(200);
-const SUPPORTED_OPS: [u16; 11] = [
+/// Largest Data packet of card data.
+const CARD_PACKET: usize = 256 * 1024;
+const SUPPORTED_OPS: [u16; 14] = [
     OP_GET_DEVICE_INFO,
     OP_OPEN_SESSION,
     OP_CLOSE_SESSION,
+    OP_GET_STORAGE_IDS,
+    OP_GET_OBJECT_HANDLES,
     OP_GET_OBJECT_INFO,
     OP_GET_OBJECT,
+    OP_GET_PARTIAL_OBJECT,
     OP_SDIO_CONNECT,
     OP_SDIO_GET_EXT_DEVICE_INFO,
     OP_SDIO_SET_EXT_DEVICE_PROP_VALUE,
@@ -66,6 +72,10 @@ struct Shared {
     live_view_infos: AtomicU32,
     /// 0x9207 controls received so far.
     controls_seen: AtomicU32,
+    /// Bytes of card data sent so far.
+    card_sent: AtomicU64,
+    /// Set once `drop_during_card_download_at` has dropped the link.
+    card_dropped: AtomicBool,
 }
 
 /// Starts the simulator on `config.bind_addr`, by default 127.0.0.1 with an
@@ -94,6 +104,8 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
         live_view: Mutex::default(),
         live_view_infos: AtomicU32::new(0),
         controls_seen: AtomicU32::new(0),
+        card_sent: AtomicU64::new(0),
+        card_dropped: AtomicBool::new(false),
     });
     // Dropping the set when `run` exits aborts every connection, session and
     // discovery task.
@@ -491,6 +503,10 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
     }
 
     let mut changed_prop = None;
+    let mut resp_params = Vec::new();
+    let card_file = params
+        .first()
+        .and_then(|&h| card::file(&shared.config.card, h).map(|f| (h, f)));
     let code = match op {
         OP_OPEN_SESSION | OP_CLOSE_SESSION => RC_OK,
         OP_GET_DEVICE_INFO => {
@@ -503,6 +519,38 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
             send_data_in(ctx.w, tid, &encode_device_info(&info)).await?;
             RC_OK
         }
+        OP_GET_STORAGE_IDS => {
+            send_data_in(ctx.w, tid, &card::storage_ids()).await?;
+            RC_OK
+        }
+        OP_GET_OBJECT_HANDLES => match params.first() {
+            Some(&card::STORAGE_ID) | Some(&0xFFFF_FFFF) => {
+                send_data_in(ctx.w, tid, &card::handles(&shared.config.card)).await?;
+                RC_OK
+            }
+            _ => RC_INVALID_PARAMETER,
+        },
+        OP_GET_OBJECT_INFO if card_file.is_some() => {
+            let (_, f) = card_file.expect("checked");
+            send_data_in(ctx.w, tid, &card::object_info(f)).await?;
+            RC_OK
+        }
+        OP_GET_OBJECT if card_file.is_some() => {
+            let (handle, f) = card_file.expect("checked");
+            send_card_data(ctx.w, shared, tid, handle, 0, f.bytes, &line).await?;
+            RC_OK
+        }
+        OP_GET_PARTIAL_OBJECT => match (card_file, params.get(1), params.get(2)) {
+            (Some((handle, f)), Some(&offset), Some(&max)) if u64::from(offset) <= f.bytes => {
+                let len = (f.bytes - u64::from(offset)).min(u64::from(max));
+                line.push_str(&format!(" handle={handle:#x} offset={offset} max={max}"));
+                send_card_data(ctx.w, shared, tid, handle, u64::from(offset), len, &line).await?;
+                resp_params.push(len as u32);
+                RC_OK
+            }
+            (None, ..) => RC_INVALID_OBJECT_HANDLE,
+            _ => RC_INVALID_PARAMETER,
+        },
         OP_GET_OBJECT_INFO | OP_GET_OBJECT if params.first() == Some(&HANDLE_CAPTURED_STILL) => {
             match captured_still(ctx, op, tid).await? {
                 Ok(changed) => {
@@ -614,7 +662,7 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
         &Packet::CmdResponse {
             code,
             tid,
-            params: Vec::new(),
+            params: resp_params,
         },
     )
     .await?;
@@ -622,6 +670,52 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
         send_prop_changed(ctx.event, prop).await?;
     }
     Ok(())
+}
+
+/// Sends bytes `offset..offset + len` of the card file `handle` as a data
+/// phase, generated a packet at a time. With `drop_during_card_download_at`
+/// set, the first time the card data sent reaches it the rest is held back,
+/// `line` is logged with ` dropped`, and the session ends.
+async fn send_card_data(
+    w: &mut (impl AsyncWriteExt + Unpin),
+    shared: &Shared,
+    tid: u32,
+    handle: u32,
+    offset: u64,
+    len: u64,
+    line: &str,
+) -> Result<(), Error> {
+    send(
+        w,
+        &Packet::StartData {
+            tid,
+            total_len: len,
+        },
+    )
+    .await?;
+    let mut done = 0u64;
+    loop {
+        let size = (len - done).min(CARD_PACKET as u64) as usize;
+        let sent_before = shared.card_sent.load(Ordering::SeqCst);
+        if let Some(at) = shared.config.drop_during_card_download_at {
+            if sent_before + size as u64 > at && !shared.card_dropped.swap(true, Ordering::SeqCst) {
+                let head = (at.saturating_sub(sent_before) as usize).min(size);
+                let payload = card::bytes(handle, offset + done, head);
+                send(w, &Packet::Data { tid, payload }).await?;
+                shared.card_sent.fetch_add(head as u64, Ordering::SeqCst);
+                shared.log.lock().unwrap().push(format!("{line} dropped"));
+                // Ending the session closes both sockets.
+                return Err(Error::Disconnected);
+            }
+        }
+        let payload = card::bytes(handle, offset + done, size);
+        done += size as u64;
+        shared.card_sent.fetch_add(size as u64, Ordering::SeqCst);
+        if done == len {
+            return send(w, &Packet::EndData { tid, payload }).await;
+        }
+        send(w, &Packet::Data { tid, payload }).await?;
+    }
 }
 
 /// Answers GetObjectInfo or GetObject on the captured still handle. The

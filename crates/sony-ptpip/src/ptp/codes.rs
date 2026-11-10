@@ -2,8 +2,12 @@
 pub const OP_GET_DEVICE_INFO: u16 = 0x1001;
 pub const OP_OPEN_SESSION: u16 = 0x1002;
 pub const OP_CLOSE_SESSION: u16 = 0x1003;
+pub const OP_GET_STORAGE_IDS: u16 = 0x1004;
+pub const OP_GET_STORAGE_INFO: u16 = 0x1005;
+pub const OP_GET_OBJECT_HANDLES: u16 = 0x1007;
 pub const OP_GET_OBJECT_INFO: u16 = 0x1008;
 pub const OP_GET_OBJECT: u16 = 0x1009;
+pub const OP_GET_PARTIAL_OBJECT: u16 = 0x101B;
 pub const OP_SDIO_CONNECT: u16 = 0x9201;
 pub const OP_SDIO_GET_EXT_DEVICE_INFO: u16 = 0x9202;
 pub const OP_SDIO_SET_EXT_DEVICE_PROP_VALUE: u16 = 0x9205;
@@ -27,6 +31,12 @@ pub const EV_SONY_CAPTURED: u16 = 0xC206;
 // Object handles
 pub const HANDLE_LIVE_VIEW: u32 = 0xFFFF_C002;
 pub const HANDLE_CAPTURED_STILL: u32 = 0xFFFF_C001;
+
+// Object formats
+pub const FMT_ASSOCIATION: u16 = 0x3001;
+pub const FMT_JPEG: u16 = 0x3801;
+pub const FMT_SONY_RAW: u16 = 0xB101;
+pub const FMT_MP4: u16 = 0xB984;
 
 // Device properties
 pub const PROP_WHITE_BALANCE: u16 = 0x5005;

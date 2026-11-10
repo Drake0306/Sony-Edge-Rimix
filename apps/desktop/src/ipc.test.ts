@@ -3,6 +3,7 @@ import tagged from './fixtures/state-changed.json';
 import taggedSaved from './fixtures/capture-saved.json';
 import {
   isCaptureSaved,
+  isCardDownloadProgress,
   isConnected,
   isDisconnected,
   isStateChanged,
@@ -70,5 +71,18 @@ describe('camera events', () => {
     ) as CameraEvent;
     expect(isCaptureSaved(saved)).toBe(true);
     expect(isStateChanged(saved)).toBe(false);
+  });
+
+  // The shape pinned by the Rust test `card_download_progress_serialises`.
+  test('card download progress is a tagged object', () => {
+    const event = JSON.parse(
+      '{"CardDownloadProgress":{"handle":7,"filename":"C0001.MP4","received":1,"total":2}}',
+    ) as CameraEvent;
+    expect(isCardDownloadProgress(event)).toBe(true);
+    expect(isCaptureSaved(event)).toBe(false);
+    if (!isCardDownloadProgress(event)) return;
+    expect(event.CardDownloadProgress.filename).toBe('C0001.MP4');
+    expect(event.CardDownloadProgress.received).toBe(1);
+    expect(event.CardDownloadProgress.total).toBe(2);
   });
 });
