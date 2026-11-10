@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rimix — Glass Drawer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#101216;
+    --ink:#FFFFFF; --ink-2:rgba(255,255,255,.72); --ink-3:rgba(255,255,255,.52);
+    --sep:rgba(255,255,255,.10);
+    --well:rgba(255,255,255,.06); --ctl:rgba(255,255,255,.10); --ctl-hover:rgba(255,255,255,.18); --on:rgba(255,255,255,.24);
+    --green:#30D158; --red:#FF453A;
+    --r-panel:20px; --r-well:12px; --r-ctl:7px;
+    --drawer-w:332px; --sheet-h:176px;
+    --font:"Inter",-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
+    --tshadow:0 1px 2px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:13px;line-height:1.35;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  button,input{font:inherit;color:inherit}
+  button{cursor:pointer;border:0;background:none;padding:0;border-radius:var(--r-ctl);transition:background .15s,transform .12s}
+  button:active{transform:scale(.97)}
+  :focus{outline:none}
+  :focus-visible{outline:2px solid #fff;outline-offset:2px}
+  svg{display:block}
+  .num{font-variant-numeric:tabular-nums}
+  a{color:inherit;text-decoration:none}
+
+  .badge{position:fixed;left:16px;top:68px;z-index:60;padding:6px 11px;border-radius:999px;background:rgba(16,18,22,.78);color:#fff;font-size:12px;font-weight:600;pointer-events:none;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:inset 0 1px 0 rgba(255,255,255,.3)}
+
+  /* ---------- glass material ---------- */
+  .glass{
+    position:absolute;
+    background:linear-gradient(180deg,rgba(255,255,255,.11),rgba(255,255,255,.06)),rgba(12,14,18,.46);
+    -webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);
+    border-radius:var(--r-panel);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 1px 0 0 rgba(255,255,255,.12),0 0 0 .5px rgba(255,255,255,.06),0 14px 36px rgba(0,0,0,.32),0 2px 6px rgba(0,0,0,.18);
+    text-shadow:var(--tshadow);
+    color:var(--ink);
+  }
+  .glass.dim{background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.04)),rgba(12,14,18,.38);box-shadow:inset 0 1px 0 rgba(255,255,255,.22),inset 1px 0 0 rgba(255,255,255,.08),0 0 0 .5px rgba(255,255,255,.05),0 10px 28px rgba(0,0,0,.26)}
+  .glass.hi{background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,.10)),rgba(12,14,18,.40);box-shadow:inset 0 1px 0 rgba(255,255,255,.45),inset 1px 0 0 rgba(255,255,255,.16),0 0 0 .5px rgba(255,255,255,.08),0 18px 44px rgba(0,0,0,.38),0 2px 6px rgba(0,0,0,.2)}
+  .cap{border-radius:999px}
+
+  .screen{position:relative;height:clamp(640px,100vh,900px);overflow:hidden}
+
+  /* ---------- live view ---------- */
+  .scene{position:absolute;inset:0}
+  .scene svg{width:100%;height:100%}
+  .thirds{position:absolute;inset:0;pointer-events:none;
+    background:
+      linear-gradient(to right, rgba(255,255,255,.13) 1px, transparent 1px) 33.333% 0/33.333% 100% no-repeat,
+      linear-gradient(to right, rgba(255,255,255,.13) 1px, transparent 1px) 66.666% 0/33.333% 100% no-repeat,
+      linear-gradient(to bottom, rgba(255,255,255,.13) 1px, transparent 1px) 0 33.333%/100% 33.333% no-repeat,
+      linear-gradient(to bottom, rgba(255,255,255,.13) 1px, transparent 1px) 0 66.666%/100% 33.333% no-repeat}
+  .focus{position:absolute;left:43.75%;top:44.4%;width:15%;aspect-ratio:1;transform:translate(-50%,-50%);border:2px solid var(--green);border-radius:8px;pointer-events:none;box-shadow:0 0 0 1px rgba(0,0,0,.2),inset 0 0 0 1px rgba(0,0,0,.2)}
+  .focus::before,.focus::after{content:"";position:absolute;background:var(--green)}
+  .focus::before{left:50%;top:-7px;width:2px;height:8px;transform:translateX(-50%)}
+  .focus::after{right:-7px;top:50%;width:8px;height:2px;transform:translateY(-50%)}
+  .focus small{position:absolute;left:50%;bottom:-24px;transform:translateX(-50%);color:var(--green);font-size:11px;font-weight:600;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+  .focus small::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:6px;vertical-align:1px}
+
+  .level{position:absolute;left:calc((100% - var(--drawer-w) - 12px) / 2);top:78px;transform:translateX(-50%);width:200px;height:22px;pointer-events:none}
+  .level .axis{position:absolute;left:0;right:0;top:50%;height:1px;background:rgba(255,255,255,.45);box-shadow:0 1px 1px rgba(0,0,0,.3)}
+  .level .tick{position:absolute;top:5px;width:1px;height:12px;background:rgba(255,255,255,.7)}
+  .level .tl{left:0}.level .tr{right:0}
+  .level .bubble{position:absolute;left:50%;top:50%;width:56px;height:3px;border-radius:2px;background:var(--green);transform:translate(-50%,-50%);box-shadow:0 0 0 1px rgba(0,0,0,.25)}
+  .level small{position:absolute;left:calc(50% + 40px);top:-2px;font-size:11px;color:var(--ink-2);text-shadow:var(--tshadow)}
+
+  /* ---------- toolbar ---------- */
+  .tb{left:12px;right:12px;top:12px;height:44px;display:flex;align-items:center;gap:16px;padding:0 8px 0 18px;font-size:12.5px;z-index:6;overflow:hidden}
+  .tb .mark{font-weight:700;font-size:14px;letter-spacing:-.01em;margin-right:2px}
+  .tb .cam{display:flex;align-items:center;gap:14px;white-space:nowrap}
+  .tb .cam .name{font-weight:600}
+  .tb .cam .pair{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2)}
+  .tb .cam .pair b{font-weight:600;color:var(--ink)}
+  .tb .spacer{flex:1}
+  .tb .grp{display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .tb .grp .lbl{font-size:11.5px;color:var(--ink-3)}
+  .bars{display:inline-flex;align-items:flex-end;gap:1.5px;height:10px}
+  .bars i{display:block;width:2.5px;background:var(--ink);border-radius:1px}
+  .bars i:nth-child(1){height:3px}.bars i:nth-child(2){height:5.5px}.bars i:nth-child(3){height:8px}.bars i:nth-child(4){height:10px}
+  .batt{position:relative;width:20px;height:10px;border:1.5px solid rgba(255,255,255,.75);border-radius:3px}
+  .batt::after{content:"";position:absolute;right:-4px;top:2px;width:2px;height:3px;background:rgba(255,255,255,.75);border-radius:1px}
+  .batt i{position:absolute;left:1.5px;top:1.5px;bottom:1.5px;width:72%;background:var(--ink);border-radius:1px}
+  .card{width:11px;height:14px;border:1.5px solid rgba(255,255,255,.75);border-radius:2px 4px 2px 2px;position:relative}
+  .card::after{content:"";position:absolute;left:2px;right:2px;top:2.5px;height:1.5px;background:rgba(255,255,255,.75)}
+
+  /* ---------- settings list pattern (from 06) ---------- */
+  .list{display:flex;flex-direction:column;gap:6px;padding:8px}
+  .sect{display:flex;flex-direction:column;gap:4px}
+  .sect .h{display:flex;align-items:baseline;justify-content:space-between;font-size:11.5px;font-weight:500;color:var(--ink-3);padding:8px 8px 2px}
+  .sect:first-child .h{padding-top:4px}
+  .well{background:var(--well);border-radius:var(--r-well);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.08)}
+  .r{display:flex;align-items:center;height:32px;padding:0 6px 0 12px;gap:8px}
+  .r + .r{border-top:1px solid var(--sep)}
+  .r .k{flex:1;color:var(--ink);white-space:nowrap}
+  .r .v{font-weight:600;font-variant-numeric:tabular-nums;min-width:66px;text-align:right}
+  .r .sub{color:var(--ink-3);font-size:12px}
+  .step{display:inline-flex;background:var(--ctl);border-radius:var(--r-ctl);overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.14)}
+  .step button{width:26px;height:22px;display:grid;place-items:center;border-radius:0}
+  .step button:hover{background:var(--ctl-hover)}
+  .step button + button{border-left:1px solid var(--sep)}
+  .step svg{width:10px;height:10px}
+  .mini{display:inline-flex;background:var(--ctl);border-radius:8px;padding:2px;gap:1px;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+  .mini button{min-width:26px;height:20px;padding:0 6px;border-radius:6px;font-size:12px;font-weight:500}
+  .mini button:hover{background:var(--ctl-hover)}
+  .mini button.on{background:var(--on);font-weight:600;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 1px 2px rgba(0,0,0,.25)}
+  .segc{display:inline-flex;background:var(--ctl);border-radius:9px;padding:2px;gap:2px;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+  .segc button{height:26px;border-radius:7px;font-size:12px;font-weight:500;white-space:nowrap;padding:0 10px;color:var(--ink-2)}
+  .segc button:hover{background:var(--ctl-hover)}
+  .segc button.on{background:var(--on);color:var(--ink);font-weight:600;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 1px 2px rgba(0,0,0,.25)}
+  .segc button small{font-weight:600;color:var(--ink-3);margin-right:5px;font-size:11px}
+  .segc button.on small{color:var(--ink-2)}
+  .segc.presets button{padding:0 9px}
+  .segc.presets button:not(.on) small{margin:0}
+  .segc.toggles button[aria-pressed="true"]{background:var(--on);color:var(--ink)}
+  .sw{position:relative;width:30px;height:18px;border-radius:9px;background:rgba(255,255,255,.16);flex:none;box-shadow:inset 0 1px 1px rgba(0,0,0,.25)}
+  .sw::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.35)}
+  .sw:hover{background:rgba(255,255,255,.24)}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;margin-right:8px;box-shadow:0 0 6px rgba(48,209,88,.6)}
+  .dot.off{background:rgba(255,255,255,.3);box-shadow:none}
+
+  /* ---------- right drawer ---------- */
+  .drawer{right:0;top:68px;bottom:12px;width:var(--drawer-w);border-radius:var(--r-panel) 0 0 var(--r-panel);display:flex;flex-direction:column;z-index:5;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 1px 0 0 rgba(255,255,255,.14),-14px 0 36px rgba(0,0,0,.30),0 2px 6px rgba(0,0,0,.18)}
+  .drawer .grip{position:absolute;left:5px;top:50%;width:4px;height:40px;border-radius:2px;background:rgba(255,255,255,.38);transform:translateY(-50%);box-shadow:0 1px 2px rgba(0,0,0,.3)}
+  .drawer .head{display:flex;align-items:center;justify-content:space-between;height:44px;padding:0 10px 0 22px;flex:none;border-bottom:1px solid var(--sep)}
+  .drawer .head b{font-weight:600;font-size:13.5px}
+  .drawer .head button{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px 0 8px;border-radius:8px;color:var(--ink-2);font-size:12px}
+  .drawer .head button:hover{background:var(--ctl)}
+  .drawer .head button svg{width:10px;height:10px}
+  .drawer .body{flex:1;min-height:0;overflow:auto;scrollbar-width:none;padding-left:8px}
+  .drawer .body::-webkit-scrollbar{display:none}
+  .drawer .list{padding:6px 10px 8px 2px}
+
+  /* ---------- bottom sheet (half open) ---------- */
+  .sheet{left:12px;right:calc(var(--drawer-w) + 12px);bottom:0;height:var(--sheet-h);border-radius:var(--r-panel) var(--r-panel) 0 0;display:flex;flex-direction:column;z-index:5;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.35),inset 1px 0 0 rgba(255,255,255,.12),0 -14px 36px rgba(0,0,0,.28)}
+  .sheet .pull{position:absolute;left:50%;top:6px;width:40px;height:4px;border-radius:2px;background:rgba(255,255,255,.38);transform:translateX(-50%);box-shadow:0 1px 2px rgba(0,0,0,.3)}
+  .sheet .head{display:flex;align-items:center;justify-content:space-between;height:38px;padding:8px 18px 0;font-size:11.5px;font-weight:500;color:var(--ink-3);flex:none}
+  .sheet .head .status{display:inline-flex;align-items:center;gap:8px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+  .sheet .head .status::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px rgba(48,209,88,.7)}
+  .sheet .head .status b{font-weight:600;color:var(--ink)}
+  .sheet .row{display:flex;gap:22px;padding:4px 18px 0;align-items:flex-start}
+  .sheet .col{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .sheet .col .lbl{display:flex;justify-content:space-between;font-size:11.5px;font-weight:500;color:var(--ink-3);padding:0 2px}
+  .sheet .col .lbl span{color:var(--ink-2)}
+  .sheet .film{flex:none}
+  .sheet .dest{flex:1;min-width:0}
+  .strip{display:grid;grid-template-columns:repeat(6,92px);gap:6px}
+  .thumb{position:relative;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:#3a3e44;box-shadow:0 0 0 .5px rgba(255,255,255,.14);display:block;transition:transform .12s}
+  .thumb:hover{transform:translateY(-1px);box-shadow:0 0 0 1.5px rgba(255,255,255,.7)}
+  .thumb svg{width:100%;height:100%}
+  .thumb .n{position:absolute;left:0;right:0;bottom:0;padding:3px 6px;font-size:9.5px;font-weight:600;color:#fff;background:linear-gradient(to top,rgba(0,0,0,.72),transparent);text-align:left}
+  .thumb:nth-child(1) svg{filter:saturate(.8) brightness(1.05)}
+  .thumb:nth-child(2) svg{filter:hue-rotate(-10deg) contrast(1.1)}
+  .thumb:nth-child(3) svg{filter:saturate(1.2) brightness(.95)}
+  .thumb:nth-child(4) svg{filter:sepia(.25)}
+  .thumb:nth-child(5) svg{filter:brightness(1.1) saturate(.6)}
+  .thumb:nth-child(6) svg{filter:grayscale(.5) brightness(.6)}
+  .thumb .pb{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.3)}
+  .thumb .pb i{display:block;width:64%;height:100%;background:#fff}
+  .thumb.busy .n{bottom:3px}
+  .path{display:flex;align-items:center;gap:7px;height:30px;padding:0 10px;background:var(--well);border-radius:9px;box-shadow:inset 0 0 0 .5px rgba(255,255,255,.08);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .path svg{width:14px;height:14px;flex:none;color:var(--ink-2)}
+  .path span{color:var(--ink-3)}
+  .dest .segc{display:flex}
+  .dest .segc button{flex:1;padding:0 6px;overflow:hidden;text-overflow:ellipsis}
+
+  /* ---------- shoot capsule ---------- */
+  .capsule{left:calc((100% - var(--drawer-w) - 12px) / 2);bottom:calc(var(--sheet-h) + 14px);transform:translateX(-50%);display:flex;align-items:flex-start;gap:14px;padding:12px 18px 10px;border-radius:32px;z-index:6}
+  .act{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:11px;font-weight:500;color:var(--ink-2);border-radius:18px;padding:2px 4px}
+  .act .c{width:46px;height:46px;border-radius:50%;background:var(--ctl);display:grid;place-items:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.3),0 2px 6px rgba(0,0,0,.25);transition:background .15s;margin-top:10px}
+  .act:hover .c{background:var(--ctl-hover)}
+  .act .c svg{width:20px;height:20px}
+  .act .c .rec{width:16px;height:16px;border-radius:50%;background:var(--red);box-shadow:0 0 8px rgba(255,69,58,.6)}
+  .shoot{color:var(--ink);font-weight:600}
+  .shoot .c{width:66px;height:66px;margin-top:0;background:#fff;box-shadow:0 0 0 2.5px rgba(255,255,255,.95),0 0 0 5px rgba(12,14,18,.55),0 6px 16px rgba(0,0,0,.35)}
+  .shoot .c::after{content:"";width:58px;height:58px;border-radius:50%;background:#fff;box-shadow:inset 0 0 0 2px rgba(12,14,18,.9);transition:transform .12s}
+  .shoot:hover .c{background:#F2F2F4}
+  .shoot:hover .c::after{transform:scale(.94)}
+
+  /* ---------- histogram ---------- */
+  .hist{left:12px;bottom:calc(var(--sheet-h) + 14px);width:184px;padding:10px 12px 8px;border-radius:16px}
+  .hist svg{width:100%;height:36px}
+  .hist small{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-3);margin-top:5px}
+
+  /* ---------- connect screen ---------- */
+  .connect{background:#0E1013}
+  .backdrop{position:absolute;inset:-40px;filter:blur(28px) brightness(.42) saturate(.7);transform:scale(1.04)}
+  .backdrop svg{width:100%;height:100%}
+  .connect .vignette{position:absolute;inset:0;background:radial-gradient(80% 70% at 50% 40%,transparent 40%,rgba(8,9,12,.6) 100%)}
+  .tb .nocam{display:inline-flex;align-items:center;gap:8px;height:28px;padding:0 12px;border-radius:999px;background:rgba(255,255,255,.06);color:var(--ink-2);white-space:nowrap}
+  .tb .nocam::before{content:"";width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.4)}
+  .connect .headline{position:absolute;left:48px;top:96px;right:calc(var(--drawer-w) + 48px)}
+  .connect h1{margin:0;font-size:38px;font-weight:600;letter-spacing:-.025em;line-height:1.1;text-shadow:0 2px 8px rgba(0,0,0,.4)}
+  .connect .headline p{margin:8px 0 0;color:var(--ink-2);font-size:14px;text-shadow:var(--tshadow)}
+  .connect .sheet{height:auto;max-height:calc(100% - 200px);padding:0 0 22px}
+  .connect .sheet .head{padding:8px 18px 0}
+  .ways{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding:6px 18px 0}
+  .way{display:flex;flex-direction:column;gap:12px;padding:12px 12px 10px;background:var(--well);border-radius:14px;box-shadow:inset 0 0 0 .5px rgba(255,255,255,.08)}
+  .way h2{margin:0;font-size:15px;font-weight:600}
+  .way p{margin:0;color:var(--ink-2);line-height:1.45;font-size:12.5px}
+  .way .fill{flex:1}
+  .preview{position:relative;aspect-ratio:16/8;border-radius:10px;overflow:hidden;background:linear-gradient(160deg,#1A1E24,#2A3038);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.14)}
+  .preview .brk{position:absolute;inset:18% 30%;border-radius:8px;background:
+      linear-gradient(#fff,#fff) top left/16px 1.5px no-repeat, linear-gradient(#fff,#fff) top left/1.5px 16px no-repeat,
+      linear-gradient(#fff,#fff) top right/16px 1.5px no-repeat, linear-gradient(#fff,#fff) top right/1.5px 16px no-repeat,
+      linear-gradient(#fff,#fff) bottom left/16px 1.5px no-repeat, linear-gradient(#fff,#fff) bottom left/1.5px 16px no-repeat,
+      linear-gradient(#fff,#fff) bottom right/16px 1.5px no-repeat, linear-gradient(#fff,#fff) bottom right/1.5px 16px no-repeat;opacity:.85}
+  .preview .tag{position:absolute;left:8px;top:8px;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.14);font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:999px;backdrop-filter:blur(8px)}
+  .preview .tag i{width:6px;height:6px;border-radius:50%;background:var(--green)}
+  .preview .cap-text{position:absolute;left:0;right:0;bottom:8px;text-align:center;font-size:11px;color:var(--ink-3)}
+  .listrow{display:flex;align-items:center;gap:10px;background:var(--ctl);border-radius:10px;box-shadow:inset 0 1px 0 rgba(255,255,255,.12);padding:8px 8px 8px 10px}
+  .listrow .ic{width:30px;height:30px;border-radius:8px;background:var(--ctl);display:grid;place-items:center;flex:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.2)}
+  .listrow .ic svg{width:17px;height:17px}
+  .listrow .t{flex:1;min-width:0}
+  .listrow .t b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .listrow .t span{display:block;color:var(--ink-2);font-size:12px}
+  .pbtn{height:30px;padding:0 14px;border-radius:9px;background:#fff;color:#111;font-weight:600;font-size:12.5px;flex:none;text-shadow:none;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  .pbtn:hover{background:#E8E8EC}
+  .field{display:flex;align-items:center;gap:8px}
+  .field input{flex:1;height:30px;border:0;border-radius:9px;background:var(--ctl);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.16),inset 0 1px 2px rgba(0,0,0,.25);padding:0 10px;font-size:13px;font-variant-numeric:tabular-nums;min-width:0;color:var(--ink)}
+  .field input:hover{box-shadow:inset 0 0 0 .5px rgba(255,255,255,.35),inset 0 1px 2px rgba(0,0,0,.25)}
+  .field input:focus-visible{outline:2px solid #fff;outline-offset:1px}
+  .connect .drawer{bottom:0;border-radius:var(--r-panel) 0 0 0}
+  .recent .r{height:36px;padding:0 8px 0 12px}
+  .recent .r button{flex:1;text-align:left;display:flex;align-items:center;gap:10px;height:100%;border-radius:8px}
+  .recent .r button:hover{background:var(--ctl)}
+  .recent .r button svg.cam{width:15px;height:15px;flex:none}
+  .recent .r span{color:var(--ink-2)}
+  .recent .r .chev{margin-left:auto;width:12px;height:12px;color:var(--ink-3)}
+  .note{display:flex;gap:10px;align-items:flex-start;padding:12px 12px;line-height:1.45;border-radius:12px;background:var(--well);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.08);color:var(--ink);margin:4px 0 0}
+  .note svg{width:16px;height:16px;flex:none;margin-top:1px;color:var(--ink-2)}
+
+  @media (max-width:1200px){
+    :root{--drawer-w:304px;--sheet-h:168px}
+    .tb{gap:12px;font-size:12px;padding-left:14px}
+    .tb .cam{gap:11px}
+    .tb .grp .lbl{display:none}
+    .segc button{padding:0 8px;font-size:11.5px}
+    .segc.presets button{padding:0 7px}
+    .strip{grid-template-columns:repeat(6,56px);gap:5px}
+    .thumb .n{font-size:9px;padding:2px 4px}
+    .sheet .row{gap:14px}
+    .dest .segc button{font-size:11px;padding:0 4px}
+    .capsule{gap:10px;padding:10px 14px 8px}
+    .act .c{width:40px;height:40px}
+    .shoot .c{width:58px;height:58px}
+    .shoot .c::after{width:50px;height:50px}
+    .hist{width:160px}
+    .connect .headline{top:78px}
+    .connect h1{font-size:30px}
+    .connect .sheet{max-height:calc(100% - 150px)}
+    .ways{gap:10px;padding:6px 14px 0}
+    .way p{font-size:12px}
+  }
+  @media (max-height:760px){
+    .r{height:30px}
+    .drawer .head{height:40px}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="badge">12 — Glass Drawer</div>
+
+<!-- hidden scene copy for thumbnails and the connect backdrop; the live view carries the one full inline scene -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="sky2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9fb7c9"/><stop offset="1" stop-color="#e3d9c6"/></linearGradient>
+    <linearGradient id="wall2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5c6168"/><stop offset="1" stop-color="#3a3e44"/></linearGradient>
+    <linearGradient id="desk2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8a6a4a"/><stop offset="1" stop-color="#5b4430"/></linearGradient>
+    <radialGradient id="face2" cx="0.4" cy="0.35" r="0.8"><stop offset="0" stop-color="#e8c3a6"/><stop offset="1" stop-color="#b98a6b"/></radialGradient>
+    <g id="scene-copy">
+      <rect width="1600" height="900" fill="url(#wall2)"/>
+      <rect x="980" y="80" width="460" height="520" rx="8" fill="url(#sky2)"/>
+      <rect x="1200" y="80" width="14" height="520" fill="#2b2e33"/>
+      <rect x="980" y="330" width="460" height="12" fill="#2b2e33"/>
+      <rect x="0" y="620" width="1600" height="280" fill="url(#desk2)"/>
+      <rect x="300" y="560" width="220" height="130" rx="10" fill="#1d1f23"/>
+      <rect x="312" y="572" width="196" height="106" rx="4" fill="#2f3f55"/>
+      <ellipse cx="700" cy="620" rx="150" ry="60" fill="#2a2d33"/>
+      <path d="M560 640 Q700 400 840 640 Z" fill="#2f5d8a"/>
+      <circle cx="700" cy="400" r="95" fill="url(#face2)"/>
+      <path d="M605 395 Q700 270 795 395 Q760 330 700 330 Q640 330 605 395 Z" fill="#2b2320"/>
+      <rect x="1120" y="520" width="120" height="140" rx="4" fill="#4b5563"/>
+      <circle cx="1180" cy="455" r="55" fill="#d8b36a" opacity="0.7"/>
+    </g>
+    <symbol id="cam-glyph" viewBox="0 0 20 20"><rect x="2" y="6" width="16" height="11" rx="3" fill="currentColor"/><rect x="6" y="3" width="6" height="4" rx="1.5" fill="currentColor"/><circle cx="10" cy="11.5" r="3.4" fill="#1a1c20"/><circle cx="10" cy="11.5" r="1.7" fill="currentColor"/></symbol>
+    <symbol id="minus" viewBox="0 0 10 10"><path d="M1.5 5h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="plus" viewBox="0 0 10 10"><path d="M1.5 5h7M5 1.5v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="chl" viewBox="0 0 10 10"><path d="M6.5 1.5 3 5l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="chr" viewBox="0 0 10 10"><path d="M3.5 1.5 7 5 3.5 8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="af" viewBox="0 0 20 20"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M13 3h2a2 2 0 0 1 2 2v2M17 13v2a2 2 0 0 1-2 2h-2M7 17H5a2 2 0 0 1-2-2v-2"/><circle cx="10" cy="10" r="2.2"/></g></symbol>
+    <symbol id="folder" viewBox="0 0 16 16"><path d="M1.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-10.5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+  </defs>
+</svg>
+
+<!-- ================= Screen 1: main ================= -->
+<section class="screen main" aria-label="Main screen">
+  <div class="scene">
+    <svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Placeholder scene: a person at a desk by a window">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9fb7c9"/><stop offset="1" stop-color="#e3d9c6"/></linearGradient>
+        <linearGradient id="wall" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5c6168"/><stop offset="1" stop-color="#3a3e44"/></linearGradient>
+        <linearGradient id="desk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8a6a4a"/><stop offset="1" stop-color="#5b4430"/></linearGradient>
+        <radialGradient id="face" cx="0.4" cy="0.35" r="0.8"><stop offset="0" stop-color="#e8c3a6"/><stop offset="1" stop-color="#b98a6b"/></radialGradient>
+      </defs>
+      <rect width="1600" height="900" fill="url(#wall)"/>
+      <rect x="980" y="80" width="460" height="520" rx="8" fill="url(#sky)"/>
+      <rect x="1200" y="80" width="14" height="520" fill="#2b2e33"/>
+      <rect x="980" y="330" width="460" height="12" fill="#2b2e33"/>
+      <rect x="0" y="620" width="1600" height="280" fill="url(#desk)"/>
+      <rect x="300" y="560" width="220" height="130" rx="10" fill="#1d1f23"/>
+      <rect x="312" y="572" width="196" height="106" rx="4" fill="#2f3f55"/>
+      <ellipse cx="700" cy="620" rx="150" ry="60" fill="#2a2d33"/>
+      <path d="M560 640 Q700 400 840 640 Z" fill="#2f5d8a"/>
+      <circle cx="700" cy="400" r="95" fill="url(#face)"/>
+      <path d="M605 395 Q700 270 795 395 Q760 330 700 330 Q640 330 605 395 Z" fill="#2b2320"/>
+      <rect x="1120" y="520" width="120" height="140" rx="4" fill="#4b5563"/>
+      <circle cx="1180" cy="455" r="55" fill="#d8b36a" opacity="0.7"/>
+    </svg>
+  </div>
+  <div class="thirds" aria-hidden="true"></div>
+  <div class="focus" role="img" aria-label="Focus frame, locked"><small>Focus locked</small></div>
+  <div class="level" role="img" aria-label="Level indicator, 0 degrees">
+    <div class="axis"></div><div class="tick tl"></div><div class="tick tr"></div><div class="bubble"></div><small class="num">0°</small>
+  </div>
+
+  <!-- toolbar -->
+  <header class="glass cap tb" aria-label="Toolbar">
+    <span class="mark">Rimix</span>
+    <div class="cam">
+      <span class="name">ZV-E10</span>
+      <span class="pair"><i class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></i>Wi-Fi Direct, <b>strong</b></span>
+      <span class="pair"><i class="batt" aria-hidden="true"><i></i></i><b class="num">72%</b></span>
+      <span class="pair"><i class="card" aria-hidden="true"></i>Slot 1, <b class="num">238</b> shots left</span>
+      <span class="pair">Firmware <b class="num">2.00</b></span>
+    </div>
+    <span class="spacer"></span>
+    <div class="grp">
+      <span class="lbl">Presets</span>
+      <div class="segc presets" role="radiogroup" aria-label="Presets">
+        <button role="radio" aria-checked="true" class="on"><small>C1</small>Talking head</button>
+        <button role="radio" aria-checked="false" aria-label="Preset C2"><small>C2</small></button>
+        <button role="radio" aria-checked="false" aria-label="Preset C3"><small>C3</small></button>
+        <button role="radio" aria-checked="false" aria-label="Preset C4"><small>C4</small></button>
+      </div>
+    </div>
+    <div class="grp">
+      <span class="lbl">Scopes</span>
+      <div class="segc toggles" role="group" aria-label="Scopes">
+        <button aria-pressed="false">Waveform</button>
+        <button aria-pressed="false">False colour</button>
+        <button aria-pressed="false">Zebra</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- right drawer: settings -->
+  <aside class="glass drawer" aria-label="Camera settings drawer">
+    <span class="grip" aria-hidden="true"></span>
+    <div class="head"><b>Settings</b><button aria-label="Hide settings">Hide <svg><use href="#chr"/></svg></button></div>
+    <div class="body">
+      <div class="list">
+        <div class="sect">
+          <div class="h"><span>Exposure</span></div>
+          <div class="well" role="list">
+            <div class="r" role="listitem"><span class="k">Mode</span>
+              <div class="mini" role="radiogroup" aria-label="Mode"><button role="radio" aria-checked="false">P</button><button role="radio" aria-checked="false">A</button><button role="radio" aria-checked="false">S</button><button role="radio" aria-checked="true" class="on">M</button></div></div>
+            <div class="r" role="listitem"><span class="k">Shutter</span><span class="v">1/125</span><span class="step"><button aria-label="Slower shutter"><svg><use href="#minus"/></svg></button><button aria-label="Faster shutter"><svg><use href="#plus"/></svg></button></span></div>
+            <div class="r" role="listitem"><span class="k">Aperture</span><span class="v">f/4.0</span><span class="step"><button aria-label="Open aperture"><svg><use href="#minus"/></svg></button><button aria-label="Close aperture"><svg><use href="#plus"/></svg></button></span></div>
+            <div class="r" role="listitem"><span class="k">ISO</span><span class="v">800</span><span class="step"><button aria-label="Lower ISO"><svg><use href="#minus"/></svg></button><button aria-label="Raise ISO"><svg><use href="#plus"/></svg></button></span></div>
+            <div class="r" role="listitem"><span class="k">Exposure comp</span><span class="v">+0.3</span><span class="step"><button aria-label="Darker"><svg><use href="#minus"/></svg></button><button aria-label="Brighter"><svg><use href="#plus"/></svg></button></span></div>
+          </div>
+        </div>
+        <div class="sect">
+          <div class="h"><span>Image</span></div>
+          <div class="well" role="list">
+            <div class="r" role="listitem"><span class="k">White balance</span><span class="v">5200K</span><span class="step"><button aria-label="Cooler"><svg><use href="#minus"/></svg></button><button aria-label="Warmer"><svg><use href="#plus"/></svg></button></span></div>
+            <div class="r" role="listitem"><span class="k">Format</span><span class="v">RAW+JPEG</span><span class="step"><button aria-label="Previous format"><svg><use href="#chl"/></svg></button><button aria-label="Next format"><svg><use href="#chr"/></svg></button></span></div>
+            <div class="r" role="listitem"><span class="k">Picture profile</span><span class="v">Off</span><span class="step"><button aria-label="Previous picture profile"><svg><use href="#chl"/></svg></button><button aria-label="Next picture profile"><svg><use href="#chr"/></svg></button></span></div>
+          </div>
+        </div>
+        <div class="sect">
+          <div class="h"><span>Focus and drive</span></div>
+          <div class="well" role="list">
+            <div class="r" role="listitem"><span class="k">Focus</span><span class="v">AF-C</span><span class="step"><button aria-label="Previous focus mode"><svg><use href="#chl"/></svg></button><button aria-label="Next focus mode"><svg><use href="#chr"/></svg></button></span></div>
+            <div class="r" role="listitem"><span class="k">Drive</span><span class="v">Single</span><span class="step"><button aria-label="Previous drive mode"><svg><use href="#chl"/></svg></button><button aria-label="Next drive mode"><svg><use href="#chr"/></svg></button></span></div>
+          </div>
+        </div>
+        <div class="sect">
+          <div class="h"><span>Interval timer</span></div>
+          <div class="well">
+            <div class="r"><span class="k">Off</span><span class="sub">Set up</span><button class="sw" role="switch" aria-checked="false" aria-label="Interval timer"></button></div>
+          </div>
+        </div>
+        <div class="sect">
+          <div class="h"><span>Cameras</span></div>
+          <div class="well" role="radiogroup" aria-label="Cameras">
+            <div class="r"><span class="k"><i class="dot" aria-hidden="true"></i>ZV-E10</span><span class="sub">this</span></div>
+            <div class="r"><span class="k" style="color:var(--ink-2)"><i class="dot off" aria-hidden="true"></i>a7 IV</span><span class="sub">offline</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- histogram -->
+  <div class="glass dim hist" role="img" aria-label="Histogram">
+    <svg viewBox="0 0 120 40" preserveAspectRatio="none"><path d="M0 40 L0 32 L8 28 L16 20 L24 14 L32 18 L40 10 L48 6 L56 12 L64 20 L72 24 L80 22 L88 26 L96 30 L104 34 L112 36 L120 38 L120 40 Z" fill="rgba(255,255,255,.82)"/></svg>
+    <small><span>Histogram</span><span>Luma</span></small>
+  </div>
+
+  <!-- shoot capsule -->
+  <div class="glass hi capsule" role="group" aria-label="Primary actions">
+    <button class="act"><span class="c"><span class="rec" aria-hidden="true"></span></span>Record</button>
+    <button class="act shoot"><span class="c"></span>Shoot</button>
+    <button class="act"><span class="c"><svg><use href="#af"/></svg></span>Focus</button>
+  </div>
+
+  <!-- bottom sheet: captures and destination, half open -->
+  <div class="glass sheet" aria-label="Captures and destination">
+    <span class="pull" aria-hidden="true"></span>
+    <div class="head">
+      <span>Captures</span>
+      <span class="status">Live view <b>24 fps</b> · last shot <b>0.8 s</b> ago</span>
+    </div>
+    <div class="row">
+      <div class="col film">
+        <div class="lbl"><span style="color:var(--ink-3)">Last six</span><span class="num">DSC01236 transferring 64%</span></div>
+        <div class="strip">
+          <a class="thumb" href="#" aria-label="DSC01231"><svg viewBox="300 200 800 450" preserveAspectRatio="xMidYMid slice"><use href="#scene-copy"/></svg><span class="n">DSC01231</span></a>
+          <a class="thumb" href="#" aria-label="DSC01232"><svg viewBox="500 250 700 400" preserveAspectRatio="xMidYMid slice"><use href="#scene-copy"/></svg><span class="n">DSC01232</span></a>
+          <a class="thumb" href="#" aria-label="DSC01233"><svg viewBox="200 300 900 500" preserveAspectRatio="xMidYMid slice"><use href="#scene-copy"/></svg><span class="n">DSC01233</span></a>
+          <a class="thumb" href="#" aria-label="DSC01234"><svg viewBox="700 100 800 450" preserveAspectRatio="xMidYMid slice"><use href="#scene-copy"/></svg><span class="n">DSC01234</span></a>
+          <a class="thumb" href="#" aria-label="DSC01235"><svg viewBox="400 150 800 450" preserveAspectRatio="xMidYMid slice"><use href="#scene-copy"/></svg><span class="n">DSC01235</span></a>
+          <a class="thumb busy" href="#" aria-label="DSC01236, transferring 64%"><svg viewBox="350 220 800 450" preserveAspectRatio="xMidYMid slice"><use href="#scene-copy"/></svg><span class="n">DSC01236</span><span class="pb"><i></i></span></a>
+        </div>
+      </div>
+      <div class="col dest">
+        <div class="lbl"><span style="color:var(--ink-3)">Save to</span></div>
+        <div class="path"><svg><use href="#folder"/></svg>~/Pictures/Rimix/2026-11-10</div>
+        <div class="segc" role="radiogroup" aria-label="Destination">
+          <button role="radio" aria-checked="false">Custom folder</button>
+          <button role="radio" aria-checked="false">Lightroom watched folder</button>
+          <button role="radio" aria-checked="true" class="on">New folder per date</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= Screen 2: connect ================= -->
+<section class="screen connect" aria-label="Connect screen">
+  <div class="backdrop" aria-hidden="true"><svg viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice"><use href="#scene-copy"/></svg></div>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <header class="glass cap tb" aria-label="Toolbar">
+    <span class="mark">Rimix</span>
+    <span class="spacer"></span>
+    <span class="nocam">No camera connected</span>
+  </header>
+
+  <div class="headline">
+    <h1>Connect a camera</h1>
+    <p>Three ways in. Pick whichever is nearest to hand.</p>
+  </div>
+
+  <!-- bottom sheet with the three ways -->
+  <div class="glass sheet" aria-label="Ways to connect">
+    <span class="pull" aria-hidden="true"></span>
+    <div class="head"><span>Ways to connect</span></div>
+    <div class="ways">
+      <article class="way">
+        <h2>Scan the QR code</h2>
+        <div class="preview" aria-label="Webcam preview">
+          <div class="brk" aria-hidden="true"></div>
+          <span class="tag"><i aria-hidden="true"></i>Webcam</span>
+          <span class="cap-text">Hold the camera screen up to the webcam</span>
+        </div>
+        <p>On the camera: Menu, Network, Send to Smartphone, then show the QR code</p>
+      </article>
+      <article class="way">
+        <h2>Nearby over Bluetooth</h2>
+        <div class="listrow">
+          <span class="ic"><svg viewBox="0 0 20 20"><use href="#cam-glyph"/></svg></span>
+          <div class="t"><b>ZV-E10 · pairing enabled · 2 m away</b><span>Ready to pair</span></div>
+          <button class="pbtn">Connect</button>
+        </div>
+        <div class="fill"></div>
+        <p>Cameras with Bluetooth pairing switched on appear here as soon as they are in range.</p>
+      </article>
+      <article class="way">
+        <h2>Enter the camera's address</h2>
+        <form class="field" onsubmit="return false">
+          <input type="text" value="192.168.122.1" aria-label="Camera address" spellcheck="false">
+          <button class="pbtn" type="submit">Connect</button>
+        </form>
+        <div class="fill"></div>
+        <p>Use this when the camera is already on your network. The address is shown on the camera under Network, Wi-Fi, Display Wi-Fi info.</p>
+      </article>
+    </div>
+  </div>
+
+  <!-- right drawer: recently used + first-time note -->
+  <aside class="glass drawer recent" aria-label="Recently used">
+    <span class="grip" aria-hidden="true"></span>
+    <div class="head"><b>Recently used</b></div>
+    <div class="body">
+      <div class="list">
+        <div class="sect">
+          <div class="well">
+            <div class="r"><button><svg class="cam" viewBox="0 0 20 20"><use href="#cam-glyph"/></svg>ZV-E10 <span>(Wi-Fi Direct)</span><svg class="chev" viewBox="0 0 10 10"><use href="#chr"/></svg></button></div>
+            <div class="r"><button><svg class="cam" viewBox="0 0 20 20"><use href="#cam-glyph"/></svg>a7 IV <span>(home router)</span><svg class="chev" viewBox="0 0 10 10"><use href="#chr"/></svg></button></div>
+          </div>
+        </div>
+        <div class="note"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 7v4M8 5v.2" stroke-linecap="round"/></svg><div>First time on this camera? Press OK on the camera screen when it asks to allow this computer.</div></div>
+      </div>
+    </div>
+  </aside>
+</section>
+
+<!--
+Design 12, Glass Drawer.
+Idea: the footage stays clean under one thin glass toolbar; everything else lives in two glass drawers, the Remote Console settings list sliding in from the right and captures plus destination rising as a half-open sheet from the bottom, with the shoot capsule riding on top of the sheet.
+Palette: body #101216; glass rgba(255,255,255,.11 to .06) over a rgba(12,14,18,.46) tint with blur(24px) saturate(180%); ink #FFFFFF at 1 / .72 / .52; hairlines rgba(255,255,255,.10); focus-lock green #30D158; record red #FF453A.
+Type: Inter 400 to 700 (falls back to -apple-system / SF Pro Text / Helvetica Neue), tabular numerals on every value.
+Avoided: a branded accent colour (hierarchy is brighter vs dimmer glass), uppercase labels, monospace values, identical cards with grey shadows, arrows on buttons, page-load motion; drawers are drawn open rather than animated in.
+-->
+</body>
+</html>

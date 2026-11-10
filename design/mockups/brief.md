@@ -61,3 +61,35 @@ Content that must appear:
 - Write copy from the user's side: "Shoot", "Record", "Save to", "Connect". Sentence case.
 - Put a <title> that is the design's name (for example "Rimix — Viewfinder") and, as the first element in the body, a small fixed badge in a corner that says the design's name and number so screenshots are identifiable.
 - At the very end of the file, inside an HTML comment, write 3 to 5 lines: the design idea in one sentence, the palette as hex values, the typefaces, and what you deliberately avoided.
+
+---
+
+# Round 2: glass variants of Viewfinder (01) and Remote Console (06)
+
+The owner liked two things from round 1 and nothing else:
+1. From 01 Viewfinder: the layout. The live view fills the whole window and every control floats on top of it, spread around the edges. Keep this.
+2. From 06 Remote Console: the settings panel. A tidy stacked list: one row per setting, label on the left, current value on the right, with inline controls on the row (a minus/plus stepper for numeric values, chevrons or a segmented control for choices), hairline separators between rows, rows grouped into small sections (Exposure, Image, Focus and drive). Keep this exact panel pattern wherever settings appear.
+
+Every round-2 design combines both, and uses an Apple-style glass material.
+
+## The glass material (use it for every floating panel, bar, popover and button group)
+
+- Translucent: the live view shows through. Use `backdrop-filter: blur(24px) saturate(180%)` (plus the -webkit- prefix) on a semi-transparent fill such as rgba(255,255,255,0.10) on dark footage or rgba(255,255,255,0.55) for a light variant.
+- Specular edge: a 1px inner highlight along the top and left (for example `box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), inset 1px 0 0 rgba(255,255,255,0.12)`) plus a very soft outer shadow so the panel lifts off the footage.
+- Shape: generous rounding, 16 to 24px on panels and full capsules on bars and buttons; concentric radii for nested elements (inner radius = outer radius minus padding).
+- Hierarchy through material, not colour: the active or primary element is a brighter, more opaque glass; secondary panels are dimmer and more transparent. Text is white or near-white on dark footage with a subtle text shadow for legibility; use one accent only for state (recording red, focus-lock green).
+- Keep the glass legible over the busiest part of the scene: panels may sit over the image but text must stay readable; add a slight dark tint inside panels if needed.
+- Motion only on interaction (hover lift, press) and respect prefers-reduced-motion.
+
+## Shared content
+
+Unchanged from the brief above: the same two screens, same content. The Connect screen uses the same glass language over a webcam-preview backdrop (a dark blurred version of the scene is fine).
+
+## Variant list (each is one file; the direction names the memorable idea)
+
+- 11-glass-inspector: Viewfinder layout; the 06 settings list lives in one tall glass inspector panel floating on the right edge over the footage; shutter, record and focus in a glass capsule bottom-centre; filmstrip in a glass tray bottom-left; status in a thin glass top bar.
+- 12-glass-drawer: Viewfinder layout with the live view completely clean by default; a thin glass toolbar across the top (status, presets, scopes); the 06 settings list is in a glass drawer that slides in from the right (render it open, with its handle visible); filmstrip and destination in a drawer from the bottom (render it half-open).
+- 13-glass-dock: Viewfinder layout; all primary controls in one floating glass dock bottom-centre (shoot in the middle, record and focus either side, presets as a segmented control, the ten exposure values as compact tappable chips across the dock); the 06 settings list appears as a glass popover anchored to the chip that is "open" (render the popover open above the ISO chip).
+- 14-glass-sidebar: a single macOS-style window with a translucent glass sidebar on the left (the 06 settings list, presets, destination, cameras) and the live view filling the rest of the window edge to edge, with only the focus frame, level, histogram and a small glass status capsule over it; filmstrip as a glass strip along the bottom of the live view.
+- 15-glass-ring: Viewfinder layout; the memorable idea is a circular glass control ring in the bottom-right corner, like a lens control ring: Shoot in the centre, Record and Focus as inner arcs, and the exposure values arranged around the outer ring; the 06 settings list opens as a glass panel next to the ring for the selected value (render it open on Shutter); filmstrip and destination in a glass tray bottom-left.
+- 16-glass-daylight: the light version of 11 for shooting in bright rooms: frosted white glass (rgba(255,255,255,0.6) plus blur), dark text, same Viewfinder layout and the same 06 settings inspector on the right; everything else identical to 11 so the owner can compare dark glass against light glass directly.
