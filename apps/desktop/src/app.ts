@@ -5,6 +5,7 @@
 
 import { createActions, type Actions } from './actions';
 import * as appSettings from './components/appSettings';
+import * as cardBrowser from './components/cardBrowser';
 import * as connectScreen from './components/connectScreen';
 import * as dock from './components/dock';
 import * as filmstrip from './components/filmstrip';
@@ -47,8 +48,17 @@ export const controls: Mount = (root, store, actions) => {
   };
 };
 
-// App settings mounts before the controls so its Escape handler runs first.
-const MAIN: Mount[] = [liveview.mount, topbar.mount, appSettings.mount, sidePanels.mount, filmstrip.mount, controls];
+// App settings mounts before the card browser and the controls so its
+// Escape handler runs first; the card browser's runs before the controls'.
+const MAIN: Mount[] = [
+  liveview.mount,
+  topbar.mount,
+  appSettings.mount,
+  sidePanels.mount,
+  filmstrip.mount,
+  cardBrowser.mount,
+  controls,
+];
 // App settings here too, so the webcam and Wi-Fi join can be set before the first connection.
 const CONNECT: Mount[] = [connectScreen.mount, appSettings.mount];
 

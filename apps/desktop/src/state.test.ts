@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'vitest';
 import tagged from './fixtures/state-changed.json';
 import taggedSaved from './fixtures/capture-saved.json';
-import { applyEvent, cameraBusy, createStore, defaultSettings, initialState, type AppState } from './state';
-import type { CameraEvent, CameraState } from './ipc';
+import cardObject from './fixtures/card-object.json';
+import { activate, applyEvent, cameraBusy, createStore, defaultSettings, emptyCard, initialState, type AppState } from './state';
+import type { CameraEvent, CameraState, CardObject } from './ipc';
 import { start } from './interval';
 
 // The fixtures are tagged with the camera they came from.
@@ -193,4 +194,85 @@ test('default settings carry the connection and preset fields', () => {
   expect(s.wifiJoin).toBe('Automatic');
   expect(s.webcamId).toBeNull();
   expect(s.presets).toEqual([]);
+});
+
+describe('card', () => {
+  const base = (fixture as unknown as { StateChanged: CameraState }).StateChanged;
+  const zv = { ...base, model: 'ZV-E10' };
+  const a7 = { ...base, model: 'ILCE-7M4' };
+  const A = '10.0.0.5:15740';
+  const B = 'DIRECT-zz99:ILCE-7M4';
+  const jpeg = cardObject as CardObject;
+  const clip: CardObject = { ...jpeg, handle: 259, filename: 'C0001.MP4', kind: 'Video', bytes: 64 << 20 };
+  const browsing = (): AppState => ({
+    ...initialState(),
+    screen: 'main',
+    cameras: { [A]: zv, [B]: a7 },
+    activeId: A,
+    camera: zv,
+    cardOpen: true,
+    card: { ...emptyCard(), items: [jpeg, clip], downloads: { 259: { received: 0, total: 64 << 20 } } },
+  });
+  const step = (s: AppState, event: CameraEvent, id: string) => ({ ...s, ...applyEvent(s, event, id) });
+  const progress = (received: number): CameraEvent => ({
+    CardDownloadProgress: { handle: 259, filename: 'C0001.MP4', received, total: 64 << 20 },
+  });
+
+  test('progress from the active camera is kept by handle', () => {
+    const s = step(browsing(), progress(1 << 20), A);
+    expect(s.card.downloads).toEqual({ 259: { received: 1 << 20, total: 64 << 20 } });
+    expect(s.card.items).toEqual([jpeg, clip]);
+  });
+
+  test('progress from another camera leaves the card alone', () => {
+    expect(applyEvent(browsing(), progress(1 << 20), B)).toEqual({});
+  });
+
+  test('saving the downloading file marks its row saved, clears its progress and shows it in the filmstrip', () => {
+    const saved: CameraEvent = {
+      CaptureSaved: { path: '/shots/C0001.MP4', bytes: 64 << 20, filename: 'C0001.MP4', camera_filename: 'C0001.MP4' },
+    };
+    const s = step(step(browsing(), progress(64 << 20), A), saved, A);
+    expect(s.card.downloads).toEqual({});
+    expect(s.card.done).toEqual({ 259: '/shots/C0001.MP4' });
+    expect(s.captures[0].path).toBe('/shots/C0001.MP4');
+  });
+
+  test('a shot with the same name as a card file not being downloaded leaves the card alone', () => {
+    const s = browsing();
+    const saved: CameraEvent = {
+      CaptureSaved: { path: '/shots/DSC00010.JPG', bytes: 3, filename: 'DSC00010.JPG', camera_filename: 'DSC00010.JPG' },
+    };
+    const next = step(s, saved, A);
+    expect(next.card).toBe(s.card);
+  });
+
+  test('progress that arrives after the reply is settled by the save event behind it', () => {
+    // The reply came first: the row is saved and no longer downloading.
+    let s: AppState = { ...browsing(), card: { ...browsing().card, downloads: {}, done: { 259: '/shots/C0001.MP4' } } };
+    s = step(s, progress(64 << 20), A);
+    s = step(s, {
+      CaptureSaved: { path: '/shots/C0001.MP4', bytes: 64 << 20, filename: 'C0001.MP4', camera_filename: 'C0001.MP4' },
+    }, A);
+    expect(s.card.downloads).toEqual({});
+    expect(s.card.done).toEqual({ 259: '/shots/C0001.MP4' });
+  });
+
+  test('a failed download keeps its error on the row', () => {
+    const s = step(browsing(), { CaptureFailed: { filename: 'C0001.MP4', error: 'timed out' } }, A);
+    expect(s.card.downloads).toEqual({});
+    expect(s.card.failed).toEqual({ 259: 'timed out' });
+    // A new try clears it once progress arrives.
+    const retry = step(s, progress(2 << 20), A);
+    expect(retry.card.failed).toEqual({});
+  });
+
+  test('switching the active camera clears the card and closes the panel', () => {
+    const s = browsing();
+    const patch = activate(s, B);
+    expect(patch.card).toEqual(emptyCard());
+    expect(patch.cardOpen).toBe(false);
+    // Activating the camera already active keeps it.
+    expect(activate(s, A).card).toBeUndefined();
+  });
 });

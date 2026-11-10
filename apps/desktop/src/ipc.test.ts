@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import tagged from './fixtures/state-changed.json';
 import taggedSaved from './fixtures/capture-saved.json';
+import cardObject from './fixtures/card-object.json';
 import {
   isCaptureSaved,
   isCardDownloadProgress,
@@ -8,6 +9,7 @@ import {
   isDisconnected,
   isStateChanged,
   type CameraEvent,
+  type CardObject,
   type TaggedEvent,
 } from './ipc';
 
@@ -84,5 +86,22 @@ describe('camera events', () => {
     expect(event.CardDownloadProgress.filename).toBe('C0001.MP4');
     expect(event.CardDownloadProgress.received).toBe(1);
     expect(event.CardDownloadProgress.total).toBe(2);
+  });
+});
+
+// Pinned by the Rust test `card_object_json_is_stable`.
+describe('card objects', () => {
+  test('a card file arrives with snake_case fields and an ISO capture time', () => {
+    const obj: CardObject = cardObject as CardObject;
+    expect(obj).toEqual({
+      handle: 257,
+      storage: 65537,
+      filename: 'DSC00010.JPG',
+      bytes: 2097152,
+      size_known: true,
+      format: 0x3801,
+      kind: 'Still',
+      captured: '2026-11-11T14:03:00',
+    });
   });
 });

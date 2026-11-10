@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import cameraState from './fixtures/camera-state.json';
+import cardObject from './fixtures/card-object.json';
 import { ASK_FIND_MS, createActions, FIND_MS, parseHostKeyChanged, rememberedFingerprint } from './actions';
 import { mount as mountTopbar } from './components/topbar';
 import { start } from './interval';
 import * as ipc from './ipc';
-import type { AppSettings, CameraState, DiscoveredCamera, Preset, RecentCamera, WifiJoin } from './ipc';
-import { createStore, defaultSettings, initialState, type AppState } from './state';
+import type { AppSettings, CameraState, CardObject, DiscoveredCamera, Preset, RecentCamera, WifiJoin } from './ipc';
+import { createStore, defaultSettings, emptyCard, initialState, type AppState } from './state';
 
 vi.mock('./ipc', () => ({
   connect: vi.fn(),
@@ -21,6 +22,9 @@ vi.mock('./ipc', () => ({
   setActiveCamera: vi.fn(),
   shoot: vi.fn(),
   shootAll: vi.fn(),
+  cardList: vi.fn(),
+  cardDownload: vi.fn(),
+  cardMode: vi.fn(),
 }));
 
 const camera = cameraState as unknown as CameraState;
@@ -620,5 +624,104 @@ describe('several cameras', () => {
     createActions(store).addCamera();
     expect(store.get()).toMatchObject({ screen: 'connect', keepCameras: true, activeId: A, camera, error: null });
     expect(Object.keys(store.get().cameras)).toEqual([A, B]);
+  });
+});
+
+describe('card', () => {
+  const jpeg = cardObject as CardObject;
+  const clip: CardObject = { ...jpeg, handle: 259, filename: 'C0001.MP4', kind: 'Video', bytes: 64 << 20 };
+  const browsing = (extra: Partial<AppState> = {}) =>
+    createStore<AppState>({
+      ...initialState(),
+      screen: 'main',
+      camera,
+      cameras: { [A]: camera, [B]: a7 },
+      activeId: A,
+      cardOpen: true,
+      ...extra,
+    });
+
+  beforeEach(() => {
+    vi.mocked(ipc.cardMode).mockReset().mockResolvedValue('same-session');
+    vi.mocked(ipc.cardList).mockReset().mockResolvedValue([jpeg, clip]);
+    vi.mocked(ipc.cardDownload).mockReset().mockResolvedValue('/shots/C0001.MP4');
+  });
+
+  test('refresh lists the active camera card', async () => {
+    const store = browsing();
+    const pending = createActions(store).cardRefresh();
+    expect(store.get().card.loading).toBe(true);
+    await pending;
+    expect(ipc.cardList).toHaveBeenCalledWith(A);
+    expect(store.get().card).toMatchObject({ items: [jpeg, clip], loading: false, error: null, mode: 'same-session' });
+  });
+
+  test('a camera that needs its transfer mode is not listed', async () => {
+    vi.mocked(ipc.cardMode).mockResolvedValue('needs-transfer-mode');
+    const store = browsing();
+    await createActions(store).cardRefresh();
+    expect(ipc.cardList).not.toHaveBeenCalled();
+    expect(store.get().card).toMatchObject({ items: [], loading: false, mode: 'needs-transfer-mode' });
+  });
+
+  test('a failed listing is shown in the panel', async () => {
+    vi.mocked(ipc.cardList).mockRejectedValue('Not connected to a camera');
+    const toast = vi.fn();
+    const store = browsing();
+    await createActions(store, toast).cardRefresh();
+    expect(store.get().card).toMatchObject({ loading: false, error: 'Not connected to a camera' });
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  test('a listing that arrives after switching cameras is dropped', async () => {
+    let finish: (items: CardObject[]) => void = () => {};
+    vi.mocked(ipc.cardList).mockReturnValue(new Promise((r) => (finish = r)));
+    const store = browsing();
+    const actions = createActions(store);
+    const pending = actions.cardRefresh();
+    await vi.waitFor(() => expect(ipc.cardList).toHaveBeenCalled());
+    await actions.switchCamera(B);
+    finish([jpeg, clip]);
+    await pending;
+    expect(store.get().card).toEqual(emptyCard());
+  });
+
+  test('download shows progress at once, then the saved path', async () => {
+    let finish: (path: string) => void = () => {};
+    vi.mocked(ipc.cardDownload).mockReturnValue(new Promise((r) => (finish = r)));
+    const store = browsing({ card: { ...emptyCard(), items: [jpeg, clip] } });
+    const pending = createActions(store).cardDownload(259);
+    expect(ipc.cardDownload).toHaveBeenCalledWith(259, A);
+    expect(store.get().card.downloads).toEqual({ 259: { received: 0, total: 64 << 20 } });
+    finish('/shots/C0001.MP4');
+    await pending;
+    expect(store.get().card.downloads).toEqual({});
+    expect(store.get().card.done).toEqual({ 259: '/shots/C0001.MP4' });
+  });
+
+  test('a file already on its way is not asked for twice', async () => {
+    const store = browsing({ card: { ...emptyCard(), items: [clip], downloads: { 259: { received: 1, total: 2 } } } });
+    await createActions(store).cardDownload(259);
+    expect(ipc.cardDownload).not.toHaveBeenCalled();
+  });
+
+  test('a refused download keeps its error on the row, not in a toast', async () => {
+    vi.mocked(ipc.cardDownload).mockRejectedValue('unsupported: files of 4 GiB or more cannot be downloaded yet');
+    const toast = vi.fn();
+    const store = browsing({ card: { ...emptyCard(), items: [jpeg, clip], failed: { 257: 'old' } } });
+    await createActions(store, toast).cardDownload(259);
+    expect(store.get().card.downloads).toEqual({});
+    expect(store.get().card.failed).toEqual({
+      257: 'old',
+      259: 'unsupported: files of 4 GiB or more cannot be downloaded yet',
+    });
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  test('disconnecting the last camera closes the card', async () => {
+    const store = browsing({ cameras: { [A]: camera }, card: { ...emptyCard(), items: [jpeg] } });
+    await createActions(store).disconnect();
+    expect(store.get().cardOpen).toBe(false);
+    expect(store.get().card).toEqual(emptyCard());
   });
 });

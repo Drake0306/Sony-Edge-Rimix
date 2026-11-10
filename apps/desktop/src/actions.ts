@@ -15,7 +15,17 @@ import type { AppSettings, Preset, PtpValue, RecentCamera, SshLogin } from './ip
 import { start, type IntervalPlan } from './interval';
 import { describeFailures, upsertPreset } from './presets';
 import type { WifiCredentials } from './qr/payload';
-import { activate, cameraCount, transferCamera, without, type AppState, type AppStore } from './state';
+import {
+  activate,
+  cameraCount,
+  emptyCard,
+  transferCamera,
+  without,
+  withoutHandle,
+  type AppState,
+  type AppStore,
+  type CardState,
+} from './state';
 
 /** How long to wait for the camera after joining its network. */
 export const FIND_MS = 30_000;
@@ -59,6 +69,10 @@ export interface Actions {
   savePreset(preset: Preset): Promise<void>;
   deletePreset(id: string): Promise<void>;
   pickFolder(): Promise<string | null>;
+  /** Lists the active camera's card again (or learns it needs its transfer mode). */
+  cardRefresh(): Promise<void>;
+  /** Downloads one file from the active camera's card; progress arrives as events. */
+  cardDownload(handle: number): Promise<void>;
   /** Starts the interval timer on the active camera; the app's ticker shoots on its schedule. */
   startInterval(plan: IntervalPlan): void;
   stopInterval(): void;
@@ -107,6 +121,8 @@ const noCameras = (): Partial<AppState> => ({
   transfers: {},
   activePreset: null,
   interval: null,
+  card: emptyCard(),
+  cardOpen: false,
 });
 
 /**
@@ -359,6 +375,49 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     return rc.ssid ? connectWithWifi({ ssid: rc.ssid, password: '' }) : connectOnce(rc.ip, null, rc.ip, null);
   }
 
+  /**
+   * Changes the card of camera `id` if it is still the active one: a
+   * listing or download that finishes after a switch belongs to a card no
+   * longer shown.
+   */
+  const updateCard = (id: string | null, change: (card: CardState) => Partial<CardState>) => {
+    const s = store.get();
+    if (s.activeId !== id) return;
+    store.set({ card: { ...s.card, ...change(s.card) } });
+  };
+
+  async function cardRefresh(): Promise<void> {
+    const id = store.get().activeId;
+    updateCard(id, () => ({ loading: true, error: null }));
+    try {
+      const mode = await ipc.cardMode(id);
+      const items = mode === 'needs-transfer-mode' ? [] : await ipc.cardList(id);
+      updateCard(id, () => ({ items, mode, loading: false }));
+    } catch (e) {
+      updateCard(id, () => ({ loading: false, error: message(e) }));
+    }
+  }
+
+  async function cardDownload(handle: number): Promise<void> {
+    const { activeId: id, card } = store.get();
+    if (handle in card.downloads) return;
+    const total = card.items.find((o) => o.handle === handle)?.bytes ?? 0;
+    updateCard(id, (c) => ({
+      downloads: { ...c.downloads, [handle]: { received: 0, total } },
+      failed: withoutHandle(c.failed, handle),
+    }));
+    // The reply can overtake the last progress events; the CaptureSaved or
+    // CaptureFailed event after them settles the row again.
+    try {
+      const path = await ipc.cardDownload(handle, id);
+      updateCard(id, (c) => ({ downloads: withoutHandle(c.downloads, handle), done: { ...c.done, [handle]: path } }));
+    } catch (e) {
+      // Shown on the file's row rather than as a toast.
+      const error = message(e);
+      updateCard(id, (c) => ({ downloads: withoutHandle(c.downloads, handle), failed: { ...c.failed, [handle]: error } }));
+    }
+  }
+
   return {
     connect: (ip, ssid, ssh) => connectOnce(ip, ssid ?? null, ip.trim(), ssh ?? null),
     connectWithWifi,
@@ -421,6 +480,8 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     },
     startInterval: (plan) => store.set({ interval: start(plan, Date.now(), store.get().activeId) }),
     stopInterval: () => store.set({ interval: null }),
+    cardRefresh,
+    cardDownload,
     toast,
   };
 }

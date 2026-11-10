@@ -3,7 +3,7 @@
 
 import { sshErrorMessage } from './copy';
 import type { IntervalRun } from './interval';
-import type { AppSettings, CameraEvent, CameraState, DiscoveredCamera } from './ipc';
+import type { AppSettings, CameraEvent, CameraState, CardMode, CardObject, DiscoveredCamera } from './ipc';
 
 export interface Store<T> {
   get(): T;
@@ -42,6 +42,32 @@ export interface Transfer {
   received: number;
   total: number;
 }
+
+/** The active camera's card as the card browser shows it. */
+export interface CardState {
+  items: CardObject[];
+  loading: boolean;
+  /** Why the card could not be listed. */
+  error: string | null;
+  /** How the camera lets its card be browsed; null until known. */
+  mode: CardMode | null;
+  /** Files on their way, by handle. */
+  downloads: Record<number, Transfer>;
+  /** Where each downloaded file was saved, by handle. */
+  done: Record<number, string>;
+  /** Why a file's last download failed, by handle. */
+  failed: Record<number, string>;
+}
+
+export const emptyCard = (): CardState => ({
+  items: [],
+  loading: false,
+  error: null,
+  mode: null,
+  downloads: {},
+  done: {},
+  failed: {},
+});
 
 /** The last shot that could not be received or saved. */
 export interface SaveError {
@@ -92,6 +118,10 @@ export interface AppState {
   sshPrefill: SshPrefill | null;
   /** The running interval timer, otherwise null. */
   interval: IntervalRun | null;
+  /** The active camera's card; it belongs to that camera and goes when another becomes active. */
+  card: CardState;
+  /** True while the card browser is open. */
+  cardOpen: boolean;
 }
 
 export interface PendingFingerprint {
@@ -139,6 +169,8 @@ export const initialState = (): AppState => ({
   pendingFingerprint: null,
   sshPrefill: null,
   interval: null,
+  card: emptyCard(),
+  cardOpen: false,
 });
 
 /** What the app uses when the settings file cannot be read. */
@@ -179,7 +211,10 @@ export const statusOf = (camera: CameraState): AppState['status'] => ({
   lastShotAt: camera.last_shot_at,
 });
 
-/** The fields that show `id` as the active camera. */
+/**
+ * The fields that show `id` as the active camera. Another camera's card
+ * goes, and the card browser closes with it.
+ */
 export function activate(state: AppState, id: string | null): Partial<AppState> {
   const camera = id === null ? null : (state.cameras[id] ?? null);
   return {
@@ -187,6 +222,7 @@ export function activate(state: AppState, id: string | null): Partial<AppState> 
     camera,
     reconnecting: id === null ? null : (state.attempts[id] ?? null),
     ...(camera ? { status: statusOf(camera) } : {}),
+    ...(id !== state.activeId ? { card: emptyCard(), cardOpen: false } : {}),
   };
 }
 
@@ -209,6 +245,55 @@ export const transferName = (key: string) => key.slice(key.lastIndexOf('/') + 1)
 /** The camera id in a `transfers` key, or null for one without. */
 export const transferCamera = (key: string) => (key.includes('/') ? key.slice(0, key.lastIndexOf('/')) : null);
 
+/** `record` without the numeric `key`. */
+export function withoutHandle<T>(record: Record<number, T>, key: number): Record<number, T> {
+  const rest = { ...record };
+  delete rest[key];
+  return rest;
+}
+
+/** The handle of the card file on its way under the camera's name `filename`, if any. */
+function downloading(card: CardState, filename: string): number | null {
+  const obj = card.items.find((o) => o.filename === filename && o.handle in card.downloads);
+  return obj ? obj.handle : null;
+}
+
+/**
+ * What an event from the active camera changes in its card: progress is
+ * kept by handle, and the save or failure of a file being downloaded ends
+ * its progress with the saved path or the error. Null when nothing changes.
+ */
+function cardEvent(card: CardState, event: CameraEvent): CardState | null {
+  if (typeof event !== 'object') return null;
+  if ('CardDownloadProgress' in event) {
+    const { handle, received, total } = event.CardDownloadProgress;
+    return {
+      ...card,
+      downloads: { ...card.downloads, [handle]: { received, total } },
+      failed: withoutHandle(card.failed, handle),
+    };
+  }
+  if ('CaptureSaved' in event) {
+    const handle = downloading(card, event.CaptureSaved.camera_filename);
+    if (handle === null) return null;
+    return {
+      ...card,
+      downloads: withoutHandle(card.downloads, handle),
+      done: { ...card.done, [handle]: event.CaptureSaved.path },
+    };
+  }
+  if ('CaptureFailed' in event) {
+    const handle = downloading(card, event.CaptureFailed.filename);
+    if (handle === null) return null;
+    return {
+      ...card,
+      downloads: withoutHandle(card.downloads, handle),
+      failed: { ...card.failed, [handle]: event.CaptureFailed.error },
+    };
+  }
+  return null;
+}
+
 /**
  * What a camera event from `cameraId` changes; the toast for a skipped shot
  * is the app's job. Events from a camera that is not connected (late ones
@@ -217,6 +302,13 @@ export const transferCamera = (key: string) => (key.includes('/') ? key.slice(0,
  */
 export function applyEvent(state: AppState, event: CameraEvent, cameraId: string | null = state.activeId): Partial<AppState> {
   if (cameraId !== null && !(cameraId in state.cameras)) return {};
+  const patch = cameraPatch(state, event, cameraId);
+  const card = cameraId === state.activeId ? cardEvent(state.card, event) : null;
+  return card ? { ...patch, card } : patch;
+}
+
+/** What `applyEvent` changes apart from the card. */
+function cameraPatch(state: AppState, event: CameraEvent, cameraId: string | null): Partial<AppState> {
   const active = cameraId === state.activeId;
   if (event === 'Connected') {
     if (cameraId === null || !(cameraId in state.attempts)) {

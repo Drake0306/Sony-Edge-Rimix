@@ -113,14 +113,14 @@ describe('Cameras with a shared address', () => {
 
   test('a second Wi-Fi Direct camera at the same address still shows while connected to the first', () => {
     const { root, unmount } = mountWith([zv, a7], zv.ip, 'ZV-E10');
-    expect(rows(root)).toEqual(['ZV-E10', 'ILCE-7M4', 'Add a camera', 'Disconnect']);
+    expect(rows(root)).toEqual(['ZV-E10', 'Browse card', 'ILCE-7M4', 'Add a camera', 'Disconnect']);
     unmount();
   });
 
   test('a Phase 1 entry without a port is the same camera as one with :15740', () => {
     const old: RecentCamera = { ip: '10.0.0.5', model: 'A7 IV', lastUsed: 1, ssid: null };
     const { root, unmount } = mountWith([{ ...old, ip: '192.168.122.1' }, old], '192.168.122.1:15740', 'A7 IV');
-    expect(rows(root)).toEqual(['A7 IV', 'A7 IV', 'Add a camera', 'Disconnect']);
+    expect(rows(root)).toEqual(['A7 IV', 'Browse card', 'A7 IV', 'Add a camera', 'Disconnect']);
     unmount();
   });
 });
@@ -164,7 +164,9 @@ describe('Cameras with several connected', () => {
       (b) => b.querySelector('.k')?.textContent ?? b.textContent,
     );
     // Remembered cameras that are connected are not listed again.
-    expect(texts).toEqual(['ZV-E10', 'ILCE-7M4', 'Shoot all', 'A7 IV', 'Add a camera', 'Disconnect', 'Disconnect all']);
+    expect(texts).toEqual([
+      'ZV-E10', 'ILCE-7M4', 'Browse card', 'Shoot all', 'A7 IV', 'Add a camera', 'Disconnect', 'Disconnect all',
+    ]);
     expect(byKey('ZV-E10').querySelector('.v')!.textContent).toBe('this');
     expect(byKey('ILCE-7M4').querySelector('.v')?.textContent ?? '').not.toBe('this');
     expect(byKey('ILCE-7M4').querySelector('.dot')).not.toBeNull();
@@ -193,7 +195,17 @@ describe('Cameras with several connected', () => {
     const texts = [...root.querySelectorAll('[aria-label="Cameras"] button')].map(
       (b) => b.querySelector('.k')?.textContent ?? b.textContent,
     );
-    expect(texts).toEqual(['ZV-E10', 'Add a camera', 'Disconnect']);
+    expect(texts).toEqual(['ZV-E10', 'Browse card', 'Add a camera', 'Disconnect']);
+    unmount();
+  });
+
+  test('Browse card opens the card panel for the active camera, only while it is connected', () => {
+    const { store, unmount, byKey, buttons } = mountTwo();
+    expect(store.get().cardOpen).toBe(false);
+    byKey('Browse card').click();
+    expect(store.get().cardOpen).toBe(true);
+    store.set({ camera: { ...zv, connected: false } });
+    expect(buttons().some((b) => b.textContent === 'Browse card')).toBe(false);
     unmount();
   });
 });

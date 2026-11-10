@@ -13,7 +13,8 @@
 // The app's own types (AppSettings and
 // RecentCamera) use camelCase fields. `src/fixtures/state-changed.json` and
 // `src/fixtures/capture-saved.json` are pinned by the Rust tests
-// `state_changed_event_json_is_stable` and `capture_saved_event_json_is_stable`.
+// `state_changed_event_json_is_stable` and `capture_saved_event_json_is_stable`,
+// and `src/fixtures/card-object.json` by `card_object_json_is_stable`.
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -113,6 +114,26 @@ export const isCaptureFailed = (e: CameraEvent): e is Tagged<'CaptureFailed'> =>
   hasTag(e, 'CaptureFailed');
 export const isCardDownloadProgress = (e: CameraEvent): e is Tagged<'CardDownloadProgress'> =>
   hasTag(e, 'CardDownloadProgress');
+
+export type CardKind = 'Still' | 'Raw' | 'Video' | 'Other';
+
+/** One file on the camera's card, as `card_list` lists it. */
+export interface CardObject {
+  handle: number;
+  storage: number;
+  filename: string;
+  /** The size the camera reports; meaningless unless `size_known`. */
+  bytes: number;
+  /** False for files of 4 GiB or more, which cannot be downloaded yet. */
+  size_known: boolean;
+  format: number;
+  kind: CardKind;
+  /** The capture time as the camera keeps it (no zone), `2026-11-11T14:03:00`. */
+  captured: string | null;
+}
+
+/** How a camera lets its card be browsed. */
+export type CardMode = 'same-session' | 'needs-transfer-mode';
 
 /** A camera's id: its Wi-Fi name when connected through it, else `ip:port`. */
 export type CameraId = string;
@@ -275,6 +296,15 @@ export const applyValues = (values: PresetValue[], cameraId: CameraId | null = n
 export const shoot = (cameraId: CameraId | null = null) => onCamera<void>('shoot', cameraId);
 export const focus = (cameraId: CameraId | null = null) => onCamera<void>('focus', cameraId);
 export const toggleRecord = (cameraId: CameraId | null = null) => onCamera<void>('toggle_record', cameraId);
+/** Every file on the camera's cards. */
+export const cardList = (cameraId: CameraId | null = null) => onCamera<CardObject[]>('card_list', cameraId);
+/**
+ * Downloads a card file and resolves with where it was saved, once all of
+ * it has arrived; follow it through `CardDownloadProgress` events.
+ */
+export const cardDownload = (handle: number, cameraId: CameraId | null = null) =>
+  invoke<string>('card_download', forCamera({ handle }, cameraId));
+export const cardMode = (cameraId: CameraId | null = null) => onCamera<CardMode>('card_mode', cameraId);
 /** The active camera's latest live view JPEG; empty when there is no frame yet. */
 export const liveViewFrame = (cameraId: CameraId | null = null) => onCamera<ArrayBuffer>('live_view_frame', cameraId);
 export const liveViewMeta = (cameraId: CameraId | null = null) => onCamera<LiveViewMeta>('live_view_meta', cameraId);
