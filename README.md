@@ -68,7 +68,11 @@ The connect screen has three ways in:
 
 "Advanced: connect by address" holds the old IP address field. Rimix remembers cameras you have used. In App settings, the Connection section lets you choose whether Wi-Fi joins happen automatically or ask first, pick the webcam, and forget remembered cameras.
 
+If the camera's Wi-Fi drops while you work, macOS falls back to your home Wi-Fi and Rimix keeps saying "Reconnecting". Rimix does not rejoin the camera's network by itself: join it again from the Wi-Fi menu, or press Disconnect and connect again.
+
 ## Release a version
+
+The first time, try the workflow with a throwaway tag: push `v0.0.0-test`, check the draft release it makes, then delete that draft release on GitHub and the tag (`git push origin :refs/tags/v0.0.0-test` and `git tag -d v0.0.0-test`).
 
 Tag the commit and push the tag:
 

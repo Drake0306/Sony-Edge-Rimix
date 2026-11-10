@@ -109,7 +109,7 @@ This saves 30 live view frames as JPEG files.
    pnpm tauri dev
    ```
 
-2. Enter `192.168.122.1` and press Connect. The Mac must still be on the camera's network.
+2. Open "Advanced: connect by address" on the connect screen, check the address says `192.168.122.1`, and press its Connect button. The Mac must still be on the camera's network.
 3. Check that live view shows.
 4. Press Shoot. Check a picture arrives in the filmstrip.
 5. Change ISO using the ISO chip in the dock.
@@ -122,6 +122,7 @@ This saves 30 live view frames as JPEG files.
 - **The camera is frozen or stops answering.** Turn it off and on. If that does nothing, take the battery out for a few seconds. Then start again from step 1.
 - **"Camera refused" (exit code 4).** Check that "Ctrl w/ Smartphone" is Off and that no phone is connected to the camera. Also check that PC Remote is On and the camera is on the PC Remote screen.
 - **Connection timeout (exit code 3).** Check that the Mac is joined to the DIRECT-xxxx network (and not your home Wi-Fi). Then run `ping 192.168.122.1`. If ping gets no reply, the Mac is not on the camera's network.
+- **The app keeps saying "Reconnecting".** If the camera's Wi-Fi drops, macOS falls back to your home Wi-Fi and Rimix does not rejoin the camera's network by itself. Join the DIRECT-xxxx network again from the Wi-Fi menu, or press Disconnect and connect again.
 - **Other exit codes.** 2 means a typing mistake in the command; 5 means a problem saving a file on the Mac (check the `--out` folder).
 - **Rimix's saved files.** Rimix keeps its settings and the computer identity it shows to the camera in `~/Library/Application Support/Rimix/` (the `guid` file is the identity, `settings.json` is the app settings). The command line tool and the app share the same identity so the camera sees one computer.
   - Do not delete the `guid` file unless asked. If you do, the camera will see a new computer and ask to pair again, and the old pairing stays on the camera until you reset it.
