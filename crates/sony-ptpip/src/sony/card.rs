@@ -1,6 +1,9 @@
 //! Browsing the memory card with the standard PTP object operations:
 //! GetStorageIDs, GetObjectHandles and GetObjectInfo to list it, and
 //! GetPartialObject to download a file in chunks, resuming after a drop.
+//!
+//! A real card keeps its files in folders (`DCIM/100MSDCF`,
+//! `PRIVATE/M4ROOT/CLIP`), so listing walks the folders from the root.
 
 use std::collections::HashSet;
 use std::io::Write;
@@ -27,6 +30,8 @@ const ROOT: u32 = 0xFFFF_FFFF;
 const SIZE_UNKNOWN: u32 = 0xFFFF_FFFF;
 /// GetObjectHandles format meaning "every format".
 const ALL_FORMATS: u32 = 0;
+/// How many folders deep the listing walks; `PRIVATE/M4ROOT/CLIP` is three.
+pub const MAX_DEPTH: u32 = 4;
 
 /// What a file on the card holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -114,21 +119,46 @@ pub async fn list_storages(conn: &mut PtpIpConnection) -> Result<Vec<u32>, Error
 
 /// The handles of every object at the root of `storage` (GetObjectHandles).
 pub async fn object_handles(conn: &mut PtpIpConnection, storage: u32) -> Result<Vec<u32>, Error> {
+    children(conn, storage, ROOT).await
+}
+
+/// The handles of the objects directly inside the folder `parent` of
+/// `storage`, or at its root for `0xFFFFFFFF` (GetObjectHandles).
+pub async fn children(
+    conn: &mut PtpIpConnection,
+    storage: u32,
+    parent: u32,
+) -> Result<Vec<u32>, Error> {
     let (data, _) = conn
-        .command_data_in(OP_GET_OBJECT_HANDLES, &[storage, ALL_FORMATS, ROOT])
+        .command_data_in(OP_GET_OBJECT_HANDLES, &[storage, ALL_FORMATS, parent])
         .await?;
     u32_array(&data)
 }
 
-/// The file behind `handle` (GetObjectInfo), or `None` for a folder
-/// (association).
-pub async fn object(conn: &mut PtpIpConnection, handle: u32) -> Result<Option<CardObject>, Error> {
-    let (data, _) = conn.command_data_in(OP_GET_OBJECT_INFO, &[handle]).await?;
-    let info = parse_object_info(&data)?;
+/// What a handle on the card is.
+#[derive(Debug, Clone, PartialEq)]
+enum Entry {
+    Folder,
+    File(CardObject),
+}
+
+/// Reads the ObjectInfo behind `handle`. The outer error is the link
+/// failing; the inner one is the camera refusing or sending a dataset that
+/// does not parse, which only concerns this object.
+async fn entry(conn: &mut PtpIpConnection, handle: u32) -> Result<Result<Entry, Error>, Error> {
+    let data = match conn.command_data_in(OP_GET_OBJECT_INFO, &[handle]).await {
+        Ok((data, _)) => data,
+        Err(e @ Error::Response { .. }) => return Ok(Err(e)),
+        Err(e) => return Err(e),
+    };
+    let info = match parse_object_info(&data) {
+        Ok(info) => info,
+        Err(e) => return Ok(Err(e)),
+    };
     if info.object_format == FMT_ASSOCIATION {
-        return Ok(None);
+        return Ok(Ok(Entry::Folder));
     }
-    Ok(Some(CardObject {
+    Ok(Ok(Entry::File(CardObject {
         handle,
         storage: info.storage_id,
         kind: CardKind::of(info.object_format, &info.filename),
@@ -137,20 +167,126 @@ pub async fn object(conn: &mut PtpIpConnection, handle: u32) -> Result<Option<Ca
         format: info.object_format,
         captured: parse_ptp_date(&info.capture_date),
         filename: info.filename,
-    }))
+    })))
 }
 
-/// Every file at the root of `storage`, in the camera's order; folders are
-/// skipped.
+/// The file behind `handle` (GetObjectInfo), or `None` for a folder
+/// (association).
+pub async fn object(conn: &mut PtpIpConnection, handle: u32) -> Result<Option<CardObject>, Error> {
+    match entry(conn, handle).await?? {
+        Entry::Folder => Ok(None),
+        Entry::File(obj) => Ok(Some(obj)),
+    }
+}
+
+/// One step still to take in a [`CardWalk`].
+#[derive(Debug, Clone, Copy)]
+enum Step {
+    /// List the folder `handle` (or the root), whose contents sit at `depth`.
+    List { parent: u32, depth: u32 },
+    /// Read the ObjectInfo of `handle`, found at `depth` (1 for the root).
+    Info { handle: u32, depth: u32 },
+}
+
+/// A walk over every file on one storage, folders included, one PTP
+/// operation per [`CardWalk::step`], so a caller can let go of the
+/// connection between operations. Folders deeper than [`MAX_DEPTH`] are not
+/// entered, each handle is visited once, and an object or folder the camera
+/// will not describe or list is skipped with a warning.
+#[derive(Debug)]
+pub struct CardWalk {
+    storage: u32,
+    todo: Vec<Step>,
+    seen: HashSet<u32>,
+    files: Vec<CardObject>,
+}
+
+impl CardWalk {
+    /// A walk of `storage`, starting at its root.
+    pub fn new(storage: u32) -> CardWalk {
+        CardWalk {
+            storage,
+            todo: vec![Step::List {
+                parent: ROOT,
+                depth: 1,
+            }],
+            seen: HashSet::new(),
+            files: Vec::new(),
+        }
+    }
+
+    /// True once every reachable object has been read.
+    pub fn done(&self) -> bool {
+        self.todo.is_empty()
+    }
+
+    /// Takes the next step: at most one PTP operation. A refused root
+    /// listing fails the walk; a refused folder or object is skipped.
+    pub async fn step(&mut self, conn: &mut PtpIpConnection) -> Result<(), Error> {
+        while let Some(step) = self.todo.pop() {
+            match step {
+                Step::List { parent, depth } => {
+                    let handles = match children(conn, self.storage, parent).await {
+                        Ok(handles) => handles,
+                        Err(e @ Error::Response { .. }) if parent != ROOT => {
+                            tracing::warn!(folder = format!("{parent:#x}"), error = %e, "skipping a card folder the camera would not list");
+                            return Ok(());
+                        }
+                        Err(e) => return Err(e),
+                    };
+                    // Popped from the end, so push in reverse to keep the
+                    // camera's order.
+                    for &handle in handles.iter().rev() {
+                        self.todo.push(Step::Info { handle, depth });
+                    }
+                    return Ok(());
+                }
+                Step::Info { handle, depth } => {
+                    if !self.seen.insert(handle) {
+                        continue;
+                    }
+                    match entry(conn, handle).await? {
+                        Ok(Entry::File(obj)) => self.files.push(obj),
+                        Ok(Entry::Folder) if depth <= MAX_DEPTH => {
+                            self.todo.push(Step::List {
+                                parent: handle,
+                                depth: depth + 1,
+                            });
+                        }
+                        Ok(Entry::Folder) => {
+                            tracing::warn!(
+                                folder = format!("{handle:#x}"),
+                                "not entering a card folder this deep"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(object = format!("{handle:#x}"), error = %e, "skipping a card object the camera would not describe");
+                        }
+                    }
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The files found, in the camera's order, folder by folder.
+    pub fn into_files(self) -> Vec<CardObject> {
+        self.files
+    }
+}
+
+/// Every file on `storage`, walking its folders (up to [`MAX_DEPTH`] deep)
+/// in the camera's order; folders themselves are not listed.
 pub async fn list_objects(
     conn: &mut PtpIpConnection,
     storage: u32,
 ) -> Result<Vec<CardObject>, Error> {
-    let mut out = Vec::new();
-    for handle in object_handles(conn, storage).await? {
-        out.extend(object(conn, handle).await?);
+    let mut walk = CardWalk::new(storage);
+    while !walk.done() {
+        walk.step(conn).await?;
     }
-    Ok(out)
+    Ok(walk.into_files())
 }
 
 /// The partial file name of a card file: `.rimix-card-<name>.<bytes>.part`.

@@ -40,7 +40,7 @@ pub mod capture {
 /// then `card::download` for each file wanted.
 pub mod card {
     pub use crate::sony::card::{
-        download, list_objects, list_storages, object, object_handles, parse_ptp_date, CardKind,
-        CardObject, PartialDownload, CARD_CHUNK,
+        children, download, list_objects, list_storages, object, object_handles, parse_ptp_date,
+        CardKind, CardObject, CardWalk, PartialDownload, CARD_CHUNK,
     };
 }

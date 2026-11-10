@@ -5,7 +5,9 @@ use chrono::NaiveDate;
 use sony_ptpip::capture::{Destination, DestinationMode};
 use sony_ptpip::card::{download, list_objects, list_storages, CardKind, CARD_CHUNK};
 use sony_ptpip::error::Error;
-use sony_ptpip::ptp::codes::{FMT_JPEG, FMT_MP4, FMT_SONY_RAW, OP_GET_PARTIAL_OBJECT};
+use sony_ptpip::ptp::codes::{
+    FMT_JPEG, FMT_MP4, FMT_SONY_RAW, OP_GET_OBJECT_HANDLES, OP_GET_PARTIAL_OBJECT,
+};
 use sony_ptpip::sony::sdio_connect;
 use sony_ptpip::{Camera, CameraConfig, CameraEvent, ConnectOptions, PtpIpConnection};
 use sony_ptpip_sim::{spawn, SimCardFile, SimCommand, SimConfig, SimHandle};
@@ -65,6 +67,7 @@ fn partial_offsets(sim: &SimHandle, from: usize) -> Vec<u64> {
 
 fn small_clip() -> Vec<SimCardFile> {
     vec![SimCardFile {
+        folder: "PRIVATE/M4ROOT/CLIP".into(),
         filename: "C0001.MP4".into(),
         bytes: 4 * MIB,
         format: FMT_MP4,
@@ -103,6 +106,77 @@ async fn list_objects_returns_the_card_with_kinds() {
     handles.sort();
     handles.dedup();
     assert_eq!(handles.len(), 3);
+    conn.close().await.unwrap();
+    sim.events.send(SimCommand::Shutdown).await.unwrap();
+}
+
+/// The `parent=` and `returned=` words of every GetObjectHandles logged.
+fn handle_listings(sim: &SimHandle) -> Vec<(String, String)> {
+    let prefix = format!("op {OP_GET_OBJECT_HANDLES:#06x} ");
+    sim.log
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|l| l.starts_with(&prefix))
+        .map(|l| {
+            let word = |key: &str| {
+                l.split_whitespace()
+                    .find_map(|w| w.strip_prefix(key))
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            (word("parent="), word("returned="))
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn listing_walks_the_folders_from_a_root_of_folders() {
+    let sim = spawn(SimConfig::default()).await;
+    let mut conn = connect(&sim).await;
+    let storage = list_storages(&mut conn).await.unwrap()[0];
+    let objects = list_objects(&mut conn, storage).await.unwrap();
+    assert_eq!(objects.len(), 3, "{objects:?}");
+    let listings = handle_listings(&sim);
+    assert_eq!(
+        listings[0],
+        ("0xffffffff".to_string(), "DCIM/,PRIVATE/".to_string()),
+        "the root holds only folders"
+    );
+    let returned: Vec<&str> = listings.iter().map(|(_, r)| r.as_str()).collect();
+    assert_eq!(
+        returned,
+        vec![
+            "DCIM/,PRIVATE/",
+            "100MSDCF/",
+            "DSC00010.JPG,DSC00010.ARW",
+            "M4ROOT/",
+            "CLIP/",
+            "C0001.MP4",
+        ]
+    );
+    conn.close().await.unwrap();
+    sim.events.send(SimCommand::Shutdown).await.unwrap();
+}
+
+#[tokio::test]
+async fn an_object_without_info_is_skipped_not_fatal() {
+    let sim = spawn(SimConfig {
+        card_info_fails_for: Some("DSC00010.ARW".into()),
+        ..SimConfig::default()
+    })
+    .await;
+    let mut conn = connect(&sim).await;
+    let storage = list_storages(&mut conn).await.unwrap()[0];
+    let names: Vec<String> = list_objects(&mut conn, storage)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|o| o.filename)
+        .collect();
+    assert_eq!(names, vec!["DSC00010.JPG", "C0001.MP4"]);
+    // The session is still usable afterwards.
+    assert_eq!(list_objects(&mut conn, storage).await.unwrap().len(), 2);
     conn.close().await.unwrap();
     sim.events.send(SimCommand::Shutdown).await.unwrap();
 }

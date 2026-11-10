@@ -525,14 +525,41 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
         }
         OP_GET_OBJECT_HANDLES => match params.first() {
             Some(&card::STORAGE_ID) | Some(&0xFFFF_FFFF) => {
-                send_data_in(ctx.w, tid, &card::handles(&shared.config.card)).await?;
-                RC_OK
+                let card = &shared.config.card;
+                let parent = params.get(2).copied().unwrap_or(card::ANY_PARENT);
+                line.push_str(&format!(" parent={parent:#x}"));
+                match card::children(card, parent) {
+                    Some(handles) => {
+                        let names: Vec<String> =
+                            handles.iter().map(|&h| card::name(card, h)).collect();
+                        line.push_str(&format!(" returned={}", names.join(",")));
+                        send_data_in(ctx.w, tid, &card::handles(&handles)).await?;
+                        RC_OK
+                    }
+                    None => RC_INVALID_OBJECT_HANDLE,
+                }
             }
             _ => RC_INVALID_PARAMETER,
         },
+        OP_GET_OBJECT_INFO
+            if card_file.is_some_and(|(_, f)| {
+                shared.config.card_info_fails_for.as_deref() == Some(f.filename.as_str())
+            }) =>
+        {
+            RC_ACCESS_DENIED
+        }
         OP_GET_OBJECT_INFO if card_file.is_some() => {
             let (_, f) = card_file.expect("checked");
             send_data_in(ctx.w, tid, &card::object_info(f)).await?;
+            RC_OK
+        }
+        OP_GET_OBJECT_INFO
+            if params
+                .first()
+                .is_some_and(|&h| card::folder(&shared.config.card, h).is_some()) =>
+        {
+            let path = card::folder(&shared.config.card, params[0]).expect("checked");
+            send_data_in(ctx.w, tid, &card::folder_info(&path)).await?;
             RC_OK
         }
         OP_GET_OBJECT if card_file.is_some() => {

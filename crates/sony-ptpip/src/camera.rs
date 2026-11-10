@@ -474,7 +474,8 @@ impl Camera {
         control::toggle_record(conn).await
     }
 
-    /// Every file on the camera's cards, storage by storage. The connection
+    /// Every file on the camera's cards, storage by storage, walking each
+    /// card's folders. The connection
     /// is held for one PTP operation at a time, so live view keeps going.
     pub async fn card_list(&self) -> Result<Vec<CardObject>, Error> {
         let storages = {
@@ -483,16 +484,14 @@ impl Camera {
         };
         let mut out = Vec::new();
         for storage in storages {
-            let handles = {
-                let mut guard = self.inner.conn.lock().await;
-                card::object_handles(guard.as_mut().ok_or(Error::Disconnected)?, storage).await?
-            };
-            for handle in handles {
+            let mut walk = card::CardWalk::new(storage);
+            while !walk.done() {
                 tokio::task::yield_now().await;
                 let mut guard = self.inner.conn.lock().await;
-                let conn = guard.as_mut().ok_or(Error::Disconnected)?;
-                out.extend(card::object(conn, handle).await?);
+                walk.step(guard.as_mut().ok_or(Error::Disconnected)?)
+                    .await?;
             }
+            out.extend(walk.into_files());
         }
         Ok(out)
     }

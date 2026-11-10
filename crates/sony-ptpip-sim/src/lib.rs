@@ -76,11 +76,17 @@ pub struct SimConfig {
     /// of their own address do. `None` accepts any host.
     #[serde(default)]
     pub ssh_reject_host: Option<String>,
-    /// The files on the memory card, served flat (no folders) on one
-    /// storage. Their bytes are generated: byte `i` of the object with
-    /// handle `h` is `(i * 31 + h) as u8`.
+    /// The files on the memory card, on one storage. Their folders are
+    /// served as associations, and GetObjectHandles answers per parent (the
+    /// root holds only top-level folders and root files). Their bytes are
+    /// generated: byte `i` of the object with handle `h` is
+    /// `(i * 31 + h) as u8`.
     #[serde(default = "card::default_card")]
     pub card: Vec<SimCardFile>,
+    /// Answer GetObjectInfo on the card file with this name with
+    /// AccessDenied, as a camera does for a file it cannot describe.
+    #[serde(default)]
+    pub card_info_fails_for: Option<String>,
     /// Once in the simulator's life, close both sockets after this many
     /// bytes of card data (GetPartialObject or GetObject) have been sent.
     #[serde(default)]
@@ -109,6 +115,7 @@ impl Default for SimConfig {
             ssh: None,
             ssh_reject_host: None,
             card: card::default_card(),
+            card_info_fails_for: None,
             drop_during_card_download_at: None,
         }
     }
