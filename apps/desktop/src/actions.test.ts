@@ -250,8 +250,15 @@ describe('presets', () => {
 
   test('deletePreset drops it by id', async () => {
     const store = storeWith('Automatic', { presets: [preset, other] });
-    await createActions(store).deletePreset('a');
+    const actions = createActions(store);
+    store.set({ activePreset: 3 });
+    await actions.deletePreset('a');
     expect(vi.mocked(ipc.saveSettings).mock.calls[0][0].presets).toEqual([other]);
+    // Another slot was active, so it stays.
+    expect(store.get().activePreset).toBe(3);
+    // Deleting the active slot's preset clears it.
+    await actions.deletePreset('b');
+    expect(store.get().activePreset).toBeNull();
   });
 
   test('disconnect forgets the active preset', async () => {

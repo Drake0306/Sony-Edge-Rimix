@@ -12,7 +12,7 @@ interface Slot {
   n: number;
   radio: HTMLButtonElement;
   more: HTMLButtonElement;
-  name: Text;
+  name: HTMLSpanElement;
 }
 
 let formIds = 0;
@@ -134,6 +134,12 @@ export function presetsControl(store: AppStore, actions: Actions): { el: HTMLEle
     if (preset) void actions.deletePreset(preset.id);
     anchor?.focus();
   });
+  // Focus leaving the menu (not moving between its items, nor back to its own button) closes it.
+  menu.addEventListener('focusout', (e) => {
+    const next = e.relatedTarget as Node | null;
+    if (menu.hidden || (next && (menu.contains(next) || next === target?.anchor))) return;
+    close();
+  });
   menu.addEventListener('keydown', (e) => {
     const i = items.indexOf(document.activeElement as HTMLButtonElement);
     const step = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
@@ -148,7 +154,7 @@ export function presetsControl(store: AppStore, actions: Actions): { el: HTMLEle
     const wrap = el('span', 'pslot');
     const radio = button('');
     radio.setAttribute('role', 'radio');
-    const name = document.createTextNode('');
+    const name = el('span', 'pname');
     radio.append(el('small', '', `C${n}`), name);
     const more = button('more', '…', `Options for C${n}`);
     more.setAttribute('aria-haspopup', 'menu');
@@ -181,7 +187,7 @@ export function presetsControl(store: AppStore, actions: Actions): { el: HTMLEle
     const usable = !!camera && captureValues(camera).length > 0;
     for (const s of slots) {
       const preset = presetFor(settings, camera?.model, s.n);
-      s.name.data = preset ? preset.name : 'Empty';
+      s.name.textContent = preset ? preset.name : 'Empty';
       s.radio.classList.toggle('empty', !preset);
       s.radio.disabled = !usable;
       s.radio.title = preset ? `Apply ${preset.name}` : `Save current settings as C${s.n}`;

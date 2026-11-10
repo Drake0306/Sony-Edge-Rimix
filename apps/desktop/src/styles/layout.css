@@ -307,6 +307,7 @@ body{overflow:hidden}
 .presets .segc button[role="radio"] small{margin-right:6px;font-size:11px;color:var(--ink-3)}
 .presets .segc button[role="radio"].on small{color:var(--sel-ink-2)}
 .presets .segc button.empty{color:var(--ink-3)}
+.presets .pname{display:inline-block;max-width:100px;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
 .presets .segc button:disabled{opacity:.45;cursor:default}
 .presets .segc button:disabled:hover{background:none}
 .presets .segc button.on:disabled:hover{background:var(--sel)}

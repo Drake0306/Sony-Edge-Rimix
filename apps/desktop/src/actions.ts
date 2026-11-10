@@ -169,7 +169,10 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     async deletePreset(id) {
       const settings = store.get().settings;
       if (!settings) return;
+      const gone = settings.presets.find((p) => p.id === id);
       await saveSettings({ ...settings, presets: settings.presets.filter((p) => p.id !== id) });
+      // A preset saved later into this slot has not been applied.
+      if (gone && store.get().activePreset === gone.slot) store.set({ activePreset: null });
     },
     async pickFolder() {
       try {

@@ -51,6 +51,9 @@ describe('presets control', () => {
     expect(s.map((b) => b.querySelector('small')!.textContent)).toEqual(['C1', 'C2', 'C3', 'C4']);
     expect(s[0].textContent).toBe('C1Talking head');
     expect(s[1].textContent).toBe('C2Empty');
+    // The name sits in its own span so long names can be cut short with an ellipsis.
+    expect(s[0].querySelector('.pname')!.textContent).toBe('Talking head');
+    expect(s[1].querySelector('.pname')!.textContent).toBe('Empty');
     expect(s.every((b) => !b.disabled)).toBe(true);
     expect(document.querySelector('[role="radiogroup"]')!.getAttribute('aria-label')).toBe('Presets');
   });
@@ -133,6 +136,16 @@ describe('presets control', () => {
     items()[2].click();
     expect(actions.deletePreset).toHaveBeenCalledWith('a');
     expect(menu()?.hidden ?? true).toBe(true);
+  });
+
+  test('the menu closes when focus leaves it, not when focus moves inside it', () => {
+    setup();
+    document.querySelector<HTMLButtonElement>('[aria-label="Options for C1"]')!.click();
+    const items = [...menu()!.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+    items[0].dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: items[1] }));
+    expect(menu()!.hidden).toBe(false);
+    items[1].dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: document.body }));
+    expect(menu()!.hidden).toBe(true);
   });
 
   test('nothing is clickable without a camera', () => {
