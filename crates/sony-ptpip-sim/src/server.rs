@@ -13,6 +13,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 
+use crate::props::{load_fixture, PropStore};
 use crate::{SimCommand, SimConfig, SimHandle};
 
 const PROTOCOL_VERSION: u32 = 0x0001_0000;
@@ -21,10 +22,6 @@ const DEVICE_VERSION: &str = "2.00";
 const VENDOR_EXT_ID: u32 = 0x11;
 /// How long a command connection waits for its event connection.
 const EVENT_SOCKET_WAIT: Duration = Duration::from_secs(10);
-/// Fixed 0x9202 contents until the property fixture arrives.
-const EXT_PROPERTIES: [u16; 10] = [
-    0x5005, 0x5007, 0x500A, 0x500E, 0x5010, 0xD20D, 0xD21E, 0xD215, 0xD218, 0xD222,
-];
 const EXT_CONTROLS: [u16; 3] = [0xD2C1, 0xD2C2, 0xD2C8];
 const EXT_VERSION: u16 = 0x012C;
 const SUPPORTED_OPS: [u16; 11] = [
@@ -52,10 +49,15 @@ struct Shared {
     pending: Mutex<HashMap<u32, oneshot::Sender<TcpStream>>>,
     /// Control channel of the most recent session.
     current: Mutex<Option<mpsc::Sender<SimCommand>>>,
+    /// Camera properties, kept across sessions like a real camera's settings.
+    props: Mutex<PropStore>,
 }
 
 /// Starts the simulator on 127.0.0.1 with an OS-chosen port.
+///
+/// Panics if the property fixture cannot be loaded.
 pub async fn spawn(config: SimConfig) -> SimHandle {
+    let props = load_fixture(&config.fixture).expect("load simulator property fixture");
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind simulator listener");
@@ -67,6 +69,7 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
         next_conn: AtomicU32::new(1),
         pending: Mutex::default(),
         current: Mutex::default(),
+        props: Mutex::new(PropStore::new(props)),
     });
     let (tx, rx) = mpsc::channel(16);
     tokio::spawn(run(listener, shared, rx));
@@ -223,14 +226,17 @@ impl Session {
                         Some(Err(e)) => break Err(e),
                         None => break Ok(()),
                     };
-                    if let Err(e) = handle_packet(p, &mut packets, &mut w, &shared, &mut handshake_phase).await {
+                    let mut ctx = Ctx { packets: &mut packets, w: &mut w, event: &mut event, shared: &shared };
+                    if let Err(e) = handle_packet(p, &mut ctx, &mut handshake_phase).await {
                         break Err(e);
                     }
                 }
                 cmd = control.recv() => match cmd {
-                    Some(SimCommand::SetProperty { code, .. }) => {
-                        let ev = Packet::Event { code: EV_SONY_DEVICE_PROP_CHANGED, tid: 0, params: vec![code as u32] };
-                        if let Err(e) = send(&mut event, &ev).await {
+                    Some(SimCommand::SetProperty { code, value }) => {
+                        let changed = shared.props.lock().unwrap().set(code, value);
+                        if !changed {
+                            tracing::debug!(code, "simulator property unknown or unchanged");
+                        } else if let Err(e) = send_prop_changed(&mut event, code).await {
                             break Err(e);
                         }
                     }
@@ -307,13 +313,29 @@ async fn send_data_in(
     .await
 }
 
-async fn handle_packet(
+async fn send_prop_changed(event: &mut TcpStream, code: u16) -> Result<(), Error> {
+    let ev = Packet::Event {
+        code: EV_SONY_DEVICE_PROP_CHANGED,
+        tid: 0,
+        params: vec![code as u32],
+    };
+    send(event, &ev).await
+}
+
+/// What a command needs from its session.
+struct Ctx<'a, W> {
+    packets: &'a mut mpsc::Receiver<Result<Packet, Error>>,
+    w: &'a mut W,
+    event: &'a mut TcpStream,
+    shared: &'a Shared,
+}
+
+async fn handle_packet<W: AsyncWriteExt + Unpin>(
     p: Packet,
-    packets: &mut mpsc::Receiver<Result<Packet, Error>>,
-    w: &mut (impl AsyncWriteExt + Unpin),
-    shared: &Shared,
+    ctx: &mut Ctx<'_, W>,
     handshake_phase: &mut u8,
 ) -> Result<(), Error> {
+    let shared = ctx.shared;
     let Packet::CmdRequest {
         data_phase,
         op,
@@ -326,9 +348,11 @@ async fn handle_packet(
         return Ok(());
     };
     let mut line = format!("op {op:#06x} tid {tid}");
+    let mut data = None;
     if data_phase == 2 {
-        let data = read_data_out(packets).await?;
-        line.push_str(&format!(" data-out {}", data.len()));
+        let d = read_data_out(ctx.packets).await?;
+        line.push_str(&format!(" data-out {}", d.len()));
+        data = Some(d);
     }
     shared.log.lock().unwrap().push(line);
     if let Some((slow_op, delay)) = shared.config.delay_op {
@@ -337,6 +361,7 @@ async fn handle_packet(
         }
     }
 
+    let mut changed_prop = None;
     let code = match op {
         OP_OPEN_SESSION | OP_CLOSE_SESSION => RC_OK,
         OP_GET_DEVICE_INFO => {
@@ -346,7 +371,7 @@ async fn handle_packet(
                 device_version: DEVICE_VERSION.into(),
                 operations: SUPPORTED_OPS.to_vec(),
             };
-            send_data_in(w, tid, &encode_device_info(&info)).await?;
+            send_data_in(ctx.w, tid, &encode_device_info(&info)).await?;
             RC_OK
         }
         OP_SDIO_CONNECT => {
@@ -358,27 +383,74 @@ async fn handle_packet(
             }
         }
         OP_SDIO_GET_EXT_DEVICE_INFO => {
-            send_data_in(w, tid, &encode_ext_device_info()).await?;
+            let codes = shared.props.lock().unwrap().codes();
+            send_data_in(ctx.w, tid, &encode_ext_device_info(&codes)).await?;
             RC_OK
         }
         // Other Sony operations are refused until the handshake completes.
         0x9200..=0x92FF if *handshake_phase < 3 => RC_ACCESS_DENIED,
+        OP_SDIO_GET_ALL_EXT_DEVICE_PROP_INFO => {
+            let blob = match params.first() {
+                Some(0) => Some(shared.props.lock().unwrap().encode_all()),
+                Some(1) => Some(shared.props.lock().unwrap().take_changed()),
+                _ => None,
+            };
+            match blob {
+                Some(blob) => {
+                    send_data_in(ctx.w, tid, &blob).await?;
+                    RC_OK
+                }
+                None => RC_INVALID_PARAMETER,
+            }
+        }
+        OP_SDIO_GET_EXT_DEVICE_PROP => {
+            let entry = prop_code(&params).and_then(|c| shared.props.lock().unwrap().encode_one(c));
+            match entry {
+                Some(entry) => {
+                    send_data_in(ctx.w, tid, &entry).await?;
+                    RC_OK
+                }
+                None => RC_INVALID_PARAMETER,
+            }
+        }
+        OP_SDIO_SET_EXT_DEVICE_PROP_VALUE => match (prop_code(&params), &data) {
+            (Some(prop), Some(value)) => {
+                let result = shared.props.lock().unwrap().write(prop, value);
+                match result {
+                    Ok(changed) => {
+                        changed_prop = changed.then_some(prop);
+                        RC_OK
+                    }
+                    Err(e) => e.response_code(),
+                }
+            }
+            _ => RC_INVALID_PARAMETER,
+        },
         _ => RC_OPERATION_NOT_SUPPORTED,
     };
     send(
-        w,
+        ctx.w,
         &Packet::CmdResponse {
             code,
             tid,
             params: Vec::new(),
         },
     )
-    .await
+    .await?;
+    if let Some(prop) = changed_prop {
+        send_prop_changed(ctx.event, prop).await?;
+    }
+    Ok(())
 }
 
-fn encode_ext_device_info() -> Vec<u8> {
+/// The property code in a command's first parameter.
+fn prop_code(params: &[u32]) -> Option<u16> {
+    params.first().and_then(|&p| u16::try_from(p).ok())
+}
+
+fn encode_ext_device_info(properties: &[u16]) -> Vec<u8> {
     let mut out = EXT_VERSION.to_le_bytes().to_vec();
-    for list in [&EXT_PROPERTIES[..], &EXT_CONTROLS[..]] {
+    for list in [properties, &EXT_CONTROLS[..]] {
         out.extend((list.len() as u16).to_le_bytes());
         for code in list {
             out.extend(code.to_le_bytes());

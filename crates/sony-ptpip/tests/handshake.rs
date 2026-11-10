@@ -43,9 +43,9 @@ async fn handshake_completes_against_sim() {
     assert_eq!(info.protocol_version, 0x012C);
     assert!(info.properties.contains(&0xD20D));
     assert!(info.controls.contains(&0xD2C8));
-    // Sony ops are no longer denied (the sim does not implement 0x9209 yet).
+    // Sony ops are no longer denied (the sim does not implement 0x9207 yet).
     let err = conn
-        .command(OP_SDIO_GET_ALL_EXT_DEVICE_PROP_INFO, &[0])
+        .command(OP_SDIO_CONTROL_DEVICE, &[CTRL_SHUTTER_HALF as u32])
         .await
         .unwrap_err();
     assert!(matches!(err, Error::Response { code: 0x2005, .. }));

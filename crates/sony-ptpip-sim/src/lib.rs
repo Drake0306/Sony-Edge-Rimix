@@ -9,8 +9,10 @@ use serde::{Deserialize, Serialize};
 use sony_ptpip::ptp::PtpValue;
 use tokio::sync::mpsc;
 
+mod props;
 mod server;
 
+pub use props::load_fixture;
 pub use server::spawn;
 
 /// How the simulated camera behaves.
@@ -22,7 +24,7 @@ pub struct SimConfig {
     pub require_pairing: bool,
     /// How long the pairing prompt takes to be accepted.
     pub pairing_delay: Duration,
-    /// Property fixture file (used from Task 5).
+    /// Property fixture file; relative paths are resolved against this crate.
     pub fixture: PathBuf,
     /// Hold back the response to this operation for this long (for timeout tests).
     pub delay_op: Option<(u16, Duration)>,
@@ -45,7 +47,8 @@ impl Default for SimConfig {
 pub enum SimCommand {
     /// Close both sockets of the current session.
     DropConnection,
-    /// Change a property; emits a DevicePropChanged event for `code`.
+    /// Change a property as if on the camera body; emits a DevicePropChanged
+    /// event for `code` when its value changes.
     SetProperty { code: u16, value: PtpValue },
     /// Stop the listener and every session.
     Shutdown,
