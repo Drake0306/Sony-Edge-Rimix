@@ -10,6 +10,7 @@ use sony_ptpip::ptp::PtpValue;
 use tokio::sync::mpsc;
 
 mod controls;
+mod frames;
 mod props;
 mod server;
 
@@ -32,6 +33,9 @@ pub struct SimConfig {
     /// Refuse every 0x9205 write with InvalidParameter, as cameras that only
     /// take stepped writes do.
     pub write_mode_step: bool,
+    /// Answer every Nth GetObject on the live view handle with AccessDenied,
+    /// as a camera does while it has no new frame.
+    pub live_view_busy_every: Option<u32>,
 }
 
 impl Default for SimConfig {
@@ -43,6 +47,7 @@ impl Default for SimConfig {
             fixture: PathBuf::from("fixtures/zv-e10.json"),
             delay_op: None,
             write_mode_step: false,
+            live_view_busy_every: None,
         }
     }
 }

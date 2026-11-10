@@ -3,6 +3,7 @@
 pub mod control;
 pub mod decode;
 pub mod handshake;
+pub mod liveview;
 pub mod property;
 
 pub use control::{control, focus, set_value, shoot, toggle_record};

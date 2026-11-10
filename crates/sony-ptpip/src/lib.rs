@@ -7,3 +7,11 @@ pub mod sony;
 pub use ptpip::transport::{ConnectOptions, PtpEvent, PtpIpConnection};
 pub use quirks::{quirks_for, Quirks, WriteMode};
 pub use sony::{focus, sdio_connect, set_value, shoot, toggle_record, ExtDeviceInfo};
+
+/// Live view frames: `liveview::start` once after the handshake, then
+/// `liveview::next_frame` in a loop.
+pub mod liveview {
+    pub use crate::sony::liveview::{
+        next_frame, parse_live_view_dataset, start, FocusFrame, LiveViewFrame,
+    };
+}

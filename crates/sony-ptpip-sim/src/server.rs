@@ -14,6 +14,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 
 use crate::controls::{Controls, Outcome};
+use crate::frames::{self, LiveView};
 use crate::props::{load_fixture, PropStore};
 use crate::{SimCommand, SimConfig, SimHandle};
 
@@ -56,6 +57,7 @@ struct Shared {
     props: Mutex<PropStore>,
     /// Button state and the capture queue; lock before `props` when both are needed.
     controls: Mutex<Controls>,
+    live_view: Mutex<LiveView>,
 }
 
 /// Starts the simulator on 127.0.0.1 with an OS-chosen port.
@@ -76,6 +78,7 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
         current: Mutex::default(),
         props: Mutex::new(PropStore::new(props)),
         controls: Mutex::default(),
+        live_view: Mutex::default(),
     });
     let (tx, rx) = mpsc::channel(16);
     tokio::spawn(run(listener, shared, rx));
@@ -379,6 +382,23 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
             };
             send_data_in(ctx.w, tid, &encode_device_info(&info)).await?;
             RC_OK
+        }
+        OP_GET_OBJECT_INFO | OP_GET_OBJECT => {
+            let answer = match (op, params.first()) {
+                (OP_GET_OBJECT_INFO, Some(&HANDLE_LIVE_VIEW)) => Ok(frames::object_info()),
+                (OP_GET_OBJECT, Some(&HANDLE_LIVE_VIEW)) => {
+                    let busy_every = shared.config.live_view_busy_every;
+                    shared.live_view.lock().unwrap().next(busy_every)
+                }
+                _ => Err(RC_INVALID_OBJECT_HANDLE),
+            };
+            match answer {
+                Ok(dataset) => {
+                    send_data_in(ctx.w, tid, &dataset).await?;
+                    RC_OK
+                }
+                Err(rc) => rc,
+            }
         }
         OP_SDIO_CONNECT => {
             if params.first() == Some(&(*handshake_phase as u32 + 1)) {

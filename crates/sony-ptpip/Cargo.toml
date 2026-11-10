@@ -13,3 +13,4 @@ tracing = { workspace = true }
 [dev-dependencies]
 sony-ptpip-sim = { path = "../sony-ptpip-sim" }
 tokio = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["jpeg"] }

@@ -9,4 +9,5 @@ sony-ptpip = { path = "../sony-ptpip" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 tracing = { workspace = true }

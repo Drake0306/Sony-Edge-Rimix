@@ -55,6 +55,28 @@ pub fn parse_object_info(buf: &[u8]) -> Result<ObjectInfo, Error> {
     })
 }
 
+/// Encode an ObjectInfo dataset; the fields `ObjectInfo` does not carry are
+/// written as zeros and empty strings.
+pub fn encode_object_info(info: &ObjectInfo) -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend(info.storage_id.to_le_bytes());
+    b.extend(info.object_format.to_le_bytes());
+    b.extend(0u16.to_le_bytes()); // ProtectionStatus
+    b.extend(info.compressed_size.to_le_bytes());
+    b.extend(0u16.to_le_bytes()); // ThumbFormat
+    for _ in 0..7 {
+        b.extend(0u32.to_le_bytes());
+    }
+    b.extend(0u16.to_le_bytes()); // AssociationType
+    b.extend(0u32.to_le_bytes()); // AssociationDesc
+    b.extend(0u32.to_le_bytes()); // SequenceNumber
+    PtpValue::Str(info.filename.clone()).encode(&mut b);
+    PtpValue::Str(info.capture_date.clone()).encode(&mut b);
+    PtpValue::Str(String::new()).encode(&mut b); // ModificationDate
+    PtpValue::Str(String::new()).encode(&mut b); // Keywords
+    b
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,5 +106,17 @@ mod tests {
         assert_eq!(oi.compressed_size, 1234);
         assert_eq!(oi.filename, "DSC01236.JPG");
         assert_eq!(oi.capture_date, "20261110T101500");
+    }
+
+    #[test]
+    fn encoded_object_info_parses_back() {
+        let info = ObjectInfo {
+            storage_id: 0,
+            object_format: 0x3801,
+            compressed_size: 0,
+            filename: "LiveView.jpg".into(),
+            capture_date: String::new(),
+        };
+        assert_eq!(parse_object_info(&encode_object_info(&info)).unwrap(), info);
     }
 }
