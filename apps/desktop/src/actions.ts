@@ -11,6 +11,7 @@ import {
   wifiErrorMessage,
 } from './copy';
 import type { AppSettings, Preset, PtpValue, RecentCamera, SshLogin } from './ipc';
+import { start, type IntervalPlan } from './interval';
 import { describeFailures, upsertPreset } from './presets';
 import type { WifiCredentials } from './qr/payload';
 import type { AppStore } from './state';
@@ -48,6 +49,9 @@ export interface Actions {
   savePreset(preset: Preset): Promise<void>;
   deletePreset(id: string): Promise<void>;
   pickFolder(): Promise<string | null>;
+  /** Starts the interval timer; the app's ticker shoots on its schedule. */
+  startInterval(plan: IntervalPlan): void;
+  stopInterval(): void;
   toast(message: string): void;
 }
 
@@ -172,6 +176,7 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
       captures: [],
       transfers: {},
       activePreset: null,
+      interval: null,
     });
   }
 
@@ -247,6 +252,8 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
         return null;
       }
     },
+    startInterval: (plan) => store.set({ interval: start(plan, Date.now()) }),
+    stopInterval: () => store.set({ interval: null }),
     toast,
   };
 }

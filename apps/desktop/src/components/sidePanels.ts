@@ -5,6 +5,7 @@ import type { Actions } from '../actions';
 import { button, el, icon } from '../dom';
 import type { AppSettings, DestinationMode } from '../ipc';
 import { watch, type AppState, type AppStore, type SaveError } from '../state';
+import * as intervalTimer from './intervalTimer';
 
 const MODES: [DestinationMode, string][] = [
   ['CustomFolder', 'Custom folder'],
@@ -112,22 +113,29 @@ function switchRow(label: string, on: boolean, toggle?: () => void): HTMLElement
   return r;
 }
 
-function scopes(store: AppStore): { el: HTMLElement; destroy: () => void } {
+function scopes(store: AppStore, actions: Actions): { el: HTMLElement; destroy: () => void } {
   const g = group('list');
   const flip = (k: keyof AppState['overlays']) => () => {
     const o = store.get().overlays;
     store.set({ overlays: { ...o, [k]: !o[k] } });
   };
-  const destroy = watch(store, (s) => s.overlays, (o) => {
-    g.replaceChildren(
+  let switches: HTMLElement[] = [];
+  const offOverlays = watch(store, (s) => s.overlays, (o) => {
+    switches.forEach((r) => r.remove());
+    switches = [
       switchRow('Waveform', false),
       switchRow('False colour', false),
       switchRow('Zebra', o.zebra, flip('zebra')),
       switchRow('Thirds grid', o.thirds, flip('thirds')),
-      rowButton('Interval timer', 'Off', 'chev'),
-    );
-    g.lastElementChild!.querySelector('button')!.title = 'Coming in the next version';
+    ];
+    g.prepend(...switches);
   });
+  // The timer row stays put below the switches, which re-render on their own.
+  const unmountTimer = intervalTimer.mount(g, store, actions);
+  const destroy = () => {
+    offOverlays();
+    unmountTimer();
+  };
   return { el: sect('Scopes and timer', g), destroy };
 }
 
@@ -173,7 +181,7 @@ function cameras(store: AppStore, actions: Actions): { el: HTMLElement; destroy:
 export function mount(root: HTMLElement, store: AppStore, actions: Actions): () => void {
   const col = el('aside', 'leftcol');
   col.setAttribute('aria-label', 'Tools and destination');
-  const parts = [scopes(store), cameras(store, actions), saveToSection(store, actions)];
+  const parts = [scopes(store, actions), cameras(store, actions), saveToSection(store, actions)];
   const tools = el('div', 'panel glass quiet');
   tools.append(parts[0].el, parts[1].el);
   const dest = el('div', 'panel glass quiet');

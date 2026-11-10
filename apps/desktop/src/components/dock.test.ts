@@ -4,7 +4,8 @@ import cameraState from '../fixtures/camera-state.json';
 import type { CameraState } from '../ipc';
 import { createStore, initialState, type AppStore } from '../state';
 import { createActions } from '../actions';
-import { mount } from './dock';
+import { start } from '../interval';
+import { liveStatusText, mount } from './dock';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(() => Promise.resolve()) }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
@@ -176,5 +177,22 @@ describe('dock', () => {
     expect(invoke).toHaveBeenCalledWith('toggle_record');
     expect(invoke).toHaveBeenCalledWith('shoot');
     expect(invoke).toHaveBeenCalledWith('focus');
+  });
+});
+
+describe('dock status', () => {
+  test('shows the interval while it runs, else the live view', () => {
+    const base = { ...initialState(), status: { fps: 24, lastShotAt: null } };
+    expect(liveStatusText(base, 0)).toBe('Live view 24 fps');
+    const interval = { ...start({ everyS: 5, count: 20 }, 0), taken: 3 };
+    expect(liveStatusText({ ...base, interval }, 1000)).toBe('Interval 3 of 20, next in 4 s');
+  });
+
+  test('the status line follows a running interval', () => {
+    const { root, store } = setup();
+    store.set({ interval: start({ everyS: 5, count: null }, Date.now()) });
+    expect(root.querySelector('.dockrow .right')!.textContent).toMatch(/^Interval 0 taken, next in [45] s$/);
+    store.set({ interval: null });
+    expect(root.querySelector('.dockrow .right')!.textContent).toMatch(/^Live view/);
   });
 });

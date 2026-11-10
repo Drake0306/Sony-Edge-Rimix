@@ -1,6 +1,7 @@
 // Wires the store to the camera events and swaps between the connect screen
 // and the main screen, with the dock or the ring as its controls. Also owns
-// toasts, the single-key shortcuts and applying the saved theme and layout.
+// toasts, the single-key shortcuts, the interval timer's ticker and applying
+// the saved theme and layout.
 
 import { createActions, type Actions } from './actions';
 import * as appSettings from './components/appSettings';
@@ -12,11 +13,23 @@ import * as ring from './components/ring';
 import * as sidePanels from './components/sidePanels';
 import * as topbar from './components/topbar';
 import { el, isTyping } from './dom';
+import { tick } from './interval';
 import { getSettings, getState, onCameraEvent, type CameraEvent } from './ipc';
-import { applyEvent, createStore, defaultSettings, initialState, watch, type AppState, type AppStore } from './state';
+import {
+  applyEvent,
+  cameraBusy,
+  createStore,
+  defaultSettings,
+  initialState,
+  watch,
+  type AppState,
+  type AppStore,
+} from './state';
 import { applyAppearance, applyLayout } from './theme';
 
 const TOAST_MS = 4000;
+/** How often the interval timer checks whether a shot is due. */
+export const INTERVAL_TICK_MS = 250;
 
 type Mount = (root: HTMLElement, store: AppStore, actions: Actions) => () => void;
 
@@ -78,6 +91,32 @@ export function handleShortcut(e: KeyboardEvent, store: AppStore, actions: Actio
   e.preventDefault();
 }
 
+/**
+ * Runs the interval timer while `interval` is running: shoots when a shot
+ * is due and the camera is free, and clears the run once it has finished.
+ */
+export function intervalTicker(store: AppStore, actions: Actions): () => void {
+  let timer: number | null = null;
+  const step = () => {
+    const state = store.get();
+    if (!state.interval?.running) return;
+    const { run, shoot } = tick(state.interval, Date.now(), cameraBusy(state));
+    if (run !== state.interval) store.set({ interval: run.running ? run : null });
+    if (shoot) actions.shoot();
+  };
+  const off = watch(store, (s) => !!s.interval?.running, (running) => {
+    if (running && timer === null) timer = window.setInterval(step, INTERVAL_TICK_MS);
+    else if (!running && timer !== null) {
+      window.clearInterval(timer);
+      timer = null;
+    }
+  });
+  return () => {
+    off();
+    if (timer !== null) window.clearInterval(timer);
+  };
+}
+
 export async function startApp(root: HTMLElement): Promise<void> {
   // Settings that fail to load are replaced by unsaved defaults, so every
   // change still flows through the store; saving is tried on each change.
@@ -106,6 +145,7 @@ export async function startApp(root: HTMLElement): Promise<void> {
   });
 
   toastConnecting(store, toast);
+  intervalTicker(store, actions);
 
   // The connect screen shows its own errors; on the main screen they are toasts.
   watch(store, (s) => s.error, (error, s) => {

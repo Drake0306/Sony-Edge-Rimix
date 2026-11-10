@@ -7,7 +7,7 @@ import type { Actions } from '../actions';
 import { el } from '../dom';
 import { chipValue, CHIP_CODES, findProp, PROP, SETTING_NAMES } from '../props';
 import { watch, type AppStore } from '../state';
-import { statusText } from './dock';
+import { liveStatusText } from './dock';
 import { presetsControl } from './presetsControl';
 import { createSettingsPopover, stepOnArrow } from './settingsPopover';
 
@@ -106,9 +106,10 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       record.classList.toggle('recording', !!camera?.recording);
       record.setAttribute('aria-pressed', String(!!camera?.recording));
     }),
-    watch(store, (s) => s.status, (status) => (live.textContent = statusText(status))),
+    watch(store, (s) => s.status, (_, s) => (live.textContent = liveStatusText(s))),
+    watch(store, (s) => s.interval, (_, s) => (live.textContent = liveStatusText(s))),
   ];
-  const tick = window.setInterval(() => (live.textContent = statusText(store.get().status)), 500);
+  const tick = window.setInterval(() => (live.textContent = liveStatusText(store.get())), 500);
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && popover.isOpen()) {
       const seg = ring.querySelector<SVGGElement>('.seg.on');

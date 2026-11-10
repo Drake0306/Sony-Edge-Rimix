@@ -1,7 +1,10 @@
 import { describe, expect, test, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import cameraState from './fixtures/camera-state.json';
-import { eventToast, startApp, toastConnecting } from './app';
+import type { Actions } from './actions';
+import { eventToast, intervalTicker, startApp, toastConnecting } from './app';
+import type { CameraState } from './ipc';
+import { start } from './interval';
 import { createStore, initialState, type AppState } from './state';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
@@ -98,5 +101,71 @@ describe('connect progress on the main screen', () => {
     store.set({ screen: 'connect' });
     store.set({ connecting: { phase: 'joining', text: 'Joining Y' } });
     expect(toast).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('interval ticker', () => {
+  const camera = { ...(cameraState as unknown as CameraState), connected: true, recording: false };
+
+  function setup(state: Partial<AppState> = {}) {
+    const store = createStore<AppState>({ ...initialState(), screen: 'main', camera, ...state });
+    const actions = { shoot: vi.fn() } as unknown as Actions;
+    const stop = intervalTicker(store, actions);
+    return { store, actions, stop };
+  }
+
+  test('shoots once after one period with a connected camera, then stops at its count', () => {
+    vi.useFakeTimers();
+    try {
+      const { store, actions, stop } = setup();
+      store.set({ interval: start({ everyS: 5, count: 2 }, Date.now()) });
+      vi.advanceTimersByTime(4999);
+      expect(actions.shoot).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(actions.shoot).toHaveBeenCalledTimes(1);
+      expect(store.get().interval).toMatchObject({ taken: 1, running: true });
+      vi.advanceTimersByTime(5000);
+      expect(actions.shoot).toHaveBeenCalledTimes(2);
+      // The finished run is cleared, so the row reads Off again.
+      expect(store.get().interval).toBeNull();
+      vi.advanceTimersByTime(20000);
+      expect(actions.shoot).toHaveBeenCalledTimes(2);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('a recording camera or a transfer in flight misses the shot', () => {
+    vi.useFakeTimers();
+    try {
+      const { store, actions, stop } = setup({ camera: { ...camera, recording: true } });
+      store.set({ interval: start({ everyS: 2, count: null }, Date.now()) });
+      vi.advanceTimersByTime(2000);
+      store.set({ camera, transfers: { 'DSC00001.JPG': { received: 1, total: 3 } } });
+      vi.advanceTimersByTime(2000);
+      expect(actions.shoot).not.toHaveBeenCalled();
+      expect(store.get().interval).toMatchObject({ taken: 0, missed: 2 });
+      store.set({ transfers: {} });
+      vi.advanceTimersByTime(2000);
+      expect(actions.shoot).toHaveBeenCalledTimes(1);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('stopping the run stops the shots', () => {
+    vi.useFakeTimers();
+    try {
+      const { store, actions, stop } = setup();
+      store.set({ interval: start({ everyS: 2, count: null }, Date.now()) });
+      store.set({ interval: null });
+      vi.advanceTimersByTime(10000);
+      expect(actions.shoot).not.toHaveBeenCalled();
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

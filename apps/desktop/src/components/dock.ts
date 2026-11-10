@@ -3,6 +3,7 @@
 
 import type { Actions } from '../actions';
 import { button, el } from '../dom';
+import * as interval from '../interval';
 import { chipValue, CHIP_CODES, findProp, SETTING_NAMES } from '../props';
 import { watch, type AppState, type AppStore } from '../state';
 import { presetsControl } from './presetsControl';
@@ -17,6 +18,11 @@ export function statusText(status: AppState['status'], now = Date.now()): string
   if (status.lastShotAt === null) return fps;
   const secs = Math.max(0, (now - status.lastShotAt) / 1000);
   return `${fps}, last shot ${secs < 10 ? secs.toFixed(1) : Math.round(secs)} s ago`;
+}
+
+/** The dock's and the ring's status line: the interval timer while it runs, else the live view. */
+export function liveStatusText(state: AppState, now = Date.now()): string {
+  return state.interval?.running ? interval.statusText(state.interval, now) : statusText(state.status, now);
 }
 
 function chip(label: string): HTMLButtonElement {
@@ -88,9 +94,10 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       record.classList.toggle('recording', !!camera?.recording);
       record.setAttribute('aria-pressed', String(!!camera?.recording));
     }),
-    watch(store, (s) => s.status, (status) => (right.textContent = statusText(status))),
+    watch(store, (s) => s.status, (_, s) => (right.textContent = liveStatusText(s))),
+    watch(store, (s) => s.interval, (_, s) => (right.textContent = liveStatusText(s))),
   ];
-  const tick = window.setInterval(() => (right.textContent = statusText(store.get().status)), 500);
+  const tick = window.setInterval(() => (right.textContent = liveStatusText(store.get())), 500);
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && popover.isOpen()) {
       const chipEl = wrap.querySelector<HTMLElement>('.chip.open');

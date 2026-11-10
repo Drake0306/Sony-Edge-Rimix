@@ -91,3 +91,26 @@ describe('Cameras', () => {
     unmount();
   });
 });
+
+describe('Scopes and timer', () => {
+  test('the Interval timer row is live and opens its popover', () => {
+    const camera = { ...(cameraState as unknown as CameraState), connected: true };
+    const store = createStore<AppState>({ ...initialState(), screen: 'main', camera, settings });
+    const root = document.createElement('div');
+    document.body.append(root);
+    const unmount = mount(root, store, createActions(store));
+    const rows = [...root.querySelectorAll<HTMLButtonElement>('.leftcol .sect:first-child .row-btn > button')];
+    const row = rows.find((b) => b.querySelector('.k')!.textContent === 'Interval timer')!;
+    expect(row.title).toBe('');
+    expect(row.querySelector('.v')!.textContent).toBe('Off');
+    row.click();
+    expect(root.querySelector<HTMLElement>('.interval-pop')!.hidden).toBe(false);
+    // Flipping an overlay re-renders the switches but keeps the timer row.
+    root.querySelector<HTMLButtonElement>('[aria-label="Zebra"]')!.click();
+    expect(row.isConnected).toBe(true);
+    expect(row.parentElement!.parentElement!.lastElementChild).toBe(row.parentElement);
+    unmount();
+    expect(root.querySelector('.interval-pop')).toBeNull();
+    root.remove();
+  });
+});

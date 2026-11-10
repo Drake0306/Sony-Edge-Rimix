@@ -3,6 +3,7 @@ import fixture from './fixtures/state-changed.json';
 import captureSaved from './fixtures/capture-saved.json';
 import { applyEvent, createStore, defaultSettings, initialState } from './state';
 import type { CameraEvent, CameraState } from './ipc';
+import { start } from './interval';
 
 describe('store', () => {
   test('set merges and notifies subscribers', () => {
@@ -83,6 +84,11 @@ describe('store', () => {
     expect(changed.error).toMatch(/^The camera's fingerprint changed\./);
     // A plain link loss changes nothing here: reconnecting reports itself.
     expect(applyEvent(s, { Disconnected: { reason: 'connection reset' } })).toEqual({});
+  });
+
+  test('a lost link stops a running interval', () => {
+    const s = { ...initialState(), screen: 'main' as const, interval: start({ everyS: 5, count: null }, 0) };
+    expect(applyEvent(s, { Disconnected: { reason: 'connection reset' } })).toEqual({ interval: null });
   });
 
   test('events without state changes leave the state alone', () => {

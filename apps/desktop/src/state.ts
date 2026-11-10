@@ -2,6 +2,7 @@
 // app state. Components read with `get()` and re-render on `subscribe`.
 
 import { sshErrorMessage } from './copy';
+import type { IntervalRun } from './interval';
 import type { AppSettings, CameraEvent, CameraState, DiscoveredCamera } from './ipc';
 
 export interface Store<T> {
@@ -76,6 +77,8 @@ export interface AppState {
   pendingFingerprint: PendingFingerprint | null;
   /** A remembered Access Authentication camera whose password the connect screen asks for. */
   sshPrefill: SshPrefill | null;
+  /** The running interval timer, otherwise null. */
+  interval: IntervalRun | null;
 }
 
 export interface PendingFingerprint {
@@ -113,6 +116,7 @@ export const initialState = (): AppState => ({
   activePreset: null,
   pendingFingerprint: null,
   sshPrefill: null,
+  interval: null,
 });
 
 /** What the app uses when the settings file cannot be read. */
@@ -161,11 +165,13 @@ export function applyEvent(state: AppState, event: CameraEvent): Partial<AppStat
   }
   if ('Reconnecting' in event) return { reconnecting: event.Reconnecting.attempt };
   if ('Disconnected' in event) {
+    // Any lost link stops the interval timer.
+    const stop: Partial<AppState> = state.interval ? { interval: null } : {};
     // The camera refused the login or its fingerprint changed: reconnecting
     // has stopped, so say why and leave the camera shown as disconnected.
     const error = sshErrorMessage(event.Disconnected.reason);
-    if (!error) return {};
-    return { reconnecting: null, error, camera: state.camera && { ...state.camera, connected: false } };
+    if (!error) return stop;
+    return { ...stop, reconnecting: null, error, camera: state.camera && { ...state.camera, connected: false } };
   }
   if ('CaptureProgress' in event) {
     const { filename, received, total } = event.CaptureProgress;
@@ -196,4 +202,14 @@ function withoutTransfer(transfers: Record<string, Transfer>, filename: string):
   const rest = { ...transfers };
   delete rest[filename];
   return rest;
+}
+
+/**
+ * Whether an interval shot would collide with something: the camera is
+ * recording, a file is still on its way, or the link is down.
+ */
+export function cameraBusy(state: AppState): boolean {
+  const { camera } = state;
+  if (!camera?.connected || state.reconnecting !== null) return true;
+  return camera.recording || Object.keys(state.transfers).length > 0;
 }

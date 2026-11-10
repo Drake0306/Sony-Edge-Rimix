@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import cameraState from './fixtures/camera-state.json';
 import { ASK_FIND_MS, createActions, FIND_MS } from './actions';
+import { start } from './interval';
 import * as ipc from './ipc';
 import type { AppSettings, CameraState, DiscoveredCamera, Preset, RecentCamera, WifiJoin } from './ipc';
 import { createStore, defaultSettings, initialState, type AppState } from './state';
@@ -362,5 +363,29 @@ describe('presets', () => {
     const store = storeWith('Automatic', {}, { camera, activePreset: 2 });
     await createActions(store).disconnect();
     expect(store.get().activePreset).toBeNull();
+  });
+});
+
+describe('interval timer', () => {
+  test('startInterval starts a run one period out and stopInterval clears it', () => {
+    vi.useFakeTimers({ now: 10_000 });
+    try {
+      const store = storeWith('Automatic', {}, { camera });
+      const actions = createActions(store);
+      actions.startInterval({ everyS: 1, count: 3 });
+      expect(store.get().interval).toEqual({
+        plan: { everyS: 2, count: 3 }, taken: 0, missed: 0, nextAt: 12_000, running: true,
+      });
+      actions.stopInterval();
+      expect(store.get().interval).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('disconnect stops a running interval', async () => {
+    const store = storeWith('Automatic', {}, { camera, interval: start({ everyS: 5, count: null }, 0) });
+    await createActions(store).disconnect();
+    expect(store.get().interval).toBeNull();
   });
 });
