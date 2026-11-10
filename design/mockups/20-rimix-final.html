@@ -300,7 +300,8 @@
   .sd{width:11px;height:13px;border:1.5px solid var(--icon);border-radius:2px 4px 2px 2px;position:relative}
   .sd::after{content:"";position:absolute;left:1.5px;right:1.5px;top:2.5px;height:1.5px;background:var(--icon)}
 
-  .gear{position:absolute;right:174px;top:16px;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:var(--ink-2)}
+  .gear{position:absolute;right:174px;top:16px;height:36px;padding:0 14px 0 10px;border-radius:18px;display:inline-flex;align-items:center;gap:8px;color:var(--ink);font-weight:600;white-space:nowrap}
+  .gear .lbl{font-size:12.5px}
   .gear svg{width:17px;height:17px}
   .gear:hover{color:var(--ink);background:var(--glass-primary)}
   .gear[aria-expanded="true"]{color:var(--ink);background:var(--glass-primary)}
@@ -633,7 +634,7 @@
   </header>
 
   <!-- app settings: gear + popover (appearance and layout of Rimix itself, not the camera) -->
-  <button class="gear glass quiet" id="gear" aria-label="App settings" aria-haspopup="dialog" aria-expanded="false" aria-controls="apppop"><svg viewBox="0 0 20 20" aria-hidden="true"><use href="#gearglyph"/></svg></button>
+  <button class="gear glass quiet" id="gear" aria-label="App settings" aria-haspopup="dialog" aria-expanded="false" aria-controls="apppop"><svg viewBox="0 0 20 20" aria-hidden="true"><use href="#gearglyph"/></svg><span class="lbl">App settings</span></button>
   <div class="aparrow" id="aparrow" aria-hidden="true" hidden></div>
   <div class="apppop glass" id="apppop" role="dialog" aria-label="App settings" hidden>
     <div class="ttl">App settings</div>
