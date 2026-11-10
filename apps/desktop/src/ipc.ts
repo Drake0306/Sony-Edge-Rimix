@@ -166,6 +166,8 @@ export const liveViewMeta = () => invoke<LiveViewMeta>('live_view_meta');
 export const getSettings = () => invoke<AppSettings>('get_settings');
 export const saveSettings = (settings: AppSettings) =>
   invoke<void>('save_settings', { settings });
+/** A saved JPEG's bytes for the filmstrip; rejects for RAW files and files over 25 MB. */
+export const readThumbnail = (path: string) => invoke<ArrayBuffer>('read_thumbnail', { path });
 /** `null` when the dialog is cancelled. */
 export const pickFolder = () => invoke<string | null>('pick_folder');
 

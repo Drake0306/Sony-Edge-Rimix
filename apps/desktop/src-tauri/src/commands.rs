@@ -100,6 +100,16 @@ pub async fn save_settings(
     state::save_settings(&state, settings).await
 }
 
+/// A saved JPEG's bytes for the filmstrip (an ArrayBuffer in the webview).
+#[tauri::command]
+pub async fn read_thumbnail(path: String) -> Result<Response, String> {
+    let path = std::path::PathBuf::from(path);
+    tauri::async_runtime::spawn_blocking(move || state::read_thumbnail(&path))
+        .await
+        .map_err(|e| e.to_string())?
+        .map(Response::new)
+}
+
 /// Asks for a folder; `None` when the dialog is cancelled.
 #[tauri::command]
 pub async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {

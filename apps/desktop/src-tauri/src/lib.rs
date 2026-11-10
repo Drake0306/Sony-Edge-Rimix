@@ -31,6 +31,7 @@ pub fn run() {
             commands::get_settings,
             commands::save_settings,
             commands::pick_folder,
+            commands::read_thumbnail,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Rimix");

@@ -1,0 +1,305 @@
+{
+ "connected": true,
+ "model": "ZV-E10",
+ "firmware": "2.00",
+ "battery": 72,
+ "recording": false,
+ "focus_found": false,
+ "properties": [
+  {
+   "code": 20484,
+   "label": "RAW+JPEG",
+   "short": "RAW+JPEG",
+   "raw": {
+    "U8": 19
+   },
+   "writable": true,
+   "enabled": "On",
+   "choices": [
+    {
+     "raw": {
+      "U8": 2
+     },
+     "label": "Standard"
+    },
+    {
+     "raw": {
+      "U8": 3
+     },
+     "label": "Fine"
+    },
+    {
+     "raw": {
+      "U8": 4
+     },
+     "label": "Extra fine"
+    },
+    {
+     "raw": {
+      "U8": 16
+     },
+     "label": "RAW"
+    },
+    {
+     "raw": {
+      "U8": 19
+     },
+     "label": "RAW+JPEG"
+    }
+   ]
+  },
+  {
+   "code": 20485,
+   "label": "Colour temp 5200K",
+   "short": "Colour temp",
+   "raw": {
+    "U16": 32775
+   },
+   "writable": true,
+   "enabled": "On",
+   "choices": [
+    {
+     "raw": {
+      "U16": 2
+     },
+     "label": "Auto"
+    },
+    {
+     "raw": {
+      "U16": 4
+     },
+     "label": "Daylight"
+    },
+    {
+     "raw": {
+      "U16": 32775
+     },
+     "label": "Colour temp"
+    }
+   ]
+  },
+  {
+   "code": 20487,
+   "label": "f/4.0",
+   "short": "f/4.0",
+   "raw": {
+    "U16": 400
+   },
+   "writable": true,
+   "enabled": "On",
+   "choices": [
+    {
+     "raw": {
+      "U16": 350
+     },
+     "label": "f/3.5"
+    },
+    {
+     "raw": {
+      "U16": 400
+     },
+     "label": "f/4.0"
+    },
+    {
+     "raw": {
+      "U16": 450
+     },
+     "label": "f/4.5"
+    }
+   ]
+  },
+  {
+   "code": 20490,
+   "label": "AF-C",
+   "short": "AF-C",
+   "raw": {
+    "U16": 32772
+   },
+   "writable": true,
+   "enabled": "On",
+   "choices": [
+    {
+     "raw": {
+      "U16": 2
+     },
+     "label": "AF-S"
+    },
+    {
+     "raw": {
+      "U16": 32772
+     },
+     "label": "AF-C"
+    },
+    {
+     "raw": {
+      "U16": 1
+     },
+     "label": "MF"
+    }
+   ]
+  },
+  {
+   "code": 20494,
+   "label": "Manual",
+   "short": "M",
+   "raw": {
+    "U16": 1
+   },
+   "writable": true,
+   "enabled": "On",
+   "choices": [
+    {
+     "raw": {
+      "U16": 2
+     },
+     "label": "P"
+    },
+    {
+     "raw": {
+      "U16": 3
+     },
+     "label": "A"
+    },
+    {
+     "raw": {
+      "U16": 4
+     },
+     "label": "S"
+    },
+    {
+     "raw": {
+      "U16": 1
+     },
+     "label": "M"
+    }
+   ]
+  },
+  {
+   "code": 20496,
+   "label": "+0.3",
+   "short": "+0.3",
+   "raw": {
+    "I16": 300
+   },
+   "writable": true,
+   "enabled": "On",
+   "choices": [
+    {
+     "raw": {
+      "I16": 0
+     },
+     "label": "0.0"
+    },
+    {
+     "raw": {
+      "I16": 300
+     },
+     "label": "+0.3"
+    },
+    {
+     "raw": {
+      "I16": 700
+     },
+     "label": "+0.7"
+    }
+   ]
+  },
+  {
+   "code": 20499,
+   "label": "Single",
+   "short": "Single",
+   "raw": {
+    "U32": 1
+   },
+   "writable": true,
+   "enabled": "On",
+   "choices": [
+    {
+     "raw": {
+      "U32": 1
+     },
+     "label": "Single"
+    },
+    {
+     "raw": {
+      "U32": 65555
+     },
+     "label": "Continuous"
+    }
+   ]
+  },
+  {
+   "code": 53773,
+   "label": "1/125",
+   "short": "1/125",
+   "raw": {
+    "U32": 65661
+   },
+   "writable": true,
+   "enabled": "On",
+   "choices": [
+    {
+     "raw": {
+      "U32": 65596
+     },
+     "label": "1/60"
+    },
+    {
+     "raw": {
+      "U32": 65661
+     },
+     "label": "1/125"
+    },
+    {
+     "raw": {
+      "U32": 65786
+     },
+     "label": "1/250"
+    }
+   ]
+  },
+  {
+   "code": 53775,
+   "label": "5200K",
+   "short": "5200K",
+   "raw": {
+    "U16": 5200
+   },
+   "writable": true,
+   "enabled": "On",
+   "choices": []
+  },
+  {
+   "code": 53790,
+   "label": "ISO 800",
+   "short": "800",
+   "raw": {
+    "U32": 800
+   },
+   "writable": true,
+   "enabled": "On",
+   "choices": [
+    {
+     "raw": {
+      "U32": 400
+     },
+     "label": "400"
+    },
+    {
+     "raw": {
+      "U32": 800
+     },
+     "label": "800"
+    },
+    {
+     "raw": {
+      "U32": 1600
+     },
+     "label": "1600"
+    }
+   ]
+  }
+ ],
+ "live_view_fps": 29.5,
+ "last_shot_at": null
+}

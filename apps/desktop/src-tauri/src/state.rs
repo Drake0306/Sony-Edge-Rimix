@@ -2,7 +2,7 @@
 //! can be tested without a window. `commands.rs` wraps each one.
 
 use std::net::{IpAddr, SocketAddr};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -225,6 +225,29 @@ pub async fn save_settings(state: &AppState, s: AppSettings) -> Result<(), Strin
     Ok(())
 }
 
+/// Thumbnails larger than this are not sent to the webview.
+pub const MAX_THUMBNAIL_BYTES: u64 = 25 * 1024 * 1024;
+pub const NOT_A_JPEG: &str = "Only JPEG files have a thumbnail";
+pub const TOO_LARGE: &str = "The file is too large for a thumbnail";
+
+/// The bytes of a saved JPEG for the filmstrip. RAW and other files, and
+/// files over [`MAX_THUMBNAIL_BYTES`], are refused (the UI shows a tile).
+pub fn read_thumbnail(path: &Path) -> Result<Vec<u8>, String> {
+    let is_jpeg = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("jpg") || e.eq_ignore_ascii_case("jpeg"));
+    if !is_jpeg {
+        return Err(NOT_A_JPEG.into());
+    }
+    let cannot = |e: std::io::Error| format!("Cannot read {}: {e}", path.display());
+    let len = std::fs::metadata(path).map_err(cannot)?.len();
+    if len > MAX_THUMBNAIL_BYTES {
+        return Err(TOO_LARGE.into());
+    }
+    std::fs::read(path).map_err(cannot)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,7 +255,6 @@ mod tests {
     use sony_ptpip::ptp::codes::{PROP_ISO, PROP_SHUTTER_SPEED};
     use sony_ptpip::{Choice, PropertySummary};
     use sony_ptpip_sim::{spawn, SimCommand, SimConfig, SimHandle};
-    use std::path::Path;
     use std::time::Duration;
     use tokio::time::timeout;
 
@@ -426,6 +448,31 @@ mod tests {
         .await
         .expect("shot not saved in the new destination");
         stop(sim, &state).await;
+    }
+
+    #[test]
+    fn read_thumbnail_returns_small_jpegs_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let jpg = tmp.path().join("DSC00001.JPG");
+        std::fs::write(&jpg, [0xFF, 0xD8, 0xFF, 0xD9]).unwrap();
+        assert_eq!(read_thumbnail(&jpg).unwrap(), vec![0xFF, 0xD8, 0xFF, 0xD9]);
+        let lower = tmp.path().join("b.jpeg");
+        std::fs::write(&lower, [1, 2]).unwrap();
+        assert_eq!(read_thumbnail(&lower).unwrap(), vec![1, 2]);
+
+        let raw = tmp.path().join("DSC00002.ARW");
+        std::fs::write(&raw, [1, 2, 3]).unwrap();
+        assert_eq!(read_thumbnail(&raw).unwrap_err(), NOT_A_JPEG);
+
+        let big = tmp.path().join("big.jpg");
+        std::fs::File::create(&big)
+            .unwrap()
+            .set_len(MAX_THUMBNAIL_BYTES + 1)
+            .unwrap();
+        assert_eq!(read_thumbnail(&big).unwrap_err(), TOO_LARGE);
+
+        let missing = read_thumbnail(&tmp.path().join("gone.jpg")).unwrap_err();
+        assert!(missing.starts_with("Cannot read"), "{missing}");
     }
 
     /// Pins the JSON the webview receives for a state change. The same
