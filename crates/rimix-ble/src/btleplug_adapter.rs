@@ -10,7 +10,7 @@ use btleplug::api::{
 use btleplug::platform::{Adapter, Manager, Peripheral};
 use uuid::Uuid;
 
-use crate::sony::{parse_sony_manufacturer_data, SONY_COMPANY_ID};
+use crate::sony::{parse_sony_manufacturer_data, pick_index, SONY_COMPANY_ID};
 use crate::{BleAdapter, BleError, BoxFuture, Found};
 
 /// How long connecting or discovering services may take.
@@ -95,11 +95,11 @@ impl BtleplugAdapter {
         if p.services().is_empty() {
             within(p.discover_services()).await?;
         }
-        let c = p
-            .characteristics()
-            .into_iter()
-            .find(|c| c.uuid == char)
-            .ok_or(BleError::NotFound)?;
+        let all: Vec<Characteristic> = p.characteristics().into_iter().collect();
+        let candidates: Vec<(Uuid, Option<Uuid>)> =
+            all.iter().map(|c| (c.uuid, Some(c.service_uuid))).collect();
+        let i = pick_index(char, &candidates).ok_or(BleError::NotFound)?;
+        let c = all[i].clone();
         Ok((p, c))
     }
 }

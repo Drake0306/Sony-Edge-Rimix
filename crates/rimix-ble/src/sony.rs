@@ -58,6 +58,53 @@ pub fn parse_sony_manufacturer_data(company_id: u16, data: &[u8]) -> Option<Sony
     })
 }
 
+/// The 16-bit short id of a uuid: bits 96..112, the `xxxx` of
+/// `0000xxxx-…` on the Bluetooth base and of `8000xxxx-…` on Sony's.
+fn short_id(u: Uuid) -> u16 {
+    ((u.as_u128() >> 96) & 0xFFFF) as u16
+}
+
+/// Whether two uuids carry the same 16-bit short id, whatever their base.
+pub fn same_short_id(a: Uuid, b: Uuid) -> bool {
+    short_id(a) == short_id(b)
+}
+
+/// The service a Sony characteristic belongs to, when it is one of ours.
+fn service_of(char: Uuid) -> Option<Uuid> {
+    match short_id(char) {
+        0xCC06 | 0xCC07 => Some(SERVICE_CAMERA_CONTROL),
+        0xFF01 | 0xFF02 => Some(SERVICE_REMOTE),
+        _ => None,
+    }
+}
+
+/// Which of the device's characteristics (uuid, and its service when
+/// known) stands for `wanted`: the exact uuid first, else the same 16-bit
+/// short id, since the notes do not pin the base Sony uses. Within each
+/// step a characteristic of the expected service wins.
+pub fn pick_characteristic(wanted: Uuid, candidates: &[(Uuid, Option<Uuid>)]) -> Option<Uuid> {
+    pick_index(wanted, candidates).map(|i| candidates[i].0)
+}
+
+/// [`pick_characteristic`], as the index of the chosen candidate.
+pub fn pick_index(wanted: Uuid, candidates: &[(Uuid, Option<Uuid>)]) -> Option<usize> {
+    let expected = service_of(wanted);
+    let in_service = |service: Option<Uuid>| match (expected, service) {
+        (Some(e), Some(s)) => s == e || same_short_id(s, e),
+        _ => false,
+    };
+    let steps: [&dyn Fn(Uuid) -> bool; 2] = [&|c| c == wanted, &|c| same_short_id(c, wanted)];
+    steps.iter().find_map(|matches| {
+        let hits: Vec<usize> = (0..candidates.len())
+            .filter(|&i| matches(candidates[i].0))
+            .collect();
+        hits.iter()
+            .copied()
+            .find(|&i| in_service(candidates[i].1))
+            .or(hits.first().copied())
+    })
+}
+
 /// Bytes as lowercase hex without separators.
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -181,6 +228,63 @@ mod tests {
             [[0x01, 0x07], [0x01, 0x09], [0x01, 0x08], [0x01, 0x06]]
         );
         assert_eq!(SHUTTER_GAP, Duration::from_millis(100));
+    }
+
+    const SONY_BASE_SSID: Uuid = Uuid::from_u128(0x8000CC06_CC06_FFFF_FFFF_FFFFFFFFFFFF);
+    const SONY_BASE_FF01: Uuid = Uuid::from_u128(0x8000FF01_FF01_FFFF_FFFF_FFFFFFFFFFFF);
+    const OTHER_SERVICE: Uuid = Uuid::from_u128(0x0000180A_0000_1000_8000_00805F9B34FB);
+
+    #[test]
+    fn short_ids_match_across_both_bases() {
+        assert!(same_short_id(CHAR_SSID, SONY_BASE_SSID));
+        assert!(same_short_id(CHAR_REMOTE_COMMAND, SONY_BASE_FF01));
+        assert!(!same_short_id(CHAR_SSID, CHAR_PASSWORD));
+    }
+
+    #[test]
+    fn an_exact_uuid_wins_over_a_short_id_match() {
+        let candidates = [(SONY_BASE_SSID, None), (CHAR_SSID, None)];
+        assert_eq!(pick_characteristic(CHAR_SSID, &candidates), Some(CHAR_SSID));
+    }
+
+    #[test]
+    fn the_sony_base_is_found_by_short_id() {
+        let candidates = [
+            (SONY_BASE_FF01, Some(SERVICE_REMOTE)),
+            (SONY_BASE_SSID, Some(SERVICE_CAMERA_CONTROL)),
+        ];
+        assert_eq!(
+            pick_characteristic(CHAR_SSID, &candidates),
+            Some(SONY_BASE_SSID)
+        );
+        assert_eq!(
+            pick_characteristic(CHAR_REMOTE_COMMAND, &candidates),
+            Some(SONY_BASE_FF01)
+        );
+        assert_eq!(pick_characteristic(CHAR_PASSWORD, &candidates), None);
+    }
+
+    #[test]
+    fn the_expected_service_is_preferred() {
+        let elsewhere = Uuid::from_u128(0x1234CC06_0000_1000_8000_00805F9B34FB);
+        let candidates = [
+            (elsewhere, Some(OTHER_SERVICE)),
+            (SONY_BASE_SSID, Some(SERVICE_CAMERA_CONTROL)),
+        ];
+        assert_eq!(
+            pick_characteristic(CHAR_SSID, &candidates),
+            Some(SONY_BASE_SSID)
+        );
+        // A service uuid on the Bluetooth base still counts as the service.
+        let short_service = Uuid::from_u128(0x0000CC00_0000_1000_8000_00805F9B34FB);
+        let candidates = [(elsewhere, None), (SONY_BASE_SSID, Some(short_service))];
+        assert_eq!(
+            pick_characteristic(CHAR_SSID, &candidates),
+            Some(SONY_BASE_SSID)
+        );
+        // Without service information the first match is taken.
+        let candidates = [(elsewhere, None), (SONY_BASE_SSID, None)];
+        assert_eq!(pick_characteristic(CHAR_SSID, &candidates), Some(elsewhere));
     }
 
     #[test]
