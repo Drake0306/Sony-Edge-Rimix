@@ -145,6 +145,8 @@ pub struct AppSettings {
     pub webcam_id: Option<String>,
     pub presets: Vec<Preset>,
     pub sftp: SftpSettings,
+    /// Whether the connect screen looks for cameras over Bluetooth.
+    pub bluetooth: bool,
 }
 
 impl Default for AppSettings {
@@ -160,6 +162,7 @@ impl Default for AppSettings {
             webcam_id: None,
             presets: Vec::new(),
             sftp: SftpSettings::default(),
+            bluetooth: true,
         }
     }
 }
@@ -533,6 +536,18 @@ mod tests {
         assert_eq!(s.sftp.port, 2222);
         assert_eq!(s.sftp.user, "rimix");
         assert_eq!(s.sftp.password, "");
+    }
+
+    #[test]
+    fn bluetooth_is_on_by_default_and_round_trips() {
+        assert!(AppSettings::default().bluetooth);
+        let s: AppSettings = serde_json::from_str(r#"{"layout":"Ring"}"#).unwrap();
+        assert!(s.bluetooth);
+        let s: AppSettings = serde_json::from_str(r#"{"bluetooth":false}"#).unwrap();
+        assert!(!s.bluetooth);
+        assert!(serde_json::to_string(&s)
+            .unwrap()
+            .contains(r#""bluetooth":false"#));
     }
 
     #[test]

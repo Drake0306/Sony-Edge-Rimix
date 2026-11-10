@@ -1,7 +1,9 @@
 //! The Sony flows against the scripted adapter: no radio involved.
 
 use rimix_ble::sony::{CHAR_PASSWORD, CHAR_REMOTE_COMMAND, CHAR_SSID, SHUTTER_SEQUENCE};
-use rimix_ble::{handoff, shoot, BleAdapter, BleError, FakeAdapter, SonyAdvertisement};
+use rimix_ble::{
+    handoff, shoot, BleAdapter, BleError, FakeAdapter, SonyAdvertisement, PAIR_TIMEOUT,
+};
 use std::time::Duration;
 
 const ZV: &str = "fake-zv-e10";
@@ -123,5 +125,24 @@ async fn a_failed_disconnect_does_not_hide_the_real_error() {
     assert_eq!(
         shoot(&fake, ZV).await,
         Err(BleError::Io("scripted write failure".into()))
+    );
+}
+
+#[tokio::test]
+async fn handoff_gives_the_first_read_time_for_the_pairing_prompt() {
+    let fake = camera(b"DIRECT-abc1:ZV-E10", b"12345678");
+    handoff(&fake, ZV).await.unwrap();
+    assert_eq!(
+        fake.reads(),
+        vec![(CHAR_SSID, Some(PAIR_TIMEOUT)), (CHAR_PASSWORD, None)]
+    );
+    assert_eq!(PAIR_TIMEOUT, Duration::from_secs(30));
+}
+
+#[test]
+fn unavailable_reads_bluetooth_unavailable() {
+    assert_eq!(
+        BleError::Unavailable("no Bluetooth adapter found".into()).to_string(),
+        "Bluetooth unavailable: no Bluetooth adapter found"
     );
 }

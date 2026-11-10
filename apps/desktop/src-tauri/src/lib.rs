@@ -1,5 +1,6 @@
 //! The Rimix desktop app: Tauri commands over the `sony-ptpip` camera facade.
 
+pub mod ble;
 pub mod commands;
 pub mod logging;
 pub mod settings;
@@ -61,6 +62,10 @@ pub fn run() {
             commands::sftp_status,
             commands::sftp_set_enabled,
             commands::sftp_regenerate_password,
+            commands::ble_scan,
+            commands::ble_handoff,
+            commands::ble_shoot,
+            commands::ble_retry,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Rimix")

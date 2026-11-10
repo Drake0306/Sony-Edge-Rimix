@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use uuid::Uuid;
 
-use crate::{BleAdapter, BleError, SonyAdvertisement, WifiCredentials};
+use crate::{BleAdapter, BleError, SonyAdvertisement, WifiCredentials, PAIR_TIMEOUT};
 
 /// Sony's Bluetooth SIG company identifier.
 pub const SONY_COMPANY_ID: u16 = 0x012D;
@@ -119,7 +119,8 @@ fn text(bytes: &[u8]) -> String {
 /// Reads the camera's Wi-Fi network name and password. Only a name starting
 /// with `DIRECT-` is accepted, since the byte format is undocumented;
 /// anything else fails with the name's bytes in hex (never the password's)
-/// so the owner can report it.
+/// so the owner can report it. The first read may take up to
+/// [`PAIR_TIMEOUT`], since it can trigger the system's pairing prompt.
 pub async fn handoff(adapter: &dyn BleAdapter, device: &str) -> Result<WifiCredentials, BleError> {
     let result = read_credentials(adapter, device).await;
     hang_up(adapter, device).await;
@@ -138,7 +139,8 @@ async fn read_credentials(
     adapter: &dyn BleAdapter,
     device: &str,
 ) -> Result<WifiCredentials, BleError> {
-    let ssid_bytes = adapter.read(device, CHAR_SSID).await?;
+    // The first read may wait on the system's pairing prompt.
+    let ssid_bytes = adapter.read_within(device, CHAR_SSID, PAIR_TIMEOUT).await?;
     let password_bytes = adapter.read(device, CHAR_PASSWORD).await?;
     let ssid = text(&ssid_bytes);
     if !ssid.starts_with("DIRECT-") {

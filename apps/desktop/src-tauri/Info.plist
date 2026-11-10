@@ -4,5 +4,7 @@
 <dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Rimix uses the webcam to scan the QR code on your camera's screen.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Rimix uses Bluetooth to find nearby Sony cameras and read their Wi-Fi details.</string>
 </dict>
 </plist>

@@ -84,6 +84,8 @@ pub struct AppState {
     pub wifi: Wifi,
     /// Receive from camera: the SFTP server the camera pushes files to.
     pub sftp: crate::sftp::SftpService,
+    /// Bluetooth: cameras heard nearby and their Wi-Fi details.
+    pub ble: crate::ble::BleService,
 }
 
 /// Locks a std mutex, carrying on if a panicking holder poisoned it.
@@ -110,6 +112,7 @@ impl AppState {
             settings_path,
             wifi: Wifi::from_env(Arc::new(SystemRunner)),
             sftp: crate::sftp::SftpService::default(),
+            ble: crate::ble::BleService::default(),
         }
     }
 
@@ -1564,6 +1567,25 @@ mod tests {
             ssh_supported: None,
             source,
         }
+    }
+
+    #[tokio::test]
+    async fn the_app_finds_and_reads_the_fake_bluetooth_camera() {
+        let _guard = crate::ble::tests::BLE_ENV.lock().await;
+        std::env::set_var(rimix_ble::ENV, "fake");
+        let dir = tempfile::tempdir().unwrap();
+        let state = app_state(dir.path());
+        assert!(state.settings.lock().unwrap().bluetooth);
+        let found = state.ble.scan(3).await.unwrap();
+        assert_eq!(found.len(), 1);
+        let creds = state.ble.handoff(&found[0].address).await.unwrap();
+        assert_eq!(creds.ssid, "DIRECT-abc1:ZV-E10");
+        std::env::set_var(rimix_ble::ENV, "off");
+        let off = AppState::new([0x42; 16], dir.path().join("other.json"));
+        assert_eq!(
+            off.ble.scan(3).await.unwrap_err(),
+            "Bluetooth unavailable: Bluetooth is off for this run"
+        );
     }
 
     #[tokio::test]

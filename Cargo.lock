@@ -4144,6 +4144,7 @@ dependencies = [
  "chrono",
  "directories",
  "rand",
+ "rimix-ble",
  "rimix-sftp",
  "rimix-wifi",
  "russh",

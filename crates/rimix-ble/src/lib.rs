@@ -72,7 +72,7 @@ pub enum BleError {
 impl fmt::Display for BleError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BleError::Unavailable(m) => write!(f, "Bluetooth is unavailable: {m}"),
+            BleError::Unavailable(m) => write!(f, "Bluetooth unavailable: {m}"),
             BleError::NotFound => f.write_str("no such Bluetooth device or characteristic"),
             BleError::Io(m) => write!(f, "Bluetooth failed: {m}"),
         }
@@ -87,6 +87,18 @@ pub trait BleAdapter: Send + Sync {
     fn scan(&self, for_: Duration) -> BoxFuture<'_, Result<Vec<Found>, BleError>>;
     /// Reads a characteristic, connecting first when needed.
     fn read<'a>(&'a self, device: &'a str, char: Uuid) -> BoxFuture<'a, Result<Vec<u8>, BleError>>;
+    /// [`read`](BleAdapter::read), letting the read itself take up to
+    /// `limit`: the first read of a camera may wait on the system's pairing
+    /// prompt. Adapters without their own bounds just read.
+    fn read_within<'a>(
+        &'a self,
+        device: &'a str,
+        char: Uuid,
+        limit: Duration,
+    ) -> BoxFuture<'a, Result<Vec<u8>, BleError>> {
+        let _ = limit;
+        self.read(device, char)
+    }
     /// Writes a characteristic, connecting first when needed.
     fn write<'a>(
         &'a self,
@@ -100,6 +112,10 @@ pub trait BleAdapter: Send + Sync {
         Box::pin(async { Ok(()) })
     }
 }
+
+/// How long the first read of a handoff may take: it can wait on the
+/// system's pairing prompt while the owner answers it.
+pub const PAIR_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The env flag that picks the adapter.
 pub const ENV: &str = "RIMIX_BLE";
@@ -123,12 +139,13 @@ pub async fn adapter_from_env() -> Result<Box<dyn BleAdapter>, BleError> {
 }
 
 /// A scripted adapter: devices to find, characteristic values to read, and
-/// a record of every write.
+/// a record of every read (with the bound it asked for) and write.
 #[derive(Default)]
 pub struct FakeAdapter {
     devices: Vec<Found>,
     values: HashMap<(String, Uuid), Vec<u8>>,
     writes: Mutex<Vec<(String, Uuid, Vec<u8>)>>,
+    reads: Mutex<Vec<(Uuid, Option<Duration>)>>,
     fail_write: Option<usize>,
     fail_disconnect: Option<BleError>,
     attempts: Mutex<usize>,
@@ -190,6 +207,25 @@ impl FakeAdapter {
         self.writes.lock().unwrap().clone()
     }
 
+    /// Every read so far: the characteristic and the bound asked for with
+    /// [`BleAdapter::read_within`] (`None` for a plain read).
+    pub fn reads(&self) -> Vec<(Uuid, Option<Duration>)> {
+        self.reads.lock().unwrap().clone()
+    }
+
+    fn lookup(
+        &self,
+        device: &str,
+        char: Uuid,
+        limit: Option<Duration>,
+    ) -> Result<Vec<u8>, BleError> {
+        self.reads.lock().unwrap().push((char, limit));
+        self.values
+            .get(&(device.to_string(), char))
+            .cloned()
+            .ok_or(BleError::NotFound)
+    }
+
     fn knows(&self, device: &str) -> bool {
         self.devices.iter().any(|d| d.address == device)
     }
@@ -201,12 +237,16 @@ impl BleAdapter for FakeAdapter {
     }
 
     fn read<'a>(&'a self, device: &'a str, char: Uuid) -> BoxFuture<'a, Result<Vec<u8>, BleError>> {
-        Box::pin(async move {
-            self.values
-                .get(&(device.to_string(), char))
-                .cloned()
-                .ok_or(BleError::NotFound)
-        })
+        Box::pin(async move { self.lookup(device, char, None) })
+    }
+
+    fn read_within<'a>(
+        &'a self,
+        device: &'a str,
+        char: Uuid,
+        limit: Duration,
+    ) -> BoxFuture<'a, Result<Vec<u8>, BleError>> {
+        Box::pin(async move { self.lookup(device, char, Some(limit)) })
     }
 
     fn write<'a>(

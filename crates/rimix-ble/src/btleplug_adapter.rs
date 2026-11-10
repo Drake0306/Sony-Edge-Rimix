@@ -179,9 +179,18 @@ impl BleAdapter for BtleplugAdapter {
     }
 
     fn read<'a>(&'a self, device: &'a str, char: Uuid) -> BoxFuture<'a, Result<Vec<u8>, BleError>> {
+        self.read_within(device, char, OP_TIMEOUT)
+    }
+
+    fn read_within<'a>(
+        &'a self,
+        device: &'a str,
+        char: Uuid,
+        limit: Duration,
+    ) -> BoxFuture<'a, Result<Vec<u8>, BleError>> {
         Box::pin(async move {
             let (p, c) = self.ready(device, char).await?;
-            within(OP_TIMEOUT, "read from the camera", p.read(&c)).await
+            within(limit, "read from the camera", p.read(&c)).await
         })
     }
 

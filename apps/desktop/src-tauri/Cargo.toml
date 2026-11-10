@@ -19,6 +19,7 @@ tauri-plugin-opener = "2"
 sony-ptpip = { path = "../../../crates/sony-ptpip" }
 rimix-wifi = { path = "../../../crates/rimix-wifi" }
 rimix-sftp = { path = "../../../crates/rimix-sftp" }
+rimix-ble = { path = "../../../crates/rimix-ble" }
 rand = { version = "0.10", default-features = false, features = ["thread_rng"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -288,6 +288,40 @@ pub async fn sftp_regenerate_password(state: State<'_, AppState>) -> Result<(), 
     crate::sftp::regenerate_password(&state).await
 }
 
+/// The Sony cameras heard over Bluetooth in `seconds` (1 to 15). When
+/// Bluetooth is unavailable the error starts `Bluetooth unavailable:`, and
+/// later calls fail the same way at once until `ble_retry`.
+#[tauri::command]
+pub async fn ble_scan(
+    state: State<'_, AppState>,
+    seconds: u64,
+) -> Result<Vec<crate::ble::BleFound>, String> {
+    state.ble.scan(seconds).await
+}
+
+/// The camera's Wi-Fi network and password, read over Bluetooth. The
+/// webview joins it at once; neither side stores or logs the password.
+#[tauri::command]
+pub async fn ble_handoff(
+    state: State<'_, AppState>,
+    address: String,
+) -> Result<crate::ble::BleCredentials, String> {
+    state.ble.handoff(&address).await
+}
+
+/// One photo through the camera's Bluetooth remote shutter.
+#[tauri::command]
+pub async fn ble_shoot(state: State<'_, AppState>, address: String) -> Result<(), String> {
+    state.ble.shoot(&address).await
+}
+
+/// Tries Bluetooth again after it was unavailable.
+#[tauri::command]
+pub async fn ble_retry(state: State<'_, AppState>) -> Result<(), String> {
+    state.ble.retry().await;
+    Ok(())
+}
+
 /// Sends received files to the webview as `CaptureSaved` events tagged
 /// `sftp`, starts the receiver if it is on and moves it to each new
 /// day's folder after midnight.
