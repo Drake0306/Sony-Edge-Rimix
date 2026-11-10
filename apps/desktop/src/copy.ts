@@ -77,3 +77,10 @@ export function wifiErrorMessage(step: 'join' | 'find' | 'wait', ssid: string, d
 }
 
 export const NOT_A_WIFI_CODE = "This code isn't a camera Wi-Fi code. Check the text below, or type the name and password.";
+
+/** Top bar text while reconnecting; from attempt 5 it says what to do by hand. */
+export function reconnectingText(attempt: number): string {
+  return attempt >= 5
+    ? "Reconnecting… if the camera's Wi-Fi dropped, rejoin it from the Wi-Fi menu"
+    : 'Reconnecting';
+}

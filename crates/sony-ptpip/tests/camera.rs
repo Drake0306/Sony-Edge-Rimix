@@ -24,6 +24,7 @@ fn config(sim: &SimHandle, dir: &Path) -> CameraConfig {
         },
         auto_receive: true,
         reconnect: true,
+        before_reconnect: None,
     }
 }
 
@@ -522,4 +523,50 @@ async fn shot_that_cannot_be_saved_is_recovered_and_reported() {
     assert!(error.contains(&kept.display().to_string()), "{error}");
     assert!(kept.is_file());
     stop(sim, camera).await;
+}
+
+#[tokio::test]
+async fn the_reconnect_hook_runs_before_the_second_attempt() {
+    use std::sync::{Arc, Mutex};
+    let tmp = tempfile::tempdir().unwrap();
+    let sim = spawn(SimConfig::default()).await;
+    let addr = sim.addr;
+    let seen: Arc<Mutex<Vec<u32>>> = Arc::default();
+    let revived: Arc<Mutex<Option<SimHandle>>> = Arc::default();
+    let hook: sony_ptpip::ReconnectHook = {
+        let (seen, revived) = (seen.clone(), revived.clone());
+        Arc::new(move |attempt| {
+            let (seen, revived) = (seen.clone(), revived.clone());
+            Box::pin(async move {
+                seen.lock().unwrap().push(attempt);
+                // The camera's network is back by the time the hook returns.
+                let sim = spawn(SimConfig {
+                    bind_addr: Some(addr),
+                    ..SimConfig::default()
+                })
+                .await;
+                *revived.lock().unwrap() = Some(sim);
+            })
+        })
+    };
+    let mut cfg = config(&sim, tmp.path());
+    cfg.before_reconnect = Some(hook);
+    let camera = Camera::connect(cfg).await.unwrap();
+    let mut rx = camera.subscribe();
+    // The camera disappears: attempt 1 is refused, so attempt 2 needs the hook.
+    sim.events.send(SimCommand::Shutdown).await.unwrap();
+    timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(CameraEvent::Connected) = rx.recv().await {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("camera came back");
+    assert_eq!(*seen.lock().unwrap(), vec![2]);
+    assert!(camera.state().connected);
+    camera.disconnect().await;
+    let revived = revived.lock().unwrap().take().unwrap();
+    revived.events.send(SimCommand::Shutdown).await.unwrap();
 }

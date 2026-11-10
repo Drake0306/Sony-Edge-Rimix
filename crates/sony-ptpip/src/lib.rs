@@ -7,7 +7,10 @@ pub mod ptpip;
 pub mod quirks;
 pub mod sony;
 
-pub use camera::{Camera, CameraConfig, CameraEvent, CameraState, Choice, PropertySummary};
+pub use camera::{
+    BoxFuture, Camera, CameraConfig, CameraEvent, CameraState, Choice, PropertySummary,
+    ReconnectHook,
+};
 pub use discovery::{discover, DiscoveredCamera, DiscoverySource};
 pub use guid::{default_host_name, load_or_create_guid};
 pub use ptpip::transport::{ConnectOptions, PtpEvent, PtpIpConnection};

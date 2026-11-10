@@ -74,6 +74,7 @@ async fn open(
         destination,
         auto_receive,
         reconnect,
+        before_reconnect: None,
     })
     .await
     .with_context(|| format!("cannot connect to {}", target.addr))?;

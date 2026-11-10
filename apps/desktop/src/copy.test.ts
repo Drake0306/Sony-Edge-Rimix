@@ -6,6 +6,7 @@ import {
   findingText,
   joiningText,
   NOT_A_WIFI_CODE,
+  reconnectingText,
   wifiErrorMessage,
 } from './copy';
 
@@ -112,5 +113,13 @@ describe('Wi-Fi connect copy', () => {
     expect(NOT_A_WIFI_CODE).toBe(
       "This code isn't a camera Wi-Fi code. Check the text below, or type the name and password.",
     );
+  });
+});
+
+describe('reconnectingText', () => {
+  test('is short for the first attempts and explains from the fifth', () => {
+    expect(reconnectingText(1)).toBe('Reconnecting');
+    expect(reconnectingText(4)).toBe('Reconnecting');
+    expect(reconnectingText(5)).toBe("Reconnecting… if the camera's Wi-Fi dropped, rejoin it from the Wi-Fi menu");
   });
 });

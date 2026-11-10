@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sony_ptpip::discovery::{DiscoverySource, PTP_PORT};
 use sony_ptpip::ptp::PtpValue;
-use sony_ptpip::{Camera, CameraConfig, CameraEvent, CameraState, DiscoveredCamera};
+use sony_ptpip::{Camera, CameraConfig, CameraEvent, CameraState, DiscoveredCamera, ReconnectHook};
 use tokio::sync::broadcast::{self, error::RecvError};
 
 use crate::settings::{self, AppSettings, PresetValue};
@@ -157,6 +157,25 @@ where
     }
 }
 
+/// A hook that rejoins the camera's Wi-Fi network `ssid` (already known to
+/// the system, so without a password) before a reconnect attempt. Failures
+/// are only logged; the reconnect reports its own.
+fn rejoin_hook(wifi: Wifi, ssid: String) -> ReconnectHook {
+    Arc::new(move |attempt| {
+        let wifi = wifi.clone();
+        let ssid = ssid.clone();
+        Box::pin(async move {
+            tracing::info!(attempt, %ssid, "rejoining the camera's Wi-Fi before reconnecting");
+            let name = ssid.clone();
+            match tokio::task::spawn_blocking(move || wifi.join(&name, None)).await {
+                Ok(Ok(())) => tracing::info!(%ssid, "rejoined the camera's Wi-Fi"),
+                Ok(Err(e)) => tracing::warn!(%ssid, error = %e, "cannot rejoin the camera's Wi-Fi"),
+                Err(e) => tracing::warn!(%ssid, error = %e, "Wi-Fi rejoin task failed"),
+            }
+        })
+    })
+}
+
 /// Connects to the camera at `ip`, replacing any camera already connected,
 /// and remembers it in the settings with its Wi-Fi name (`ssid`, never a
 /// password) when known. Returns its state and a subscription
@@ -172,6 +191,7 @@ pub async fn connect(
         old.disconnect().await;
     }
     let destination = lock(&state.settings).destination();
+    let before_reconnect = ssid.map(|name| rejoin_hook(state.wifi.clone(), name.to_string()));
     let camera = Camera::connect(CameraConfig {
         addr,
         guid: state.guid,
@@ -179,6 +199,7 @@ pub async fn connect(
         destination,
         auto_receive: true,
         reconnect: true,
+        before_reconnect,
     })
     .await
     .map_err(|e| format!("Cannot connect to {addr}: {e}"))?;
@@ -437,6 +458,23 @@ mod tests {
         };
         settings::save(&path, &settings).unwrap();
         AppState::new([0x42; 16], path)
+    }
+
+    #[tokio::test]
+    async fn the_reconnect_hook_is_set_only_when_an_ssid_is_known() {
+        let dir = tempfile::tempdir().unwrap();
+        let sim = spawn(SimConfig::default()).await;
+        let state = app_state(dir.path());
+        let ip = sim.addr.to_string();
+        connect(&state, &ip, Some("DIRECT-x")).await.unwrap();
+        let camera = state.camera.lock().await.clone().unwrap();
+        assert!(camera.has_reconnect_hook());
+        drop(camera);
+        connect(&state, &ip, None).await.unwrap();
+        let camera = state.camera.lock().await.clone().unwrap();
+        assert!(!camera.has_reconnect_hook());
+        drop(camera);
+        sim.events.send(SimCommand::Shutdown).await.unwrap();
     }
 
     async fn connected(dir: &Path) -> (SimHandle, AppState, CameraState) {

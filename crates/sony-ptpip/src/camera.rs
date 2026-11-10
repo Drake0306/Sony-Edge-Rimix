@@ -49,8 +49,16 @@ const EVENT_CHANNEL_CAPACITY: usize = 256;
 /// Focus mode value for manual focus; any other mode focuses before a shot.
 const FOCUS_MODE_MANUAL: PtpValue = PtpValue::U16(1);
 
+/// A boxed future, as returned by a [`ReconnectHook`].
+pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
+
+/// Called with the attempt number before each reconnect attempt from the
+/// second on, e.g. to rejoin the camera's Wi-Fi network. The attempt waits
+/// for it to finish.
+pub type ReconnectHook = Arc<dyn Fn(u32) -> BoxFuture<'static, ()> + Send + Sync>;
+
 /// How to reach and drive a camera.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct CameraConfig {
     pub addr: SocketAddr,
     /// This host's identity; keep it stable (see [`crate::load_or_create_guid`])
@@ -64,6 +72,33 @@ pub struct CameraConfig {
     pub auto_receive: bool,
     /// Reconnect after the link drops.
     pub reconnect: bool,
+    /// Runs before reconnect attempts 2 and later (see [`ReconnectHook`]).
+    #[serde(skip)]
+    pub before_reconnect: Option<ReconnectHook>,
+}
+
+impl std::fmt::Debug for CameraConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CameraConfig")
+            .field("addr", &self.addr)
+            .field("guid", &self.guid)
+            .field("host_name", &self.host_name)
+            .field("destination", &self.destination)
+            .field("auto_receive", &self.auto_receive)
+            .field("reconnect", &self.reconnect)
+            .field(
+                "before_reconnect",
+                &format_args!(
+                    "{}",
+                    if self.before_reconnect.is_some() {
+                        "<set>"
+                    } else {
+                        "<none>"
+                    }
+                ),
+            )
+            .finish()
+    }
 }
 
 /// A snapshot of the camera for the UI.
@@ -155,6 +190,7 @@ struct Inner {
     host_name: String,
     auto_receive: bool,
     reconnect: bool,
+    before_reconnect: Option<ReconnectHook>,
     destination: StdMutex<Destination>,
     /// `None` while disconnected. Hold it only for one operation at a time.
     conn: tokio::sync::Mutex<Option<PtpIpConnection>>,
@@ -287,6 +323,11 @@ async fn connect_once(inner: &Inner) -> Result<Session, Error> {
 }
 
 impl Camera {
+    /// True when a [`ReconnectHook`] runs before reconnect attempts.
+    pub fn has_reconnect_hook(&self) -> bool {
+        self.inner.before_reconnect.is_some()
+    }
+
     /// Connects to the camera and starts the event, live view and capture
     /// loops. Fails if this first connection fails; reconnecting applies only
     /// after a connection has been made.
@@ -297,6 +338,7 @@ impl Camera {
             host_name: cfg.host_name,
             auto_receive: cfg.auto_receive,
             reconnect: cfg.reconnect,
+            before_reconnect: cfg.before_reconnect,
             destination: StdMutex::new(cfg.destination),
             conn: tokio::sync::Mutex::new(None),
             snapshot: StdMutex::new(Snapshot::default()),

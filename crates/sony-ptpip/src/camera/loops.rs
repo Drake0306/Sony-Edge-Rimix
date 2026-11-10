@@ -71,6 +71,14 @@ pub(super) async fn supervise(inner: Arc<Inner>, mut events: broadcast::Receiver
             if inner.stopped() {
                 return;
             }
+            if attempt >= 2 {
+                if let Some(hook) = &inner.before_reconnect {
+                    hook(attempt).await;
+                    if inner.stopped() {
+                        return;
+                    }
+                }
+            }
             inner.emit(CameraEvent::Reconnecting { attempt });
             match connect_once(&inner).await {
                 Ok(session) => {

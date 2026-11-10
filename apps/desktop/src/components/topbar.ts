@@ -2,6 +2,7 @@
 // settings button beside it is in appSettings.ts.
 
 import type { Actions } from '../actions';
+import { reconnectingText } from '../copy';
 import { el } from '../dom';
 import { watch, type AppStore } from '../state';
 
@@ -37,7 +38,7 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
     (_, { camera, reconnecting }) => {
       model.textContent = camera?.model ?? '';
       link.textContent =
-        reconnecting !== null ? 'Reconnecting' : camera?.connected === false ? 'Not connected' : 'Wi-Fi';
+        reconnecting !== null ? reconnectingText(reconnecting) : camera?.connected === false ? 'Not connected' : 'Wi-Fi';
       bars.classList.toggle('lost', camera?.connected === false);
       const pct = camera?.battery ?? null;
       battPair.hidden = pct === null;
