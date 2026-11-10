@@ -20,7 +20,7 @@ You need:
 
 - Rust 1.93 or newer, installed with [rustup](https://rustup.rs)
 - Node 20 or newer, and pnpm
-- Xcode command line tools (`xcode-select --install`) on a Mac
+- Xcode command line tools (`xcode-select --install`) on a Mac, or the Visual Studio C++ build tools on Windows
 - The Tauri command line tool: `cargo install tauri-cli --version '^2'`
 
 Build and test everything:
@@ -29,6 +29,8 @@ Build and test everything:
 cargo build --release
 cargo test --workspace
 ```
+
+The CI workflow runs these checks on every push: formatting, Clippy, the Rust tests and the front-end tests on macOS, and Clippy plus the Rust tests on Windows.
 
 Run the simulated camera, then connect to it from the command line tool (in a second terminal):
 
@@ -58,6 +60,14 @@ xattr -d com.apple.quarantine /Applications/Rimix.app
 
 Rimix asks for camera permission on first launch. It uses the webcam only to scan the QR code on your camera's screen. To join the camera's Wi-Fi network, Rimix uses macOS's own `networksetup` command, which needs no admin rights.
 
+## Install on Windows
+
+Download the latest `Rimix_<version>_x64-setup.exe` from the [Releases](../../releases) page and run it. It installs Rimix for your user account only, so it needs no admin rights.
+
+The installer is unsigned, so Windows SmartScreen warns about it the first time. Choose "More info", then "Run anyway".
+
+To join the camera's Wi-Fi network, Rimix uses Windows's own `netsh wlan` command, which needs no admin rights. Rimix adds a network profile for the camera the first time; the profile stays in Windows, so later reconnects need no password. You can remove it in Settings, Network and internet, Wi-Fi, Manage known networks.
+
 ## Connect your camera
 
 The connect screen has three ways in:
@@ -81,7 +91,7 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-The Release workflow builds a universal Mac app and creates a draft release with the DMG attached. Review the draft, then publish it.
+The Release workflow builds a universal Mac app and creates a draft release with the DMG attached, then builds the Windows installer (`Rimix_<version>_x64-setup.exe`) and adds it to the same draft. Review the draft, then publish it.
 
 For a signed and notarized build, add these repository secrets (Settings, Secrets and variables, Actions): `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`. Without them the workflow still runs and the DMG is unsigned.
 

@@ -1,6 +1,8 @@
 //! Joining a Wi-Fi network from the app. On macOS this drives the
-//! `networksetup` command through a [`Runner`] so tests never touch the
-//! radio. The password is only ever passed to that command, never stored.
+//! `networksetup` command, on Windows `netsh wlan`, through a [`Runner`] so
+//! tests never touch the radio. The password is only ever passed to that
+//! command (on Windows inside a temporary profile file that is deleted at
+//! once), never stored by Rimix and never logged.
 
 use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -10,12 +12,18 @@ use std::time::{Duration, Instant};
 mod macos;
 #[cfg(target_os = "macos")]
 use macos::{system_address, system_current_network, system_device};
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+mod run;
+#[cfg(target_os = "windows")]
+mod windows;
+#[cfg(target_os = "windows")]
+use windows::{system_address, system_current_network, system_device};
 
 /// How long to wait for a joined network to come up.
 pub const JOIN_WAIT: Duration = Duration::from_secs(20);
 /// How often to check whether it has.
 pub const JOIN_POLL: Duration = Duration::from_secs(1);
-/// How many times to ask to join while macOS cannot see the network yet.
+/// How many times to ask to join while the system cannot see the network yet.
 pub const FIND_RETRIES: u32 = 3;
 /// How long to wait between those tries: the scan cache refreshes within a
 /// few seconds.
@@ -64,7 +72,16 @@ pub struct SystemRunner;
 
 impl Runner for SystemRunner {
     fn run(&self, program: &str, args: &[&str]) -> std::io::Result<Output> {
-        let out = std::process::Command::new(program).args(args).output()?;
+        let mut command = std::process::Command::new(program);
+        command.args(args);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            /// Keeps a console window from flashing up for every `netsh` in the app.
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+        let out = command.output()?;
         Ok(Output {
             success: out.status.success(),
             stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -195,7 +212,7 @@ impl Wifi {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 impl Wifi {
     fn system_join(
         &self,
@@ -208,17 +225,17 @@ impl Wifi {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn system_device(_: &dyn Runner) -> Result<String, WifiError> {
     Err(WifiError::Unsupported)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn system_current_network(_: &dyn Runner) -> Result<Option<String>, WifiError> {
     Ok(None)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn system_address(_: &dyn Runner) -> Result<Option<String>, WifiError> {
     Ok(None)
 }
@@ -248,28 +265,187 @@ pub fn parse_current_network(output: &str) -> Option<String> {
         .filter(|n| !n.is_empty())
 }
 
+/// One wireless interface in `netsh wlan show interfaces` output.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Interface {
+    pub name: String,
+    /// Such as `connected`, `disconnected` or `associating`.
+    pub state: String,
+    /// Absent while the interface is not on a network.
+    pub ssid: Option<String>,
+}
+
+impl Interface {
+    pub fn is_connected(&self) -> bool {
+        self.state.eq_ignore_ascii_case("connected")
+    }
+}
+
+/// The interfaces in `netsh wlan show interfaces` output, in order. Each
+/// `Name` line starts one; its `State` and `SSID` lines follow.
+pub fn parse_interfaces(output: &str) -> Vec<Interface> {
+    let mut found: Vec<Interface> = Vec::new();
+    for line in output.lines() {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        let value = value.trim();
+        match key.trim() {
+            "Name" => found.push(Interface {
+                name: value.to_string(),
+                state: String::new(),
+                ssid: None,
+            }),
+            "State" => {
+                if let Some(last) = found.last_mut() {
+                    last.state = value.to_string();
+                }
+            }
+            "SSID" => {
+                if let Some(last) = found.last_mut() {
+                    last.ssid = Some(value.to_string()).filter(|s| !s.is_empty());
+                }
+            }
+            _ => {}
+        }
+    }
+    found
+}
+
+/// `text` with the five XML special characters escaped.
+fn xml_escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// A Windows WLAN profile for a WPA2-Personal network, for
+/// `netsh wlan add profile`. It holds the password in plain text: write it
+/// only to a temporary file, never to a log.
+pub fn profile_xml(ssid: &str, password: &str) -> String {
+    let name = xml_escape(ssid);
+    let key = xml_escape(password);
+    format!(
+        r#"<?xml version="1.0"?>
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+  <name>{name}</name>
+  <SSIDConfig>
+    <SSID>
+      <name>{name}</name>
+    </SSID>
+  </SSIDConfig>
+  <connectionType>ESS</connectionType>
+  <connectionMode>manual</connectionMode>
+  <MSM>
+    <security>
+      <authEncryption>
+        <authentication>WPA2PSK</authentication>
+        <encryption>AES</encryption>
+        <useOneX>false</useOneX>
+      </authEncryption>
+      <sharedKey>
+        <keyType>passPhrase</keyType>
+        <protected>false</protected>
+        <keyMaterial>{key}</keyMaterial>
+      </sharedKey>
+    </security>
+  </MSM>
+</WLANProfile>
+"#
+    )
+}
+
+/// The IPv4 address of the adapter called `interface` in Windows `ipconfig`
+/// output. Self-assigned `169.254.x.x` addresses do not count: they mean the
+/// network gave out none.
+pub fn parse_ipconfig_address(output: &str, interface: &str) -> Option<String> {
+    let header = format!(" adapter {interface}:");
+    let mut in_adapter = false;
+    for line in output.lines() {
+        let trimmed = line.trim_end();
+        if !trimmed.is_empty() && !trimmed.starts_with(char::is_whitespace) {
+            in_adapter = trimmed.ends_with(&header);
+            continue;
+        }
+        if !in_adapter {
+            continue;
+        }
+        let Some((label, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        // Older Windows says `IP Address`, current Windows `IPv4 Address`.
+        let label = label.trim_start();
+        if !label.contains("IPv4 Address") && !label.starts_with("IP Address") {
+            continue;
+        }
+        let digits: String = value
+            .trim()
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '.')
+            .collect();
+        if let Ok(address) = digits.parse::<std::net::Ipv4Addr>() {
+            if !address.is_link_local() {
+                return Some(address.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Writes `xml` to a new temporary `.xml` file, hands its path to
+/// `use_file`, and deletes the file afterwards whatever `use_file` returned.
+#[cfg(any(target_os = "windows", test))]
+pub(crate) fn with_profile_file<T>(
+    xml: &str,
+    use_file: impl FnOnce(&std::path::Path) -> Result<T, WifiError>,
+) -> Result<T, WifiError> {
+    use std::io::Write;
+    let failed =
+        |e: std::io::Error| WifiError::Failed(format!("Could not write the Wi-Fi profile: {e}"));
+    let mut file = tempfile::Builder::new()
+        .prefix("rimix-wifi-")
+        .suffix(".xml")
+        .tempfile()
+        .map_err(failed)?;
+    file.write_all(xml.as_bytes()).map_err(failed)?;
+    file.flush().map_err(failed)?;
+    let result = use_file(file.path());
+    // Dropping the NamedTempFile deletes it; done explicitly so the order is plain.
+    drop(file);
+    result
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::collections::VecDeque;
 
     #[cfg(target_os = "macos")]
     const SSID: &str = "DIRECT-abc1:ZV-E10";
 
-    struct FakeRunner {
+    pub(crate) struct FakeRunner {
         answers: Mutex<VecDeque<Output>>,
         calls: Mutex<Vec<Vec<String>>>,
     }
 
     impl FakeRunner {
-        fn scripted(answers: impl IntoIterator<Item = Output>) -> Arc<FakeRunner> {
+        pub(crate) fn scripted(answers: impl IntoIterator<Item = Output>) -> Arc<FakeRunner> {
             Arc::new(FakeRunner {
                 answers: Mutex::new(answers.into_iter().collect()),
                 calls: Mutex::new(Vec::new()),
             })
         }
-        #[cfg(target_os = "macos")]
-        fn calls(&self) -> Vec<Vec<String>> {
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        pub(crate) fn calls(&self) -> Vec<Vec<String>> {
             self.calls.lock().unwrap().clone()
         }
     }
@@ -599,13 +775,118 @@ mod tests {
         assert_eq!(WifiError::NoWifi.to_string(), "This computer has no Wi-Fi");
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     #[test]
     fn other_systems_cannot_join_but_report_no_network() {
         let wifi = Wifi::new(FakeRunner::scripted([]));
         assert_eq!(wifi.join("x", None), Err(WifiError::Unsupported));
         assert_eq!(wifi.device(), Err(WifiError::Unsupported));
         assert_eq!(wifi.current_network(), Ok(None));
+    }
+
+    const NETSH_CONNECTED: &str = "\r
+There is 1 interface on the system:\r
+\r
+    Name                   : Wi-Fi\r
+    Description            : Intel(R) Wi-Fi 6 AX201 160MHz\r
+    GUID                   : 3a5e0c1d-8f7b-4c6e-9d2a-1b0c4e5f6a7b\r
+    Physical address       : 60:3e:5f:22:78:90\r
+    State                  : connected\r
+    SSID                   : DIRECT-abc1:ZV-E10\r
+    BSSID                  : 9a:8b:7c:6d:5e:4f\r
+    Network type           : Infrastructure\r
+    Radio type             : 802.11n\r
+    Authentication         : WPA2-Personal\r
+    Profile                : DIRECT-abc1:ZV-E10\r
+\r
+    Hosted network status  : Not available\r
+";
+
+    #[test]
+    fn parses_netsh_interfaces() {
+        assert_eq!(
+            parse_interfaces(NETSH_CONNECTED),
+            vec![Interface {
+                name: "Wi-Fi".to_string(),
+                state: "connected".to_string(),
+                ssid: Some("DIRECT-abc1:ZV-E10".to_string()),
+            }]
+        );
+        let two = "There are 2 interfaces on the system:\n\n    Name                   : Wi-Fi 2\n    State                  : disconnected\n\n    Name                   : Wi-Fi\n    State                  : associating\n";
+        assert_eq!(
+            parse_interfaces(two),
+            vec![
+                Interface {
+                    name: "Wi-Fi 2".to_string(),
+                    state: "disconnected".to_string(),
+                    ssid: None,
+                },
+                Interface {
+                    name: "Wi-Fi".to_string(),
+                    state: "associating".to_string(),
+                    ssid: None,
+                },
+            ]
+        );
+        assert_eq!(
+            parse_interfaces("The Wireless AutoConfig Service (wlansvc) is not running.\n"),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn profile_xml_is_a_wpa2_psk_profile_for_the_network() {
+        let xml = profile_xml("DIRECT-abc1:ZV-E10", "12345678");
+        assert!(xml.starts_with("<?xml"));
+        assert!(xml.contains("<name>DIRECT-abc1:ZV-E10</name>\n  <SSIDConfig>"));
+        assert!(xml.contains("<SSID>\n      <name>DIRECT-abc1:ZV-E10</name>\n    </SSID>"));
+        assert!(xml.contains("<keyMaterial>12345678</keyMaterial>"));
+        assert!(xml.contains("<authentication>WPA2PSK</authentication>"));
+        assert!(xml.contains("<encryption>AES</encryption>"));
+        assert!(xml.contains("<keyType>passPhrase</keyType>"));
+        assert!(xml.contains("<connectionMode>manual</connectionMode>"));
+    }
+
+    #[test]
+    fn profile_xml_escapes_markup_in_the_name_and_password() {
+        let xml = profile_xml("A&B <cam>", "p\"w'<&>");
+        assert!(xml.contains("<name>A&amp;B &lt;cam&gt;</name>"));
+        assert!(xml.contains("<keyMaterial>p&quot;w&apos;&lt;&amp;&gt;</keyMaterial>"));
+        assert!(!xml.contains("A&B"));
+    }
+
+    #[test]
+    fn reads_the_wifi_address_from_windows_ipconfig() {
+        let listing = "Windows IP Configuration\r\n\r\nEthernet adapter Ethernet:\r\n\r\n   IPv4 Address. . . . . . . . . . . : 10.0.0.4\r\n\r\nWireless LAN adapter Wi-Fi:\r\n\r\n   Connection-specific DNS Suffix  . :\r\n   Link-local IPv6 Address . . . . . : fe80::1%12\r\n   IPv4 Address. . . . . . . . . . . : 192.168.122.10(Preferred)\r\n   Subnet Mask . . . . . . . . . . . : 255.255.255.0\r\n";
+        assert_eq!(
+            parse_ipconfig_address(listing, "Wi-Fi").as_deref(),
+            Some("192.168.122.10")
+        );
+        assert_eq!(parse_ipconfig_address(listing, "Wi-Fi 2"), None);
+        let disconnected = "Wireless LAN adapter Wi-Fi:\n\n   Media State . . . . . . . . . . . : Media disconnected\n\nEthernet adapter Ethernet:\n\n   IPv4 Address. . . . . . . . . . . : 10.0.0.4\n";
+        assert_eq!(parse_ipconfig_address(disconnected, "Wi-Fi"), None);
+        let self_assigned = "Wireless LAN adapter Wi-Fi:\n   Autoconfiguration IPv4 Address. . : 169.254.3.7(Preferred)\n";
+        assert_eq!(parse_ipconfig_address(self_assigned, "Wi-Fi"), None);
+    }
+
+    #[test]
+    fn the_profile_file_holds_the_xml_and_is_deleted_when_the_command_fails() {
+        let seen = Mutex::new(None);
+        let result: Result<(), WifiError> = with_profile_file("<WLANProfile/>", |path| {
+            assert_eq!(std::fs::read_to_string(path).unwrap(), "<WLANProfile/>");
+            assert_eq!(path.extension().and_then(|e| e.to_str()), Some("xml"));
+            *seen.lock().unwrap() = Some(path.to_path_buf());
+            Err(WifiError::Failed("connect failed".to_string()))
+        });
+        assert_eq!(result, Err(WifiError::Failed("connect failed".to_string())));
+        let path = seen.lock().unwrap().clone().unwrap();
+        assert!(!path.exists(), "{} was left behind", path.display());
+    }
+
+    #[test]
+    fn the_profile_file_is_deleted_after_success_too() {
+        let path = with_profile_file("<x/>", |path| Ok(path.to_path_buf())).unwrap();
+        assert!(!path.exists());
     }
 
     #[test]

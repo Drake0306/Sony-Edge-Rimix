@@ -3991,6 +3991,7 @@ dependencies = [
 name = "rimix-wifi"
 version = "0.1.0"
 dependencies = [
+ "tempfile",
  "tracing",
  "tracing-subscriber",
 ]

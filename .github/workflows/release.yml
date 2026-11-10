@@ -50,5 +50,34 @@ jobs:
           releaseName: Rimix ${{ github.ref_name }}
           releaseDraft: true
           releaseBody: |
-            See the "Install on a Mac" section of the README for how to install Rimix.
-            This build is signed only if Apple signing secrets were set for the repository; otherwise it is unsigned and macOS will warn on first open.
+            See the "Install on a Mac" and "Install on Windows" sections of the README for how to install Rimix.
+            The Mac build is signed only if Apple signing secrets were set for the repository; otherwise it is unsigned and macOS will warn on first open. The Windows installer is unsigned, so SmartScreen will warn on first run.
+  # Runs after the Mac job so it adds its installer to the draft release that
+  # job made: two jobs creating the draft at once can end up with two drafts.
+  windows:
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - run: pnpm -C apps/desktop install --frozen-lockfile
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          args: --target x86_64-pc-windows-msvc --bundles nsis
+          tagName: ${{ github.ref_name }}
+          releaseName: Rimix ${{ github.ref_name }}
+          releaseDraft: true
+          releaseBody: |
+            See the "Install on a Mac" and "Install on Windows" sections of the README for how to install Rimix.
+            The Mac build is signed only if Apple signing secrets were set for the repository; otherwise it is unsigned and macOS will warn on first open. The Windows installer is unsigned, so SmartScreen will warn on first run.

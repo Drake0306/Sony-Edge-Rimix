@@ -1,9 +1,10 @@
 //! The macOS command sequences: `networksetup` and `ipconfig`. Every command
 //! is logged with its output; the password never is.
 
+use crate::run::{run_logged, run_with_log};
 use crate::{
-    parse_current_network, parse_wifi_device, redact, JoinReport, Output, Runner, Wifi, WifiError,
-    FIND_RETRIES, FIND_RETRY_WAIT, JOIN_POLL, JOIN_WAIT,
+    parse_current_network, parse_wifi_device, JoinReport, Runner, Wifi, WifiError, FIND_RETRIES,
+    FIND_RETRY_WAIT, JOIN_POLL, JOIN_WAIT,
 };
 
 /// What `networksetup -setairportnetwork` prints, with exit status 0, when the
@@ -78,37 +79,6 @@ impl Wifi {
                 return Err(WifiError::Failed(format!("{ssid} did not come up")));
             }
             (self.sleep)(JOIN_POLL);
-        }
-    }
-}
-
-/// Runs `args[0]` with the rest, logging the command line (secrets replaced)
-/// and its trimmed output at `info`.
-fn run_logged(runner: &dyn Runner, args: &[&str], secret: &[usize]) -> Result<Output, WifiError> {
-    run_with_log(runner, args, secret, false)
-}
-
-/// Runs a command and logs it; a `long_output` is logged at `debug` only.
-fn run_with_log(
-    runner: &dyn Runner,
-    args: &[&str],
-    secret: &[usize],
-    long_output: bool,
-) -> Result<Output, WifiError> {
-    let cmd = redact(args, secret);
-    match runner.run(args[0], &args[1..]) {
-        Ok(out) => {
-            let text = format!("{}{}", out.stdout, out.stderr);
-            if long_output {
-                tracing::debug!(cmd = %cmd, output = %text.trim(), "{}", args[0]);
-            } else {
-                tracing::info!(cmd = %cmd, output = %text.trim(), "{}", args[0]);
-            }
-            Ok(out)
-        }
-        Err(e) => {
-            tracing::warn!(cmd = %cmd, error = %e, "{}", args[0]);
-            Err(WifiError::Failed(format!("Could not run {}: {e}", args[0])))
         }
     }
 }

@@ -8,5 +8,9 @@ license.workspace = true
 [dependencies]
 tracing = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+tempfile = "3"
+
 [dev-dependencies]
+tempfile = "3"
 tracing-subscriber = "0.3"
