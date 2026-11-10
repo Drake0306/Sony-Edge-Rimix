@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rimix Design Directions</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: one wide gallery column, two cards per row, each card a scaled live preview of the real mockup file. Neutral gallery chrome so the mockups' own colours do the talking. */
+:root{--bg:#eceef0;--surface:#ffffff;--line:#d3d7dc;--fg:#1b2026;--fg-2:#525b65;--fg-3:#7a848f;--accent:#2454a6;--sans:"Instrument Sans","Helvetica Neue",Arial,system-ui,sans-serif;color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 var(--sans)}
+a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1400px;margin:0 auto;padding-block:36px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header h1{font-size:clamp(1.9rem,3.5vw,2.8rem);margin:0 0 .4rem;letter-spacing:-.02em;text-wrap:balance}
+header p{max-width:68ch;color:var(--fg-2);margin:.3rem 0}
+.how{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:.9rem;color:var(--fg-3);margin-top:10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(560px,1fr));gap:28px;margin-top:32px}
+@media (max-width:620px){.grid{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;min-width:0;display:flex;flex-direction:column}
+.frame{display:block;position:relative;width:100%;aspect-ratio:1440/900;overflow:hidden;background:#111;border-bottom:1px solid var(--line)}
+.frame iframe{position:absolute;top:0;left:0;width:1440px;height:900px;border:0;transform-origin:0 0;transform:scale(var(--s,0.4));pointer-events:none}
+.body{padding:14px 18px 18px}
+.head{display:flex;align-items:baseline;gap:12px}
+.num{font-weight:600;color:var(--fg-3);font-variant-numeric:tabular-nums}
+.head h2{font-size:1.25rem;margin:0;letter-spacing:-.01em}
+.open{margin-left:auto;font-size:.88rem;white-space:nowrap}
+.idea{margin:.5rem 0 .6rem;color:var(--fg-2)}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;font-size:.85rem;color:var(--fg-3)}
+.sw{display:inline-flex;gap:3px} .sw i{display:inline-block;width:18px;height:18px;border-radius:3px;border:1px solid rgba(0,0,0,.12)}
+.avoid{margin:.6rem 0 0;font-size:.82rem;color:var(--fg-3)}
+.insp{margin-top:64px;border-top:1px solid var(--line);padding-top:24px}
+.insp .col{max-width:76ch}
+.insp h2{font-size:1.7rem;letter-spacing:-.02em;margin:0 0 .4rem}
+.insp .insp-h{font-size:1.2rem;margin-top:2rem}
+.insp table{border-collapse:collapse;width:100%;font-size:.9rem;display:block;overflow-x:auto}
+.insp th,.insp td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
+.insp li{margin:.3rem 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Ten directions for Rimix</h1>
+  <p>Every mockup shows the same two screens with the same content: the main shooting screen (live view, exposure, shoot, presets, destination, filmstrip) and the connect screen (QR, Bluetooth, address). Only the design changes, so you can judge the look on its own.</p>
+  <p>Click any preview to open it full size in a new tab. Each page scrolls: the main screen is on top, the connect screen below it. Press Escape and come back here to compare the next one.</p>
+  <div class="how"><span>Previews are the real files, scaled down.</span><span>Each card lists the one idea, the palette, and the typefaces.</span></div>
+</header>
+<section class="grid">
+
+<article class="card" id="d01">
+  <a class="frame" href="mockups/01-viewfinder.html" title="Open Viewfinder full size">
+    <iframe src="mockups/01-viewfinder.html" loading="lazy" tabindex="-1" title="Viewfinder preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">01</span><h2>Viewfinder</h2><a class="open" href="mockups/01-viewfinder.html">Open full size</a></div>
+    <p class="idea">the image is the interface; the live view fills the window and every control is a translucent EVF-style overlay, with exposure values as the hero text.</p>
+    <div class="row"><span class="sw"><i style="background:#08090B" title="#08090B"></i><i style="background:#F3F2EC" title="#F3F2EC"></i><i style="background:#4CE07A" title="#4CE07A"></i><i style="background:#FF4530" title="#FF4530"></i><i style="background:#0B0D11" title="#0B0D11"></i></span><span class="fonts">Barlow Condensed (values, wordmark, headings) and Barlow (labels, body); fallbacks Avenir Next Condensed / Arial Narrow and Avenir Next / Helvetica Neue.</span></div>
+    <p class="avoid">Avoided: near-black with a green accent theme (green marks focus only), caps labels, monospace data, cards with shadows, decorative load motion, arrows on buttons.</p>
+  </div>
+</article>
+<article class="card" id="d02">
+  <a class="frame" href="mockups/02-tether-studio.html" title="Open Tether Studio full size">
+    <iframe src="mockups/02-tether-studio.html" loading="lazy" tabindex="-1" title="Tether Studio preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">02</span><h2>Tether Studio</h2><a class="open" href="mockups/02-tether-studio.html">Open full size</a></div>
+    <p class="idea">a calm, colour-neutral tethering workstation (tools left, live view centre, camera settings right, filmstrip docked below) where the only saturated colour is the Shoot button and the focus-lock frame.</p>
+    <div class="row"><span class="sw"><i style="background:#222222" title="#222222"></i><i style="background:#2C2C2C" title="#2C2C2C"></i><i style="background:#343434" title="#343434"></i><i style="background:#3D3D3D" title="#3D3D3D"></i><i style="background:#474747" title="#474747"></i><i style="background:#DADADA" title="#DADADA"></i><i style="background:#9C9C9C" title="#9C9C9C"></i></span><span class="fonts">Archivo (400/500/600) with Helvetica Neue / Arial fallback, tabular numerals throughout.</span></div>
+    <p class="avoid">Avoided: rounded cards with shadows, gradients, caps eyebrow labels, monospace data, a second accent colour, and any decorative motion.</p>
+  </div>
+</article>
+<article class="card" id="d03">
+  <a class="frame" href="mockups/03-dial-deck.html" title="Open Dial Deck full size">
+    <iframe src="mockups/03-dial-deck.html" loading="lazy" tabindex="-1" title="Dial Deck preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">03</span><h2>Dial Deck</h2><a class="open" href="mockups/03-dial-deck.html">Open full size</a></div>
+    <p class="idea">the exposure controls are real objects. Shutter, aperture, ISO and exposure compensation are brushed-silver rotary dials with engraved scales and a value window sitting on a matte black top plate beside the live view; you turn dials, you do not type numbers. The Connect screen uses the same mode dial to choose QR / Bluetooth / Address.</p>
+    <div class="row"><span class="sw"><i style="background:#2a2926" title="#2a2926"></i><i style="background:#242321" title="#242321"></i><i style="background:#161614" title="#161614"></i><i style="background:#1e1e1c" title="#1e1e1c"></i><i style="background:#cfccc3" title="#cfccc3"></i><i style="background:#a7a49b" title="#a7a49b"></i><i style="background:#7d7a72" title="#7d7a72"></i></span><span class="fonts">Barlow (UI) and Barlow Condensed (engraved numerals and headings), fallback Helvetica Neue / Arial Narrow / Arial.</span></div>
+    <p class="avoid">Avoided: identical rounded cards (only two materials, bench and plate), all-caps eyebrows on headings (engraving only on the logo and the plate title), a single acid accent (orange is reserved for the record state), decorative load animation, monospace labels.</p>
+  </div>
+</article>
+<article class="card" id="d04">
+  <a class="frame" href="mockups/04-mission-control.html" title="Open Mission Control full size">
+    <iframe src="mockups/04-mission-control.html" loading="lazy" tabindex="-1" title="Mission Control preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">04</span><h2>Mission Control</h2><a class="open" href="mockups/04-mission-control.html">Open full size</a></div>
+    <p class="idea">a broadcast control room on a laptop. Even with one camera, the main screen is a wall of camera tiles; the selected one expands to a program view with waveform and false colour docked beside it, tally colour (red recording, green live) carries state, and every exposure value sits in one aligned data column.</p>
+    <div class="row"><span class="sw"><i style="background:#0d1526" title="#0d1526"></i><i style="background:#0a111f" title="#0a111f"></i><i style="background:#131d31" title="#131d31"></i><i style="background:#182540" title="#182540"></i><i style="background:#1f2e4d" title="#1f2e4d"></i><i style="background:#263352" title="#263352"></i><i style="background:#34466c" title="#34466c"></i></span><span class="fonts">Archivo (variable width axis; values set at 125% width with tabular figures), fallback Helvetica Neue / Arial.</span></div>
+    <p class="avoid">Avoided: pure black, a lone acid accent (red and green are both semantic tallies), rounded SaaS cards with shadows (flat panels with 1px lines and 4px radius only), monospace for values, all-caps eyebrows, decorative gradients.</p>
+  </div>
+</article>
+<article class="card" id="d05">
+  <a class="frame" href="mockups/05-creator-daylight.html" title="Open Creator Daylight full size">
+    <iframe src="mockups/05-creator-daylight.html" loading="lazy" tabindex="-1" title="Creator Daylight preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">05</span><h2>Creator Daylight</h2><a class="open" href="mockups/05-creator-daylight.html">Open full size</a></div>
+    <p class="idea">a camera remote that looks like a modern consumer app, with exposure as big numbers over fat sliders instead of a menu of fields.</p>
+    <div class="row"><span class="sw"><i style="background:#F3F5F8" title="#F3F5F8"></i><i style="background:#FFFFFF" title="#FFFFFF"></i><i style="background:#E9EDF3" title="#E9EDF3"></i><i style="background:#000000" title="#000000"></i><i style="background:#5B6470" title="#5B6470"></i><i style="background:#E0286F" title="#E0286F"></i><i style="background:#C21F5D" title="#C21F5D"></i></span><span class="fonts">Sora 400/600/800 (fallback -apple-system, Segoe UI, system-ui, sans-serif).</span></div>
+    <p class="avoid">Avoided: cream and serif, terracotta or indigo accents, drop shadows, uppercase eyebrow labels, monospace data labels, arrows on buttons; the only middle dots are in the strings the brief requires verbatim.</p>
+  </div>
+</article>
+<article class="card" id="d06">
+  <a class="frame" href="mockups/06-remote-console.html" title="Open Remote Console full size">
+    <iframe src="mockups/06-remote-console.html" loading="lazy" tabindex="-1" title="Remote Console preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">06</span><h2>Remote Console</h2><a class="open" href="mockups/06-remote-console.html">Open full size</a></div>
+    <p class="idea">Rimix as a menu-bar-style companion: a narrow 460px control column and a borderless live-view window that float as two separate windows beside your other apps.</p>
+    <div class="row"><span class="sw"><i style="background:#CDD5E3" title="#CDD5E3"></i><i style="background:#E7DFEA" title="#E7DFEA"></i><i style="background:#C8D9DF" title="#C8D9DF"></i><i style="background:#FFFFFF" title="#FFFFFF"></i><i style="background:#1D1D1F" title="#1D1D1F"></i><i style="background:#6E6E73" title="#6E6E73"></i><i style="background:#0A7AFF" title="#0A7AFF"></i></span><span class="fonts">-apple-system / SF Pro Text with Inter 400-700 as the loaded fallback, then Segoe UI and system-ui.</span></div>
+    <p class="avoid">Avoided: a branded accent (blue is only ever &quot;selected&quot;), full-bleed dashboard layout, uppercase labels, monospace labels, drop-shadow cards inside the window (insets use a half-pixel hairline instead), and animated window entrances.</p>
+  </div>
+</article>
+<article class="card" id="d07">
+  <a class="frame" href="mockups/07-darkroom.html" title="Open Darkroom full size">
+    <iframe src="mockups/07-darkroom.html" loading="lazy" tabindex="-1" title="Darkroom preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">07</span><h2>Darkroom</h2><a class="open" href="mockups/07-darkroom.html">Open full size</a></div>
+    <p class="idea">an analog photo lab under safelight: the live view sits on a dark bench, the last captures are an actual contact sheet with sprocket holes and edge print, settings read like the labelled dials of an enlarger timer, and the shutter is the one glowing red thing in the room; connecting is loading film, with the three methods as three canister labels.</p>
+    <div class="row"><span class="sw"><i style="background:#130f0c" title="#130f0c"></i><i style="background:#1a1511" title="#1a1511"></i><i style="background:#3a2e25" title="#3a2e25"></i><i style="background:#ecdfcb" title="#ecdfcb"></i><i style="background:#b5a28a" title="#b5a28a"></i><i style="background:#7d6c5a" title="#7d6c5a"></i><i style="background:#e4461a" title="#e4461a"></i></span><span class="fonts">Alegreya (humanist serif, headings only) with Public Sans for every value and label; bold tabular numerals on the dials.</span></div>
+    <p class="avoid">Avoided: neutral tinted-black, all-caps tracked eyebrows, monospace labels, identical rounded cards with grey shadows, any second accent colour, arrows on buttons, page-load animation.</p>
+  </div>
+</article>
+<article class="card" id="d08">
+  <a class="frame" href="mockups/08-blueprint.html" title="Open Blueprint full size">
+    <iframe src="mockups/08-blueprint.html" loading="lazy" tabindex="-1" title="Blueprint preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">08</span><h2>Blueprint</h2><a class="open" href="mockups/08-blueprint.html">Open full size</a></div>
+    <p class="idea">the camera&#x27;s state is a technical drawing: pale cyan line work on blueprint blue, the live view annotated with dimension and leader lines (frame, horizon as a drafted level, focus callout), exposure drawn as an actual triangle with the three values at its corners, controls as outlined schematic components and camera facts in a title block; connecting is a wiring schematic from this computer to the camera along three labelled paths.</p>
+    <div class="row"><span class="sw"><i style="background:#0d2b5e" title="#0d2b5e"></i><i style="background:#0a2350" title="#0a2350"></i><i style="background:#a9d8ee" title="#a9d8ee"></i><i style="background:#eef7fc" title="#eef7fc"></i><i style="background:#6f9fd6" title="#6f9fd6"></i><i style="background:#3b64a3" title="#3b64a3"></i><i style="background:#ff8266" title="#ff8266"></i></span><span class="fonts">Saira Condensed for labels, headings and dimension text; Saira for values and body copy.</span></div>
+    <p class="avoid">Avoided: filled cards and drop shadows, a second accent colour, all-caps eyebrow labels (caps only on the few drafting-style buttons), monospace labels, numbered markers for things that are not a sequence, arrows on buttons, page-load animation.</p>
+  </div>
+</article>
+<article class="card" id="d09">
+  <a class="frame" href="mockups/09-bold-blocks.html" title="Open Bold Blocks full size">
+    <iframe src="mockups/09-bold-blocks.html" loading="lazy" tabindex="-1" title="Bold Blocks preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">09</span><h2>Bold Blocks</h2><a class="open" href="mockups/09-bold-blocks.html">Open full size</a></div>
+    <p class="idea">neo-brutalist clarity. Every control is a flat block with a thick black rule; you can read the whole camera state from across the room. The Connect screen is three tall colour blocks, one per method.</p>
+    <div class="row"><span class="sw"><i style="background:#FFFFFF" title="#FFFFFF"></i><i style="background:#000000" title="#000000"></i><i style="background:#FFD400" title="#FFD400"></i><i style="background:#1E40FF" title="#1E40FF"></i><i style="background:#1DDB5A" title="#1DDB5A"></i></span><span class="fonts">Archivo Black for values and headings, Public Sans for labels and body.</span></div>
+    <p class="avoid">Avoided: shadows, gradients outside the live view, border radius (only the round shutter), eyebrow labels, middle dots, monospace, cream or tinted backgrounds.</p>
+  </div>
+</article>
+<article class="card" id="d10">
+  <a class="frame" href="mockups/10-glass-cockpit.html" title="Open Glass Cockpit full size">
+    <iframe src="mockups/10-glass-cockpit.html" loading="lazy" tabindex="-1" title="Glass Cockpit preview"></iframe>
+  </a>
+  <div class="body">
+    <div class="head"><span class="num">10</span><h2>Glass Cockpit</h2><a class="open" href="mockups/10-glass-cockpit.html">Open full size</a></div>
+    <p class="idea">an aircraft primary flight display. Shutter and ISO are vertical tapes flanking the live view, exposure comp is a horizontal tape beneath it, the level is an artificial horizon drawn over the image, aperture is a round gauge: you read exposure like a pilot reads altitude.</p>
+    <div class="row"><span class="sw"><i style="background:#070A0D" title="#070A0D"></i><i style="background:#0D1318" title="#0D1318"></i><i style="background:#35D6E8" title="#35D6E8"></i><i style="background:#3DDC84" title="#3DDC84"></i><i style="background:#FFB020" title="#FFB020"></i><i style="background:#FF4FD8" title="#FF4FD8"></i><i style="background:#E6EEF2" title="#E6EEF2"></i></span><span class="fonts">Barlow for the interface, Barlow Semi Condensed for tape and gauge numerals.</span></div>
+    <p class="avoid">Avoided: a single acid-green accent, monospace everywhere, rounded cards with shadows, gradients outside the live view, eyebrow labels, decorative motion.</p>
+  </div>
+</article>
+</section>
+<section class="insp">
+<div class="col">
+<h2>How the field looks</h2>
+<p style="color:var(--fg-2)">What existing tethering, monitoring and camera-remote apps do, with links, and three suggested directions written for a non-designer. Source: <a href="inspiration.md">design/inspiration.md</a>.</p>
+<p>Research notes on how camera remote-control, tethering and on-set monitoring apps are laid out, gathered 2026-11-10 from web search and official docs. Images were not downloaded; where colour or typography is described, it comes from reviews, store listings or docs rather than from viewing screenshots, and is marked "reported" when thin. Each entry: layout, colour, type feel, and one idea worth stealing.</p>
+<h3 class="insp-h" id="1-sonys-own-apps">1. Sony's own apps</h3>
+<p><strong>Imaging Edge Desktop – Remote</strong> (<a href="https://support.d-imaging.sony.co.jp/app/imagingedge/en/instruction/1_1_features.php">features</a>, <a href="https://support.d-imaging.sony.co.jp/app/imagingedge/en/instruction/4_2_remote_display.php">Remote window</a>, <a href="https://support.d-imaging.sony.co.jp/app/imagingedge/en/instruction/4_3_panels.php">Operation panel</a>). Three zones: a thin toolbar (zoom, grid), a large Live View, and a stacked Operation panel of sub-panels (Main Settings: mode/shutter/aperture/ISO/EV; Sub Settings; Focus with AF/MF and near/far buttons; Shooting with Shutter/Movie/AF/AEL buttons; Histogram; Save). Panels can be reordered by drag; "settings will apply to the camera immediately." Reported as a flat, grey Windows-style utility with small type and dropdowns. Idea to steal: panel order is user-draggable and the camera mirrors every change instantly, with no "apply" step.</p>
+<p><strong>Creators' App</strong> (<a href="https://apps.apple.com/gb/app/creators-app/id1616622856">App Store</a>, <a href="https://www.thephoblographer.com/?p=220123">Phoblographer hands-on</a>). Phone-first: live view fills the screen, a row of "quick tap icons" sits over the frame, and "a nice long menu with many more advanced options" lives behind one button. Reviewer needed "some menu digging to get the Live View working like I wanted." White/light Sony consumer styling; reviews complain about dropped connections and transfer permissions. Idea to steal: a short row of quick-tap settings on the frame, with everything else one level down.</p>
+<p><strong>Monitor &amp; Control (iPad/Mac)</strong> (<a href="https://apps.apple.com/us/app/sony-monitor-control/id1643900558">App Store</a>, <a href="https://www.videomaker.com/news/sony-releases-updated-monitor-control-app/">Videomaker</a>). Cinema-style dark monitor: full-bleed image with a "control bar at the side of the screen," switchable shutter speed/angle, waveform, false colour, histogram, zebra, vectorscope and real-time LUTs; multi-camera monitoring up to 20 bodies on a paid plan. Users call the scopes "low resolution and blocky," miss focus peaking and audio meters, and call the Mac build "a poorly optimized iPadOS port." Idea to steal: a toggle that turns Live View off "for more stable control" when you only need the parameters.</p>
+<p><strong>Remote Camera Tool</strong> (<a href="https://helpguide.sony.net/ilc/1830/v1/en/contents/TP0002390917.html">help guide</a>, <a href="https://helpguide.sony.net/ilc/2040/v1/en/contents/TP1000423586.html">LAN remote shooting</a>). Sparse wired-LAN utility for PC remote shooting; documented as single-camera settings plus shutter, no live-view aids. Grey dialogue aesthetic. Idea to steal: nothing visual; it is a reminder that Sony leaves the pro desktop space thin.</p>
+<h3 class="insp-h" id="2-pro-tethering">2. Pro tethering</h3>
+<p><strong>Capture One (tethered Live View)</strong> (<a href="https://www.captureone.com/blog/shooting-tethered-with-capture-one-pro">Capture One blog</a>, <a href="https://imagealchemist.net/capture-one-tethering-continued/">Image Alchemist walkthrough</a>, <a href="https://support.captureone.com/hc/en-us/community/posts/360009384558-Tethering-Capture-Focusing-and-Live-View">support forum</a>). Live View opens as a separate window with a toolbar, two tool tabs and a viewer; the Camera tool "mirrors the camera's LCD" with clickable ISO/aperture/EV. Last capture replaces the viewer; a Focus Meter lets you place up to three focus areas whose bars rise as focus improves. Dark charcoal palette, small neutral sans type, dense. Idea to steal: numeric focus meters on user-placed points.</p>
+<p><strong>Lightroom Classic tethered capture</strong> (<a href="https://helpx.adobe.com/lightroom-classic/help/import-photos-tethered-camera.html">Adobe help</a>, <a href="https://lightroomkillertips.com/a-look-at-the-latest-updates-to-shooting-tethered-part-1/">Lightroom Killer Tips</a>). A floating horizontal bar over the normal Library: camera name, shutter/aperture/ISO/WB as click-to-change values, Live toggle, big round shutter button, settings gear. Option-click collapses it to just the shutter. Dark grey, Adobe's compact sans. Idea to steal: a collapsible floating capture bar that shrinks to a single shutter button.</p>
+<p><strong>Smart Shooter 5</strong> (<a href="https://tethertools.com/blog/introducing-the-new-way-to-tether-with-smart-shooter-5/">Tether Tools blog</a>, <a href="https://petapixel.com/2023/06/27/smart-shooter-5-tethering-software-for-lightroom-adds-fujifilm-support">PetaPixel</a>). "MyWorkspace" with dockable, saveable window layouts, dual-monitor support, up to 10 cameras with four simultaneous live views and camera groups; the selected camera receives commands. Reported utilitarian dark Qt look. Idea to steal: a transparent Overlay Mode on live view for aligning repeat shots.</p>
+<p><strong>Cascable (iOS/iPad/Mac)</strong> (<a href="https://petapixel.com/2021/06/17/camera-control-app-cascable-revamps-interface-supports-phase-one">PetaPixel on v6 redesign</a>, <a href="https://www.macworld.com/article/230834/cascable-3-for-ios-review-use-your-iphone-as-a-full-featured-remote-for-your-wi-fi-enabled-dlslr-ca.html">Macworld review</a>, <a href="https://apps.apple.com/us/app/cascable-studio-tether-more/id974193500">App Store</a>). Live view with a strip of exposure "pills" that open pickers; the v6 remote is "optimized for all screen size combinations from the smallest iPhone to the largest iPad." Black UI, rounded cards, SF-style type; "Shutter Robot" automation and instant RAW previews. Idea to steal: one layout system that reflows from phone to desktop.</p>
+<p><strong>digiCamControl</strong> (<a href="https://www.digicamcontrol.com/doc/userguide/interface/mainwin">main window doc</a>, <a href="https://photoartfromscience.com/post/2018/03/29/remote-camera-control-using-digicamcontrol">Photo Art from Science</a>). Windows WPF app: left camera/property panel, centre image or Live View, thumbnail strip below; a dedicated live view window with focus controls "in live view screen bottom part," histogram, click-to-set focus point (green square). Theme picker with light and dark schemes. Idea to steal: selectable themes and a persistent focus-step readout.</p>
+<p><strong>Canon EOS Utility</strong> (<a href="https://asia.canon/en/support/8203590600">Canon support</a>, <a href="https://community.usa.canon.com/t5/Camera-Software/EOS-Utility-Live-View-with-Timer-Shooting/m-p/310534">community thread</a>). Small capture window mimicking the camera's top LCD, plus a separate Remote Live View window with draggable enlargement frame; Quick Preview pops each capture. Beige/grey dialogue chrome, tiny type; camera body controls are disabled while live view is open. Idea to steal: the drag-to-magnify frame for focus checks.</p>
+<p><strong>Nikon NX Tether 2</strong> (<a href="https://nikonimglib.com/nx_tether/onlinehelp/en/03_liveview_window_15.html">Live View window help</a>, <a href="https://www.digitalcameraworld.com/news/nikon-nx-tether-update-brings-a-raft-of-new-features-to-its-free-tethering-app">Digital Camera World</a>). Live view window with histogram, focus points, grid, zebras, virtual horizon and zoom toggles; click image to move focus point; "adjust the live view and control displays to suit your workflow." Dark neutral, cleanly spaced. Idea to steal: virtual horizon overlay.</p>
+<p><strong>Fujifilm X Acquire / Tether Shooting Plug-in PRO</strong> (<a href="https://fujifilm-x.com/en-us/stories/fujifilm-x-acquire-features-users-guide/">Fujifilm guide</a>, <a href="https://www.jmpeltier.com/fujifilm-tethering-workarounds-lightroom-capture-one/">JM Peltier</a>). X Acquire is a near-invisible menu-bar transfer agent to a hot folder; the Plug-in adds a Control Panel and LIVE VIEW window inside Lightroom. Idea to steal: a silent "watch and dump to folder" mode that other apps can consume.</p>
+<h3 class="insp-h" id="3-video-monitoring">3. Video monitoring</h3>
+<p><strong>Blackmagic Camera (iOS/iPad)</strong> (<a href="https://good-design.org/projects/blackmagic-camera/">Good Design case study</a>, <a href="https://www.newsshooter.com/2023/09/15/blackmagic-camera-app-first-look/">Newsshooter first look</a>, <a href="https://redsharknews.com/blackmagic-camera-app-for-iphone-reviewed-definitely-worth-the-download">RedShark review</a>). Full-bleed image; a HUD strip of tappable values (FPS, shutter angle, ISO, WB, tint) along the top with "a multi-level drawer system… adjustments made via a vertical strip" on the side; four tabs (Camera, Media, Chat, Cloud). Black background, Blackmagic's orange/yellow accents, condensed caps type like the Pocket 4K. Idea to steal: every HUD readout is also the button that edits it.</p>
+<p><strong>Blackmagic Camera 2.0 multi-cam / Camera Control</strong> (<a href="https://www.macrumors.com/2024/08/07/blackmagic-camera-app-2-ipad-support/">MacRumors</a>, <a href="https://www.provideocoalition.com/blackmagic-adds-remote-controlling-and-monitoring-multiple-iphones-to-the-blackmagic-camera-app/">ProVideo Coalition</a>). iPad monitors "up to nine iPhone cameras" in a grid or scrolls them singly with focus/zoom/FPS/shutter/WB per tile; setup called "not entirely intuitive." Idea to steal: grid-or-single toggle for multi-cam.</p>
+<p><strong>Atomos AtomOS</strong> (<a href="https://videoguys.com/blogs/news-and-sales/supercharge-your-atomos-ninja-v-monitor-recorder-with-atomos-10">Videoguys on AtomOS 10</a>, <a href="https://www.cined.com/?p=97577">CineD</a>). Image stays visible always; tap clears all overlays; a status bar under the image holds battery, record state, HDR waveform, audio meters and REC/PLAY/MON/EDIT. Overlay colours were deliberately desaturated so "the monitored image stands out." Idea to steal: desaturated chrome and a one-tap "clean feed."</p>
+<p><strong>SmallHD PageOS 6</strong> (<a href="https://smallhd.com/pages/os-6">SmallHD OS 6</a>, <a href="https://guide.smallhd.com/a/833092-user-interface-quick-start-touchscreen">touchscreen guide</a>, <a href="https://www.newsshooter.com/2025/02/04/smallhd-pageos-6-0-1-firmware-update/">Newsshooter</a>). Up to eight user-built "Pages", each a preset combination of tools; swipe down for a zoomed-out page overview; exposure, colour and record are "anchored on every Page." Dark UI, bold white labels readable from a metre away; GPI tally draws a red border when rolling. Idea to steal: Pages—named tool bundles you flip between.</p>
+<p><strong>Frame.io Camera to Cloud</strong> (<a href="https://support.frame.io/en/articles/8896457-c2c-getting-started-with-camera-to-cloud">getting started</a>, <a href="https://www.provideocoalition.com/review-frame-io-camera-to-cloud-atomos-shogun-connect/">ProVideo Coalition review</a>). Web dashboard: a C2C Connections tab lists paired devices with three-dot menus (Suspend/Forget), QR-code pairing, uploads auto-filed by date/type/device. Dark slate UI, large thumbnails, generous type. Idea to steal: device list with pairing code and suspend/forget actions.</p>
+<p><strong>Teradek VUER / Serv Pro</strong> (<a href="https://teradek.com/blogs/articles/vuer-a-rundown">VUER rundown</a>, <a href="https://www.provideocoalition.com/review-teradek-serv-pro-vuer/">ProVideo Coalition</a>). 2x2, dual or single multiview; waveform with its own opacity/position options, vectorscope modes, false colour in Discrete/Full/Zebra, LUTs per feed or all, frame grab. Black UI with small icon buttons on all four edges. Idea to steal: apply a look to one feed or all feeds.</p>
+<p><strong>Accsoon SEE / Zacuto iPhone EVF</strong> (<a href="https://www.newsshooter.com/2023/04/19/accsoon-zacuto-iphone-evf-solution-first-look-at-nab-2023/">Newsshooter</a>, <a href="https://www.bhphotovideo.com/explora/node/114066">B&amp;H</a>). Phone-as-monitor with LUTs, record and stream; the Z-Finder mount leaves a strip of screen free for touch controls. Idea to steal: keep a thin control margin even when the image is fullscreen.</p>
+<h3 class="insp-h" id="4-consumer--creator">4. Consumer / creator</h3>
+<p><strong>DJI Mimo</strong> (<a href="https://apps.apple.com/gb/app/id1431720653">App Store</a>, <a href="https://www.cined.com/es/dji-osmo-pocket-3-review-is-it-any-good-for-professional-documentary-work/">CineD Pocket 3 review</a>). Live view with mode carousel along the bottom, PRO toggle revealing ISO/shutter/EV strips; recent redesign to a "white modular layout" for the home dashboard. Idea to steal: PRO mode as an explicit switch that reveals manual strips.</p>
+<p><strong>Insta360</strong> (<a href="https://insta360.com/blog/news/insta360-app-update-new-interface.html">Insta360 blog</a>, <a href="https://www.redsharknews.com/insta360-updates-mobile-app-with-new-interface-and-much-faster-exporting">RedShark</a>). Swipe left/right on the bottom to change modes, swipe up for the full option sheet; black UI with yellow accent; one store review called the new layout "terrible" and switched back. Idea to steal: the swipe-up sheet for rarely used options.</p>
+<p><strong>GoPro Quik</strong> (<a href="https://www.digitalcameraworld.com/reviews/gopro-quik-app-review">Digital Camera World</a>, <a href="https://www.techradar.com/pro/software-services/gopro-quik-review">TechRadar</a>). Preview in the top half, tools along the bottom; blue-accent dark UI, heavy rounded type; 2024 reviews report frequent crashes. Idea to steal: a big thumb-friendly mode/record cluster.</p>
+<p><strong>Halide Mark II</strong> (<a href="https://www.lux.camera/pro-camera-action-introducing-halide-mark-ii/">Lux launch post</a>, <a href="https://petapixel.com/2020/10/22/halide-camera-app-gets-huge-mark-ii-update-with-new-design-instant-raw-and-more">PetaPixel</a>). "All controls fall within easy thumb reach"; swipe up/down for exposure, a focus dial that activates a Focus Loupe only while dragging ("Intelligent Activation"); histogram or waveform tucked beside the notch. Black with custom "Ambrotype" typeface, including a monospaced cut for values, evoking engraved camera text. Idea to steal: a monospaced numerals face so values don't jitter, plus tools that appear only while in use.</p>
+<p><strong>Filmic Pro v6/v7</strong> (<a href="https://www.cined.com/filmic-pro-v7-launched-redesigned-ui-custom-function-button-and-more/">CineD v7</a>, <a href="https://petapixel.com/2022/12/09/filmic-pro-v7-brings-new-features-and-a-redesigned-camera-interface">PetaPixel v7</a>, <a href="https://filmicpro.helpscoutdocs.com/article/37-achieving-a-180-degree-shutter-in-filmic-pro">180° shutter doc</a>). v6 used two arc sliders (left thumb exposure, right thumb focus) and separate circle/square reticles that turn red when locked; v7 replaced arcs with vertical sliders, "Quick Action Modal" groups, a mappable Fn button and an Action Slider with live readouts. Dark UI with red lock states. Idea to steal: lock state shown by colouring the control red; separate exposure and focus targets.</p>
+<h3 class="insp-h" id="5-streaming">5. Streaming</h3>
+<p><strong>OBS Studio 31/32</strong> (<a href="https://alternativeto.net/news/2026/4/obs-studio-32-1-released-with-overhauled-audio-mixer-webrtc-simulcast-support-and-more">AlternativeTo on 32.1</a>, <a href="https://obsproject.com/forum/threads/can-we-get-the-old-ui-back-in-the-settings.196365/">forum reaction</a>). Preview centred, dockable Scenes/Sources/Mixer/Controls panes; 31.1 added font-size and density options; 32 moved to a vertical mixer that some users found "unfamiliar and strange." Dark grey Qt. Idea to steal: a user-set density slider.</p>
+<p><strong>Elgato Camera Hub</strong> (<a href="https://www.elgato.com/ww/zh/explorer/products/teleprompter/elgato-prompter-pro-teleprompting-made-easy/">Elgato Prompter page</a>, <a href="https://sourceforge.net/app/elgato-camera-hub/">SourceForge</a>). Large preview left, settings column right with sliders for exposure/picture/processing, "three areas", framing grid, and a compact mode that "keeps controls accessible without dominating the desktop." Dark, modern, roomy; Stream Deck integration. Idea to steal: compact mode.</p>
+<p><strong>Ecamm Live</strong> (<a href="https://primalvideo.com/guides/ecamm-live-review-best-livestream-software-for-mac">Primal Video review</a>, <a href="https://sixcolors.com/post/2022/04/learning-to-love-ecamm-live/">Six Colors</a>). Native Mac windows, Scenes and Overlays panel on the right, floating source bar over the preview, hotkeys per scene; light/dark follows macOS. Idea to steal: feel like a Mac app, not a cross-platform shell.</p>
+<h3 class="insp-h" id="6-open-source-sony-controllers-from-readme-text">6. Open-source Sony controllers (from README text)</h3>
+<p><strong>RemoteCam</strong> (<a href="https://github.com/RemingtonWilcox/RemoteCam">GitHub</a>). WPF/Avalonia/SwiftUI; "Three tabs, nothing hidden in menus" (Video, Photo, Setup); picture large in the middle with a bar beneath for histogram/zebra/peaking/grid toggles; histogram and meter float over a corner and are draggable; presets C1–C4 "turn green while the camera matches"; red outline around the picture when recording; window opens at the frame's aspect ratio. Idea to steal: preset buttons that light up when the camera state matches them.</p>
+<p><strong>SonyCamViewer</strong> (<a href="https://github.com/Scryptor/SonyCamViewer">GitHub</a>). SwiftUI/Compose, ZV-E10 as reference. Live view fills the screen, status bar on top, a bottom row of values "like the camera's own display," a left strip of camera tiles for up to four bodies, right-side Fn/zoom/focus/record buttons that auto-hide; a 14-tile Monitor menu for waveform/vectorscope/false colour/LUTs; red frame when recording, orange dot on the preset button when settings drift. Idea to steal: mirror the camera's own bottom info row so the owner already knows how to read it.</p>
+<p><strong>alpha2web</strong> (<a href="https://github.com/Knallli/alpha2web">GitHub</a>). Go web UI: dashboard (connection, logs, Immich queue), MJPEG live view, gallery, and a settings page of cards grouped by exposure/focus/drive/WB, each property getting "a fitting widget: switch, select, slider, number box"; dangerous actions behind an explicit enable. Idea to steal: property cards with search/filter, and a safety gate on destructive settings.</p>
+<p><strong>onair-camera-control</strong> (<a href="https://github.com/jambyylf/onair-camera-control">GitHub</a>). WebView2 app for three FX30s: one tile per camera with REC timer, ISO/Iris/Shutter/WB/Picture Profile pickers, AF/MF, near/far, audio; a bottom bar with MASTER REC, MATCH (copy look to all) and Presets; fullscreen monitor with grid/histogram/zebra/peaking; phone and OBS Browser Source views. Idea to steal: MATCH – copy the selected camera's look to the others.</p>
+<h3 class="insp-h" id="7-concept-work-dribbble--behance">7. Concept work (Dribbble / Behance)</h3>
+<ul>
+<li><a href="https://www.dribbble.com/shots/22258592-Ember-Wireless-Camera-Control-App">Ember – Wireless Camera Control App</a>: Wi-Fi control dashboard for photo and video (resolution, frame rate, audio); tagged dashboard/controller; dark cards, large numerals.</li>
+<li><a href="https://dribbble.com/GregoryKovalev/collections/4504235-Idea-project">Camera Controller Concept (yuhang)</a>: a dial-and-viewport layout where the live image sits in a window beside a big rotary control.</li>
+<li><a href="https://dribbble.com/luoyyisvic">Fujifilm Camera Remote App concept (Victor Yuyang Luo)</a>: onboarding, home, aperture-control and photos screens, with a dedicated dark-mode variant; aperture as a horizontal scrub strip.</li>
+<li><a href="https://dribbble.com/bigchaz/collections/552948-Drone-Sports-App">Fuji Film Camera Remote redesign (bigchaz collection)</a>: rounded shutter button under a tape-style exposure gauge, 280+ likes.</li>
+<li><a href="https://dribbble.com/apankrat/collections/28461-Good-UI">Camera Remote App – dial/knob (apankrat "Good UI" collection)</a>: skeuomorphic textured wheels; a reminder that realism reads well in stills but dates fast.</li>
+<li><a href="https://dribbble.com/tags/dslr">Light Manual Camera App (Afnizar Nur Ghifari)</a>: flat-minimal viewfinder with skeuomorphic shutter; exposure values as a thin ruler.</li>
+<li><a href="https://dribbble.com/shots/3538909-Halide">Halide – Manual Mode (Sebastiaan de With)</a>: the canonical "ruler slider" for exposure on black.</li>
+<li><a href="https://www.behance.net/gallery/80103633/Fujifilm-App-Redesign-Student-Project">Fujifilm App Redesign – student project (Manuela Santos, Behance)</a>: remote screen with live view top, settings bottom; light theme, high whitespace.</li>
+<li><a href="https://www.behance.net/gallery/87276939/Camshare-Camera-Sharing-App-Full-Preview?locale=en_US">Camshare – camera sharing app (Behance)</a>: gallery-first navigation with camera tiles.</li>
+<li><a href="https://weandthecolor.com/camera-remote-iphone-app-concept-by-jeremey-fleischer/16221">Canon DSLR Bluetooth remote concept (Jeremey Fleischer)</a>: black UI, red accent, big circular shutter and scrolling value drums.</li>
+</ul>
+<h3 class="insp-h" id="8-synthesis">8. Synthesis</h3>
+<h3 class="insp-h" id="recurring-patterns">Recurring patterns</h3>
+<ol type="1">
+<li><strong>Live view is the hero.</strong> Nearly every app puts the image full-bleed or centred and shrinks everything else (<a href="https://videoguys.com/blogs/news-and-sales/supercharge-your-atomos-ninja-v-monitor-recorder-with-atomos-10">AtomOS</a>, <a href="https://github.com/RemingtonWilcox/RemoteCam">RemoteCam</a>, <a href="https://good-design.org/projects/blackmagic-camera-app/">Blackmagic</a>).</li>
+<li><strong>Exposure as a strip of tappable values</strong>, each opening a picker, drum or slider rather than a form (<a href="https://good-design.org/projects/blackmagic-camera-app/">Blackmagic</a>, <a href="https://helpx.adobe.com/lightroom-classic/help/import-photos-tethered-camera.html">Lightroom bar</a>, <a href="https://petapixel.com/2021/06/17/camera-control-app-cascable-revamps-interface-supports-phase-one">Cascable</a>).</li>
+<li><strong>Record state = red border plus a timer</strong>, never just a dot (<a href="https://github.com/Scryptor/SonyCamViewer">SonyCamViewer</a>, <a href="https://smallhd.com/pages/os-6">PageOS GPI tally</a>, <a href="https://github.com/RemingtonWilcox/RemoteCam">RemoteCam</a>).</li>
+<li><strong>Dark by default; light is the exception</strong> (Sony Creators' App, Mimo home, Behance student work). Monitoring tools go further and desaturate chrome (<a href="https://videoguys.com/blogs/news-and-sales/supercharge-your-atomos-ninja-v-monitor-recorder-with-atomos-10">AtomOS</a>).</li>
+<li><strong>Scopes float and are draggable/resizable</strong> (<a href="https://github.com/RemingtonWilcox/RemoteCam">RemoteCam</a>, <a href="https://github.com/Scryptor/SonyCamViewer">SonyCamViewer</a>, <a href="https://teradek.com/blogs/articles/vuer-a-rundown">VUER</a>).</li>
+<li><strong>Captured images show as a filmstrip or last-shot thumbnail</strong>, with the newest replacing the viewer in photo tethering (<a href="https://imagealchemist.net/capture-one-tethering-continued/">Capture One</a>, <a href="https://www.digicamcontrol.com/doc/userguide/interface/mainwin">digiCamControl</a>, <a href="https://www.lux.camera/pro-camera-action-introducing-halide-mark-ii/">Halide</a>).</li>
+<li><strong>Settings depth is split</strong>: a short quick row on the frame, a long list behind one button (<a href="https://www.thephoblographer.com/?p=220123">Creators' App</a>, <a href="https://insta360.com/blog/news/insta360-app-update-new-interface.html">Insta360 swipe-up</a>, <a href="https://www.cined.com/filmic-pro-v7-launched-redesigned-ui-custom-function-button-and-more/">Filmic QAMs</a>).</li>
+<li><strong>Multi-cam = tiles with one "selected" camera</strong> that receives commands, plus a master record (<a href="https://tethertools.com/blog/introducing-the-new-way-to-tether-with-smart-shooter-5/">Smart Shooter</a>, <a href="https://github.com/jambyylf/onair-camera-control">onair</a>, <a href="https://www.macrumors.com/2024/08/07/blackmagic-camera-app-2-ipad-support/">Blackmagic 2.0</a>).</li>
+<li><strong>Dockable/saveable workspaces</strong> in desktop pro tools; <strong>Pages</strong> in monitors (<a href="https://tethertools.com/blog/introducing-the-new-way-to-tether-with-smart-shooter-5/">Smart Shooter</a>, <a href="https://alternativeto.net/news/2026/4/obs-studio-32-1-released-with-overhauled-audio-mixer-webrtc-simulcast-support-and-more">OBS</a>, <a href="https://smallhd.com/pages/os-6">PageOS</a>).</li>
+<li><strong>Single-letter keyboard toggles</strong> for overlays (H, Z, P, G) and Space/F9 for record (<a href="https://github.com/RemingtonWilcox/RemoteCam">RemoteCam</a>, <a href="https://github.com/jambyylf/onair-camera-control">onair</a>).</li>
+<li><strong>Presets that reflect state</strong>, not just apply it (green when matched, orange dot when drifted) (<a href="https://github.com/RemingtonWilcox/RemoteCam">RemoteCam</a>, <a href="https://github.com/Scryptor/SonyCamViewer">SonyCamViewer</a>).</li>
+<li><strong>Transfer is a separate, quieter surface</strong>: dashboards, queues, device lists (<a href="https://support.frame.io/en/articles/8896457-c2c-getting-started-with-camera-to-cloud">Frame.io C2C</a>, <a href="https://github.com/Knallli/alpha2web">alpha2web</a>, <a href="https://fujifilm-x.com/en-us/stories/fujifilm-x-acquire-features-users-guide/">X Acquire</a>).</li>
+</ol>
+<h3 class="insp-h" id="standout-ideas-worth-borrowing">Standout ideas worth borrowing</h3>
+<ul>
+<li><strong>Readout-is-the-control HUD</strong> (Blackmagic Camera): tap the shutter value to edit it, no separate panel.</li>
+<li><strong>Pages / anchored functions</strong> (SmallHD PageOS 6): named overlay bundles, with exposure and record fixed on all of them.</li>
+<li><strong>Collapsible floating capture bar</strong> (Lightroom Classic): shrinks to just the shutter when the image matters.</li>
+<li><strong>Presets that light up when matched</strong> (RemoteCam) and <strong>drift indicator</strong> (SonyCamViewer).</li>
+<li><strong>MATCH – copy look to all cameras</strong> (onair-camera-control).</li>
+<li><strong>Desaturated chrome and tap-to-clear overlays</strong> (AtomOS 10).</li>
+<li><strong>Monospaced numerals and appear-only-while-dragging tools</strong> (Halide Mark II).</li>
+<li><strong>Red lock state and separate exposure/focus reticles</strong> (Filmic Pro).</li>
+</ul>
+<h3 class="insp-h" id="pitfalls-seen-in-real-apps">Pitfalls seen in real apps</h3>
+<ul>
+<li>Cramped Windows-utility chrome and dropdowns for everything (Imaging Edge, EOS Utility, Remote Camera Tool).</li>
+<li>"Menu digging" to reach live view or manual mode (<a href="https://www.thephoblographer.com/?p=220123">Creators' App</a>); PRO mode silently resetting (<a href="https://apps.apple.com/gb/app/id1431720653">Mimo</a>).</li>
+<li>Blocky, low-resolution scopes and missing basics like peaking or audio meters (<a href="https://apps.apple.com/us/app/sony-monitor-control/id1643900558">Monitor &amp; Control</a>).</li>
+<li>Ports that don't feel native on Mac ("poorly optimized iPadOS port").</li>
+<li>Tiny values unreadable from a tripod's distance; monitors solve this with bold white labels on dark.</li>
+<li>Layout churn that users reject (<a href="https://obsproject.com/forum/threads/can-we-get-the-old-ui-back-in-the-settings.196365/">OBS vertical mixer</a>, <a href="https://insta360.com/blog/news/insta360-app-update-new-interface.html">Insta360</a>).</li>
+<li>Multi-cam setup "not entirely intuitive" and tied to network quirks (<a href="https://forums.macrumors.com/threads/blackmagic-camera-app-2-0-adds-multi-iphone-control-and-ipad-version.2433108">Blackmagic 2.0</a>).</li>
+</ul>
+<h3 class="insp-h" id="three-suggested-directions-for-rimix">Three suggested directions for Rimix</h3>
+<p><strong>A. "Field monitor" (recommended for a ZV-E10 solo creator).</strong> Black, full-bleed live view; a single HUD strip of tappable values along the bottom in the same order as the camera's own display (SonyCamViewer); a thin right-hand rail for scopes/overlays toggles and record; red border plus timer when rolling. Chrome desaturated (AtomOS), values in a monospaced face (Halide), big enough to read from two metres. Presets as four lit buttons. Why: it fits one person checking framing and exposure across the room, scales naturally to multi-cam tiles and scopes, and avoids the cramped-utility trap. Risk: fewer visible settings at once, so the long list must be one keystroke away.</p>
+<p><strong>B. "Mac-native tether studio".</strong> A proper macOS window with sidebar (cameras, presets, transfer queue), centre live view that swaps to the last capture, a Lightroom-style floating capture bar that collapses to a shutter, and a Capture One-style inspector on the right with property cards (alpha2web). Light/dark follows the system (Ecamm). Why: strongest for stills, image transfer and feeling at home on macOS; easiest for a non-designer because AppKit/SwiftUI conventions do the design. Risk: looks like software rather than gear; video scopes feel bolted on.</p>
+<p><strong>C. "Pages dashboard".</strong> Borrow PageOS: user-named Pages (Frame, Expose, Record, Transfer, Multi), each a saved arrangement of live view, scopes, exposure strip and filmstrip; exposure and record anchored on every page; swipe/⌘-number to flip; a zoomed-out page overview. Dark slate with one accent colour reserved for record/alerts. Why: grows gracefully from today's single camera to multi-cam and scopes without redesign, and gives the owner an obvious place to put each future feature. Risk: more to build up front; needs good defaults so Pages aren't an empty canvas.</p>
+<p>Suggested pick: start with A for v1, with B's transfer sidebar as a slide-over, and keep C's "anchored record and exposure on every view" as a rule from day one.</p>
+
+</div>
+</section>
+</div>
+<script>
+// scale each preview to its card width
+function fit(){document.querySelectorAll('.frame').forEach(function(f){f.style.setProperty('--s',(f.clientWidth/1440).toFixed(4));});}
+fit(); addEventListener('resize',fit);
+</script>
+</body>
+</html>
