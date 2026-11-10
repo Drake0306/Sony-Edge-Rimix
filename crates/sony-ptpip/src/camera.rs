@@ -193,6 +193,15 @@ pub enum CameraEvent {
         received: u64,
         total: u64,
     },
+    /// A download from the card with [`Camera::card_download`] failed;
+    /// `filename` is the camera's name (or `object 0x…` when the object
+    /// could not be looked up). Kept apart from [`CameraEvent::CaptureFailed`]
+    /// so it never reads as a problem with saving shots.
+    CardDownloadFailed {
+        handle: u32,
+        filename: String,
+        error: String,
+    },
 }
 
 /// A connected camera. Dropping it or calling [`Camera::disconnect`] stops
@@ -500,7 +509,7 @@ impl Camera {
     /// resuming a partial file an earlier try left there. Emits
     /// [`CameraEvent::CardDownloadProgress`] after every chunk and
     /// [`CameraEvent::CaptureSaved`] at the end, or
-    /// [`CameraEvent::CaptureFailed`] on error. The connection is held for
+    /// [`CameraEvent::CardDownloadFailed`] on error. The connection is held for
     /// one chunk at a time, so live view keeps going.
     pub async fn card_download(&self, handle: u32) -> Result<PathBuf, Error> {
         let looked_up = async {
@@ -511,14 +520,15 @@ impl Camera {
                 .ok_or(Error::Unsupported("that card object is a folder"))
         }
         .await;
-        let obj = looked_up.map_err(|e| self.card_failed(format!("object {handle:#x}"), e))?;
+        let obj =
+            looked_up.map_err(|e| self.card_failed(handle, format!("object {handle:#x}"), e))?;
         match self.card_fetch(&obj).await {
             Ok(saved) => {
                 let path = saved.path.clone();
                 self.inner.emit(CameraEvent::CaptureSaved(saved));
                 Ok(path)
             }
-            Err(e) => Err(self.card_failed(obj.filename, e)),
+            Err(e) => Err(self.card_failed(handle, obj.filename, e)),
         }
     }
 
@@ -554,10 +564,12 @@ impl Camera {
         })
     }
 
-    /// Emits [`CameraEvent::CaptureFailed`] for a card download; returns `e`.
-    fn card_failed(&self, filename: String, e: Error) -> Error {
+    /// Emits [`CameraEvent::CardDownloadFailed`] for a card download;
+    /// returns `e`.
+    fn card_failed(&self, handle: u32, filename: String, e: Error) -> Error {
         tracing::warn!(file = %filename, error = %e, "card download failed");
-        self.inner.emit(CameraEvent::CaptureFailed {
+        self.inner.emit(CameraEvent::CardDownloadFailed {
+            handle,
             filename,
             error: e.to_string(),
         });

@@ -87,7 +87,8 @@ export type CameraEvent =
   | { CaptureFailed: { filename: string; error: string } }
   | {
       CardDownloadProgress: { handle: number; filename: string; received: number; total: number };
-    };
+    }
+  | { CardDownloadFailed: { handle: number; filename: string; error: string } };
 
 type Tagged<K extends string> = Extract<CameraEvent, Record<K, unknown>>;
 
@@ -114,6 +115,8 @@ export const isCaptureFailed = (e: CameraEvent): e is Tagged<'CaptureFailed'> =>
   hasTag(e, 'CaptureFailed');
 export const isCardDownloadProgress = (e: CameraEvent): e is Tagged<'CardDownloadProgress'> =>
   hasTag(e, 'CardDownloadProgress');
+export const isCardDownloadFailed = (e: CameraEvent): e is Tagged<'CardDownloadFailed'> =>
+  hasTag(e, 'CardDownloadFailed');
 
 export type CardKind = 'Still' | 'Raw' | 'Video' | 'Other';
 

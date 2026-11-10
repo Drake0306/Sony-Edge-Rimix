@@ -291,6 +291,36 @@ describe('card', () => {
     expect(next.captures[0].path).toBe('/shots/C0001.MP4');
   });
 
+  test('a failed card download marks its row and leaves Save to alone', () => {
+    const s = browsing();
+    const failed: CameraEvent = { CardDownloadFailed: { handle: 259, filename: 'C0001.MP4', error: 'camera disconnected' } };
+    const next = step(s, failed, A);
+    expect(next.card.downloads).toEqual({});
+    expect(next.card.failed).toEqual({ 259: 'camera disconnected' });
+    expect(next.saveError).toBe(s.saveError);
+    expect(applyEvent(s, failed, B)).toEqual({});
+  });
+
+  test('a failed card download for a settled row changes nothing', () => {
+    const s: AppState = { ...browsing(), card: { ...browsing().card, downloads: {} } };
+    const failed: CameraEvent = { CardDownloadFailed: { handle: 259, filename: 'C0001.MP4', error: 'x' } };
+    expect(applyEvent(s, failed, A)).toEqual({});
+  });
+
+  test('a new session on the active camera empties the card list but keeps the panel open', () => {
+    const s: AppState = {
+      ...browsing(),
+      card: { ...browsing().card, done: { 257: '/shots/DSC00010.JPG' }, failed: { 258: 'refused' } },
+    };
+    const next = step(s, 'Connected', A);
+    expect(next.card.items).toEqual([]);
+    expect(next.card.done).toEqual({});
+    expect(next.card.failed).toEqual({});
+    expect(next.cardOpen).toBe(true);
+    // Another camera's session leaves this card alone.
+    expect(step(s, 'Connected', B).card).toBe(s.card);
+  });
+
   test('a failure with the same name as a downloading file leaves the row to the reply', () => {
     const s = browsing();
     const next = step(s, { CaptureFailed: { filename: 'C0001.MP4', error: 'timed out' } }, A);

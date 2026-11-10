@@ -367,6 +367,57 @@ fn card_download_progress_serialises() {
 }
 
 #[tokio::test]
+async fn a_failed_card_download_is_its_own_event() {
+    let sim = spawn(SimConfig::default()).await;
+    let tmp = tempfile::tempdir().unwrap();
+    let camera = Camera::connect(camera_config(&sim, tmp.path()))
+        .await
+        .unwrap();
+    let mut rx = camera.subscribe();
+    assert!(camera.card_download(0xDEAD).await.is_err());
+    let failed = timeout(WAIT, async {
+        loop {
+            match rx.recv().await {
+                Ok(CameraEvent::CardDownloadFailed {
+                    handle, filename, ..
+                }) => return (handle, filename),
+                Ok(CameraEvent::CaptureFailed { .. }) => {
+                    panic!("a card failure sent CaptureFailed")
+                }
+                Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(e) => panic!("{e}"),
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(failed, (0xDEAD, "object 0xdead".to_string()));
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event, CameraEvent::CaptureFailed { .. }),
+            "{event:?}"
+        );
+    }
+    camera.disconnect().await;
+    sim.events.send(SimCommand::Shutdown).await.unwrap();
+}
+
+#[test]
+fn card_download_failed_serialises() {
+    let ev = CameraEvent::CardDownloadFailed {
+        handle: 7,
+        filename: "C0001.MP4".into(),
+        error: "camera disconnected".into(),
+    };
+    assert_eq!(
+        serde_json::to_value(&ev).unwrap(),
+        serde_json::json!({"CardDownloadFailed": {
+            "handle": 7, "filename": "C0001.MP4", "error": "camera disconnected"
+        }})
+    );
+}
+
+#[tokio::test]
 async fn files_of_4_gib_or_more_are_refused_before_any_part_file() {
     let mut card = small_clip();
     card[0].bytes = 5 * 1024 * MIB;

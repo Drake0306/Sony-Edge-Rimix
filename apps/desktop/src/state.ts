@@ -280,16 +280,33 @@ export function withoutHandle<T>(record: Record<number, T>, key: number): Record
 
 /**
  * What an event from the active camera changes in its card: progress for a
- * file being downloaded. Only the `card_download` reply settles a row, so a
- * progress event for a handle no longer downloading (one that overtook the
- * reply) is ignored. Null when nothing changes.
+ * file being downloaded, or its failure, shown on its row. Only events for
+ * a handle still downloading count, so one that overtook the
+ * `card_download` reply cannot bring a settled row back. A new session
+ * (`Connected`) empties the list and the per-file results, since PTP
+ * handles only hold within one session; the open panel lists the card
+ * again. Null when nothing changes.
  */
 function cardEvent(card: CardState, event: CameraEvent): CardState | null {
-  if (typeof event !== 'object' || !('CardDownloadProgress' in event)) return null;
-  const { handle, received, total } = event.CardDownloadProgress;
-  if (!(handle in card.downloads)) return null;
-  return { ...card, downloads: { ...card.downloads, [handle]: { received, total } } };
+  if (event === 'Connected') {
+    const empty = card.items.length === 0 && isEmpty(card.done) && isEmpty(card.failed);
+    return empty ? null : { ...card, items: [], done: {}, failed: {} };
+  }
+  if (typeof event !== 'object') return null;
+  if ('CardDownloadProgress' in event) {
+    const { handle, received, total } = event.CardDownloadProgress;
+    if (!(handle in card.downloads)) return null;
+    return { ...card, downloads: { ...card.downloads, [handle]: { received, total } } };
+  }
+  if ('CardDownloadFailed' in event) {
+    const { handle, error } = event.CardDownloadFailed;
+    if (!(handle in card.downloads)) return null;
+    return { ...card, downloads: withoutHandle(card.downloads, handle), failed: { ...card.failed, [handle]: error } };
+  }
+  return null;
 }
+
+const isEmpty = (record: Record<number, unknown>) => Object.keys(record).length === 0;
 
 /**
  * What a camera event from `cameraId` changes; the toast for a skipped shot

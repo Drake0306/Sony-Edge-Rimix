@@ -3,7 +3,9 @@ import tagged from './fixtures/state-changed.json';
 import taggedSaved from './fixtures/capture-saved.json';
 import cardObject from './fixtures/card-object.json';
 import {
+  isCaptureFailed,
   isCaptureSaved,
+  isCardDownloadFailed,
   isCardDownloadProgress,
   isConnected,
   isDisconnected,
@@ -86,6 +88,19 @@ describe('camera events', () => {
     expect(event.CardDownloadProgress.filename).toBe('C0001.MP4');
     expect(event.CardDownloadProgress.received).toBe(1);
     expect(event.CardDownloadProgress.total).toBe(2);
+  });
+
+  // The shape pinned by the Rust test `card_download_failed_serialises`.
+  test('a failed card download is a tagged object of its own', () => {
+    const event = JSON.parse(
+      '{"CardDownloadFailed":{"handle":7,"filename":"C0001.MP4","error":"camera disconnected"}}',
+    ) as CameraEvent;
+    expect(isCardDownloadFailed(event)).toBe(true);
+    expect(isCaptureFailed(event)).toBe(false);
+    expect(isCardDownloadProgress(event)).toBe(false);
+    if (!isCardDownloadFailed(event)) return;
+    expect(event.CardDownloadFailed.handle).toBe(7);
+    expect(event.CardDownloadFailed.error).toBe('camera disconnected');
   });
 });
 
