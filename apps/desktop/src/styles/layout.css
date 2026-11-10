@@ -281,6 +281,7 @@ body{overflow:hidden}
 .devices{display:flex;flex-direction:column;gap:8px}
 .devices .looking{color:var(--ink-3);font-size:12.5px;padding:8px 2px}
 .device .t span{font-variant-numeric:tabular-nums}
+.devices .blefail{color:var(--error-ink);font-size:12.5px;padding:0 2px 2px;margin:-2px 0 0}
 .pbtn:disabled{opacity:.5;cursor:default;filter:none}
 .recent .group .r.row-btn .v{font-variant-numeric:tabular-nums}
 /* connect screen: scan, paste, type */

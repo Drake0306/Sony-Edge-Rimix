@@ -247,6 +247,31 @@ export interface AppSettings {
   wifiJoin: WifiJoin;
   webcamId: string | null;
   presets: Preset[];
+  /** Whether the connect screen looks for cameras over Bluetooth. */
+  bluetooth: boolean;
+}
+
+/** What a Sony camera's Bluetooth advertisement says. */
+export interface BleAdvert {
+  /** The advertised name, e.g. `ZV-E10`; null when the camera gives none. */
+  name: string | null;
+  /** The two model code bytes as text, e.g. `E1`. */
+  model_code: string;
+  /** Whether the camera is accepting a new remote right now. */
+  pairing_open: boolean;
+  address: string;
+}
+
+/** A camera heard over Bluetooth, as `ble_scan` lists it. */
+export interface Found {
+  address: string;
+  advert: BleAdvert;
+}
+
+/** The camera's Wi-Fi network read over Bluetooth. The password is joined with at once and never stored. */
+export interface BleCredentials {
+  ssid: string;
+  password: string;
 }
 
 /** Receive from camera: the SFTP server the camera's FTP Transfer function pushes files to. */
@@ -334,6 +359,18 @@ export const sftpStatus = () => invoke<SftpStatus>('sftp_status');
 export const sftpSetEnabled = (enabled: boolean) => invoke<void>('sftp_set_enabled', { enabled });
 /** Makes a new SFTP password; a running receiver restarts with it. */
 export const sftpRegeneratePassword = () => invoke<void>('sftp_regenerate_password');
+/**
+ * The Sony cameras heard over Bluetooth in `seconds` (1 to 15). Rejects with
+ * `Bluetooth unavailable: …` when Bluetooth is off or not allowed, at once
+ * on later calls until `bleRetry`.
+ */
+export const bleScan = (seconds: number) => invoke<Found[]>('ble_scan', { seconds });
+/** Reads the camera's Wi-Fi network and password over Bluetooth. */
+export const bleHandoff = (address: string) => invoke<BleCredentials>('ble_handoff', { address });
+/** One photo through the camera's Bluetooth remote shutter. */
+export const bleShoot = (address: string) => invoke<void>('ble_shoot', { address });
+/** Tries Bluetooth again after it was unavailable. */
+export const bleRetry = () => invoke<void>('ble_retry');
 /** `null` when the dialog is cancelled. */
 export const pickFolder = () => invoke<string | null>('pick_folder');
 

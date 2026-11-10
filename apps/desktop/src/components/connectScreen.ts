@@ -1,19 +1,37 @@
 // The connect screen: scan the camera's QR code, pick a nearby camera, or
 // type its Wi-Fi name and password (with the Access Authentication login and
 // the address field under their own disclosures), plus recently used cameras.
+// Nearby lists cameras found on the network and, under them, cameras heard
+// over Bluetooth, whose Wi-Fi details can be read to join them.
 
 import type { Actions } from '../actions';
-import { fingerprintChangedText, fingerprintText, NOT_A_WIFI_CODE, webcamErrorMessage } from '../copy';
+import {
+  BLE_UNAVAILABLE,
+  bleCameraName,
+  bleNearbyText,
+  fingerprintChangedText,
+  fingerprintText,
+  isBleUnavailable,
+  JOIN_VIA_BLUETOOTH,
+  NOT_A_WIFI_CODE,
+  PAIRING_OFF,
+  PAIRING_OPEN,
+  webcamErrorMessage,
+} from '../copy';
 import { button, el, icon } from '../dom';
-import { discover, type SshLogin } from '../ipc';
+import { bleScan, discover, type DiscoveredCamera, type Found, type SshLogin } from '../ipc';
 import { parseWifiQr } from '../qr/payload';
 import { createScanner, webcamSupported } from '../qr/scanner';
-import { cameraCount, watch, type AppStore } from '../state';
+import { bleListPatch, cameraCount, watch, type AppState, type AppStore } from '../state';
 import { rowButton } from './sidePanels';
 
 export const DEFAULT_IP = '192.168.122.1';
 const DISCOVER_MS = 3000;
 const REFRESH_MS = 5000;
+/** How long each Bluetooth scan listens, in seconds. */
+const BLE_SCAN_S = 3;
+/** How often a Bluetooth scan starts, counted from the start of the last. */
+const BLE_REFRESH_MS = 10_000;
 /** How long after a failed connect the webcam starts looking for a code again. */
 const RESCAN_MS = 3000;
 const NOTE = 'First time on this camera? Press OK on the camera screen when it asks to allow this computer.';
@@ -73,6 +91,19 @@ function submitButton(): HTMLButtonElement {
   const b = button('pbtn', 'Connect');
   b.type = 'submit';
   return b;
+}
+
+/** Calls `fn` now and whenever what the Nearby card shows changes. */
+function watchNearby(store: AppStore, fn: (s: AppState) => void): () => void {
+  const pick = (s: AppState) => [s.nearby, s.bleNearby, s.bleFailed, s.bleUnavailable] as const;
+  let last = pick(store.get());
+  fn(store.get());
+  return store.subscribe((s) => {
+    const next = pick(s);
+    if (next.every((v, i) => v === last[i])) return;
+    last = next;
+    fn(s);
+  });
 }
 
 export function mount(root: HTMLElement, store: AppStore, actions: Actions): () => void {
@@ -362,6 +393,79 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   matches.addEventListener('click', () => void store.get().pendingFingerprint?.retry());
   cancel.addEventListener('click', () => store.set({ pendingFingerprint: null }));
 
+  /** A camera found on the network. */
+  const ssdpRow = (cam: DiscoveredCamera) => {
+    const d = el('div', 'device');
+    const t = el('div', 't');
+    t.append(el('b', '', cam.model || cam.friendly_name), el('span', '', cam.ip));
+    const b = button('pbtn', 'Connect', `Connect to ${cam.model} at ${cam.ip}`);
+    b.addEventListener('click', () => {
+      // A camera that offers Access Authentication may need its
+      // login: the first click opens it instead of connecting.
+      if (cam.ssh_supported === true && ssh.hidden) {
+        openLogin();
+        return;
+      }
+      if (loginReady()) void actions.connect(cam.ip, null, login());
+    });
+    d.append(t, b);
+    return d;
+  };
+
+  /** A camera heard over Bluetooth, and why reading it last failed. */
+  const bleRow = (found: Found, failure: string | undefined): HTMLElement[] => {
+    const d = el('div', 'device ble');
+    const t = el('div', 't');
+    const badge = el('span', 'pairing', found.advert.pairing_open ? PAIRING_OPEN : PAIRING_OFF);
+    t.append(el('b', '', bleNearbyText(found)), badge);
+    const b = button('pbtn', JOIN_VIA_BLUETOOTH, `Join ${bleCameraName(found)} via Bluetooth`);
+    b.addEventListener('click', () => void actions.joinViaBluetooth(found));
+    d.append(t, b);
+    if (!failure) return [d];
+    const why = el('p', 'blefail', failure);
+    why.setAttribute('role', 'status');
+    return [d, why];
+  };
+
+  const nearbyRows = (s: AppState): HTMLElement[] => {
+    const rows: HTMLElement[] = s.nearby.map(ssdpRow);
+    for (const found of s.bleNearby) rows.push(...bleRow(found, s.bleFailed[found.address]));
+    if (rows.length === 0) rows.push(el('p', 'looking', 'Looking for cameras on this network'));
+    if (s.bleUnavailable) rows.push(el('p', 'looking bleoff', BLE_UNAVAILABLE));
+    return rows;
+  };
+
+  // Bluetooth scans: one at a time, every 10 s while Bluetooth is on in App
+  // settings; they stop for the rest of this screen once it turns out to be
+  // unavailable. Each run belongs to a generation; stopping starts a new one.
+  let bleGen = 0;
+  let bleTimer = 0;
+  const bleWanted = () => !stopped && store.get().settings?.bluetooth === true && !store.get().bleUnavailable;
+  const stopBle = () => {
+    bleGen += 1;
+    window.clearTimeout(bleTimer);
+  };
+  const bleRound = async (gen: number) => {
+    if (!bleWanted()) return;
+    const started = Date.now();
+    try {
+      const found = await bleScan(BLE_SCAN_S);
+      if (gen !== bleGen) return;
+      store.set(bleListPatch(store.get(), found));
+    } catch (e) {
+      if (gen !== bleGen) return;
+      if (isBleUnavailable(e instanceof Error ? e.message : String(e))) {
+        // Said once in the card; never retried from here.
+        store.set({ bleUnavailable: true, bleNearby: [], bleFailed: {} });
+        return;
+      }
+      // Any other failure is best effort: the list stays, the next scan tries again.
+    }
+    if (gen === bleGen && bleWanted()) {
+      bleTimer = window.setTimeout(() => void bleRound(gen), Math.max(0, BLE_REFRESH_MS - (Date.now() - started)));
+    }
+  };
+
   const offs = [
     watch(store, (s) => `${cameraCount(s)}|${s.camera?.model ?? ''}`, (_, s) => {
       const count = cameraCount(s);
@@ -404,31 +508,15 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     watch(store, (s) => s.settings?.webcamId ?? null, () => {
       if (scannerStarted) restartScanner();
     }),
-    watch(store, (s) => s.nearby, (list) => {
-      if (list.length === 0) {
-        nearbyList.replaceChildren(el('p', 'looking', 'Looking for cameras on this network'));
-        return;
-      }
-      nearbyList.replaceChildren(
-        ...list.map((cam) => {
-          const d = el('div', 'device');
-          const t = el('div', 't');
-          t.append(el('b', '', cam.model || cam.friendly_name), el('span', '', cam.ip));
-          const b = button('pbtn', 'Connect', `Connect to ${cam.model} at ${cam.ip}`);
-          b.addEventListener('click', () => {
-            // A camera that offers Access Authentication may need its
-            // login: the first click opens it instead of connecting.
-            if (cam.ssh_supported === true && ssh.hidden) {
-              openLogin();
-              return;
-            }
-            if (loginReady()) void actions.connect(cam.ip, null, login());
-          });
-          d.append(t, b);
-          return d;
-        }),
-      );
+    watchNearby(store, (s) => {
+      nearbyList.replaceChildren(...nearbyRows(s));
       applyBusy();
+    }),
+    // Bluetooth on: scan now and every 10 s. Off: stop and drop the list.
+    watch(store, (s) => s.settings?.bluetooth === true, (on) => {
+      stopBle();
+      store.set({ bleNearby: [], bleFailed: {}, bleUnavailable: false });
+      if (on) void bleRound(bleGen);
     }),
     watch(store, (s) => s.settings?.recentCameras, (list = []) => {
       recent.hidden = list.length === 0;
@@ -464,6 +552,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
 
   return () => {
     stopped = true;
+    stopBle();
     window.clearTimeout(timer);
     window.clearTimeout(rescanTimer);
     scanner.stop();

@@ -28,6 +28,7 @@ const settings: AppSettings = {
   wifiJoin: 'Automatic',
   webcamId: null,
   presets: [],
+  bluetooth: true,
 };
 
 const mounted: (() => void)[] = [];
@@ -310,5 +311,41 @@ describe('app settings', () => {
       expect(invoke).toHaveBeenCalledWith('sftp_set_enabled', { enabled: false });
       await vi.waitFor(() => expect(Object.keys(rows(root))).not.toContain('Address'));
     });
+  });
+});
+
+describe('Bluetooth switch', () => {
+  beforeEach(() => vi.mocked(invoke).mockClear());
+
+  const bluetooth = (root: HTMLElement) =>
+    root.querySelector<HTMLButtonElement>('.apppop [role="switch"][aria-label="Bluetooth"]')!;
+
+  test('sits under Connection and is on by default', () => {
+    const { root } = setup();
+    const sw = bluetooth(root);
+    expect(sw.closest('.sect')!.querySelector('.h')!.textContent).toBe('Connection');
+    expect(sw.getAttribute('aria-checked')).toBe('true');
+    expect(sw.closest('.r')!.querySelector('.k')!.textContent).toBe('Bluetooth');
+  });
+
+  test('turning it off saves without touching the radio', () => {
+    const { root, store } = setup();
+    bluetooth(root).click();
+    expect(invoke).toHaveBeenCalledWith('save_settings', { settings: { ...settings, bluetooth: false } });
+    expect(invoke).not.toHaveBeenCalledWith('ble_retry');
+    expect(store.get().settings?.bluetooth).toBe(false);
+    expect(bluetooth(root).getAttribute('aria-checked')).toBe('false');
+  });
+
+  test('turning it on tries Bluetooth again first, then saves', async () => {
+    const { root, store } = setup({ bluetooth: false });
+    expect(bluetooth(root).getAttribute('aria-checked')).toBe('false');
+    bluetooth(root).click();
+    await vi.waitFor(() => expect(store.get().settings?.bluetooth).toBe(true));
+    const cmds = vi.mocked(invoke).mock.calls.map(([cmd]) => cmd);
+    expect(cmds.indexOf('ble_retry')).toBeGreaterThanOrEqual(0);
+    expect(cmds.indexOf('ble_retry')).toBeLessThan(cmds.indexOf('save_settings'));
+    expect(invoke).toHaveBeenCalledWith('save_settings', { settings: { ...settings, bluetooth: true } });
+    expect(bluetooth(root).getAttribute('aria-checked')).toBe('true');
   });
 });

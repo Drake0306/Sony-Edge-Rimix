@@ -101,7 +101,8 @@ export function saveToSection(store: AppStore, actions: Actions): { el: HTMLElem
   return { el: sect('Save to', path, failure, modes), destroy };
 }
 
-function switchRow(label: string, on: boolean, toggle?: () => void): HTMLElement {
+/** A settings row with an on/off switch; without `toggle` it is a placeholder. */
+export function switchRow(label: string, on: boolean, toggle?: () => void): HTMLElement {
   const r = el('div', 'r');
   r.setAttribute('role', 'listitem');
   r.append(el('span', 'k', label));

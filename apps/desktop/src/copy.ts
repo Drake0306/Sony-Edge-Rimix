@@ -1,5 +1,7 @@
 // User-facing copy that depends on what went wrong.
 
+import type { Found } from './ipc';
+
 /** sony-ptpip's `Error::PairingTimeout` Display text. */
 const PAIRING_TIMEOUT = 'did not confirm the pairing';
 
@@ -114,4 +116,31 @@ export function reconnectingText(attempt: number): string {
   return attempt >= 5
     ? "Reconnecting… if the camera's Wi-Fi dropped, rejoin it from the Wi-Fi menu"
     : 'Reconnecting';
+}
+
+/** What the Nearby card calls a camera heard over Bluetooth. */
+export const bleCameraName = (f: Found) => f.advert.name || `Sony camera ${f.advert.model_code}`;
+export const bleNearbyText = (f: Found) => `${bleCameraName(f)} nearby`;
+export const PAIRING_OPEN = 'pairing open';
+export const PAIRING_OFF = 'pairing off';
+export const JOIN_VIA_BLUETOOTH = 'Join via Bluetooth';
+/** The connect screen's progress line while the Wi-Fi details are read. */
+export const bleReadingText = (name: string) => `Reading Wi-Fi details from ${name} over Bluetooth`;
+
+/** How the Rust side's `BleError::Unavailable` Display text starts. */
+const BLE_UNAVAILABLE_PREFIX = 'Bluetooth unavailable:';
+/** How the Rust side's `BleError::Io` Display text starts. */
+const BLE_FAILED_PREFIX = 'Bluetooth failed: ';
+
+/** Whether a Bluetooth command failed because Bluetooth is off, missing or not allowed. */
+export const isBleUnavailable = (err: string) => err.startsWith(BLE_UNAVAILABLE_PREFIX);
+
+/** The Nearby card's quiet line when Bluetooth cannot be used. */
+export const BLE_UNAVAILABLE = 'Bluetooth is off or not allowed; nearby cameras come from Wi-Fi only.';
+
+/** The Nearby card's line under a camera whose Wi-Fi details could not be read. */
+export function bleFailedText(err: string): string {
+  const bare = err.startsWith(BLE_FAILED_PREFIX) ? err.slice(BLE_FAILED_PREFIX.length) : err;
+  const detail = bare.replace(/\.+$/, '');
+  return `Rimix could not read the Wi-Fi details over Bluetooth (${detail}). Scan the QR code or type the name and password instead.`;
 }

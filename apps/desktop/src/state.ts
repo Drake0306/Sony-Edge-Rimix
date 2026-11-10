@@ -3,7 +3,7 @@
 
 import { sshErrorMessage } from './copy';
 import type { IntervalRun } from './interval';
-import type { AppSettings, CameraEvent, CameraState, CardMode, CardObject, DiscoveredCamera, SftpStatus } from './ipc';
+import type { AppSettings, CameraEvent, CameraState, CardMode, CardObject, DiscoveredCamera, Found, SftpStatus } from './ipc';
 
 export interface Store<T> {
   get(): T;
@@ -89,6 +89,12 @@ export interface AppState {
   /** True while `settings` are defaults standing in for settings that failed to load and have not been saved since. */
   unsaved: boolean;
   nearby: DiscoveredCamera[];
+  /** Cameras heard over Bluetooth, listed under `nearby`. */
+  bleNearby: Found[];
+  /** Why reading a camera's Wi-Fi details over Bluetooth failed, by address, until the list changes. */
+  bleFailed: Record<string, string>;
+  /** True once Bluetooth turned out to be off or not allowed; the connect screen stops scanning. */
+  bleUnavailable: boolean;
   /** Newest first, at most six. */
   captures: CaptureItem[];
   /** Files on their way from a camera, keyed by `${cameraId}/${camera filename}`. */
@@ -157,6 +163,9 @@ export const initialState = (): AppState => ({
   settings: null,
   unsaved: false,
   nearby: [],
+  bleNearby: [],
+  bleFailed: {},
+  bleUnavailable: false,
   captures: [],
   transfers: {},
   saveError: null,
@@ -187,7 +196,18 @@ export const defaultSettings = (destinationBase = ''): AppSettings => ({
   wifiJoin: 'Automatic',
   webcamId: null,
   presets: [],
+  bluetooth: true,
 });
+
+/**
+ * The store after a Bluetooth scan heard `found`: failures are forgotten
+ * when the cameras heard are not the same ones as before.
+ */
+export function bleListPatch(state: AppState, found: Found[]): Partial<AppState> {
+  const key = (list: Found[]) => list.map((f) => f.address).sort().join('\n');
+  const same = key(state.bleNearby) === key(found);
+  return same ? { bleNearby: found } : { bleNearby: found, bleFailed: {} };
+}
 
 /**
  * Calls `fn` now and whenever `select` returns something new (compared by

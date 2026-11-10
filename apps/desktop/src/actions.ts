@@ -4,14 +4,18 @@
 import * as ipc from './ipc';
 import {
   askToJoinText,
+  bleCameraName,
+  bleFailedText,
+  bleReadingText,
   connectErrorMessage,
   connectingText,
   findingText,
+  isBleUnavailable,
   joiningText,
   wifiErrorMessage,
 } from './copy';
 import { sameAddress } from './address';
-import type { AppSettings, Preset, PtpValue, RecentCamera, SshLogin } from './ipc';
+import type { AppSettings, Found, Preset, PtpValue, RecentCamera, SshLogin } from './ipc';
 import { start, type IntervalPlan } from './interval';
 import { describeFailures, upsertPreset } from './presets';
 import type { WifiCredentials } from './qr/payload';
@@ -40,6 +44,12 @@ export interface Actions {
   connect(ip: string, ssid?: string | null, ssh?: SshLogin | null): Promise<boolean>;
   /** Joins the camera's network (or waits for the user to), finds the camera and connects. */
   connectWithWifi(creds: WifiCredentials, ssh?: SshLogin | null): Promise<boolean>;
+  /**
+   * Reads a camera's Wi-Fi details over Bluetooth, then joins and connects
+   * as connectWithWifi does. A failure is kept for the camera's row; an
+   * unavailable Bluetooth stops the Bluetooth list.
+   */
+  joinViaBluetooth(found: Found): Promise<boolean>;
   /**
    * Reconnects a remembered camera through its network when known, else its
    * address. One with Access Authentication opens the connect screen with
@@ -332,6 +342,26 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     return connectTo(`${camera.ip}:${camera.ptp_port}`, ssid, camera.model || ssid, ssh);
   }
 
+  async function joinViaBluetooth(found: Found): Promise<boolean> {
+    if (store.get().connecting) return false;
+    store.set({ error: null, connecting: { phase: 'joining', text: bleReadingText(bleCameraName(found)) } });
+    let creds: ipc.BleCredentials;
+    try {
+      creds = await ipc.bleHandoff(found.address);
+    } catch (e) {
+      const err = message(e);
+      if (isBleUnavailable(err)) {
+        store.set({ connecting: null, bleUnavailable: true, bleNearby: [], bleFailed: {} });
+      } else {
+        store.set({ connecting: null, bleFailed: { ...store.get().bleFailed, [found.address]: bleFailedText(err) } });
+      }
+      return false;
+    }
+    // The password goes straight into the join and is never kept.
+    store.set({ connecting: null, bleFailed: without(store.get().bleFailed, found.address) });
+    return connectWithWifi({ ssid: creds.ssid, password: creds.password });
+  }
+
   /**
    * Drops one camera (the active one by default). The next becomes active;
    * after the last, everything shown for it goes and the connect screen is up.
@@ -440,6 +470,7 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
   return {
     connect: (ip, ssid, ssh) => connectOnce(ip, ssid ?? null, ip.trim(), ssh ?? null),
     connectWithWifi,
+    joinViaBluetooth,
     connectRecent,
     async forgetCamera(rc) {
       const settings = store.get().settings;

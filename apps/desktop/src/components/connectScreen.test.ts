@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Actions } from '../actions';
+import { invoke } from '@tauri-apps/api/core';
 import { NOT_A_WIFI_CODE } from '../copy';
-import type { AppSettings, CameraState, RecentCamera } from '../ipc';
+import type { AppSettings, CameraState, Found, RecentCamera } from '../ipc';
 import { createStore, defaultSettings, initialState, type AppStore } from '../state';
 import { createScanner, webcamSupported } from '../qr/scanner';
 import { mount, SSH_PASSWORD_NEEDED } from './connectScreen';
@@ -18,6 +19,7 @@ function fakeActions(): Actions {
     connectWithWifi: vi.fn(() => Promise.resolve(true)),
     connectRecent: vi.fn(() => Promise.resolve(true)),
     forgetCamera: vi.fn(() => Promise.resolve()),
+    joinViaBluetooth: vi.fn(() => Promise.resolve(true)),
   } as unknown as Actions;
 }
 
@@ -484,5 +486,157 @@ describe('adding a camera', () => {
     expect(store.get().screen).toBe('main');
     expect(store.get().keepCameras).toBe(false);
     unmount();
+  });
+});
+
+describe('Bluetooth in Nearby', () => {
+  const zv: Found = {
+    address: 'fake-zv-e10',
+    advert: { name: 'ZV-E10', model_code: 'E1', pairing_open: true, address: 'fake-zv-e10' },
+  };
+  const unnamed: Found = {
+    address: 'cam-2',
+    advert: { name: null, model_code: 'E2', pairing_open: false, address: 'cam-2' },
+  };
+  const a7 = {
+    model: 'ILCE-7M4',
+    friendly_name: 'ILCE-7M4',
+    ip: '192.168.1.20',
+    ptp_port: 15740,
+    ptp_version: null,
+    pairing_required: null,
+    ssh_supported: null,
+    source: 'Ssdp' as const,
+  };
+  const UNAVAILABLE = 'Bluetooth is off or not allowed; nearby cameras come from Wi-Fi only.';
+  let bleAnswer: () => Promise<unknown>;
+  const scans = () => vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === 'ble_scan');
+  const rows = () => [...root.querySelectorAll<HTMLElement>('.devices .device')];
+  const flush = () => vi.advanceTimersByTimeAsync(0);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    bleAnswer = () => Promise.resolve([zv]);
+    vi.mocked(invoke).mockReset().mockImplementation((cmd: string) =>
+      cmd === 'ble_scan' ? bleAnswer() : cmd === 'discover' ? Promise.resolve([a7]) : Promise.resolve([]),
+    );
+  });
+  afterEach(() => {
+    unmount();
+    vi.useRealTimers();
+    vi.mocked(invoke).mockReset().mockImplementation(() => Promise.resolve([]));
+  });
+
+  test('cameras heard over Bluetooth are listed under the Wi-Fi ones', async () => {
+    bleAnswer = () => Promise.resolve([zv, unnamed]);
+    setup();
+    await flush();
+    expect(scans()[0]).toEqual(['ble_scan', { seconds: 3 }]);
+    expect(rows().map((r) => r.querySelector('.t b')!.textContent)).toEqual([
+      'ILCE-7M4',
+      'ZV-E10 nearby',
+      'Sony camera E2 nearby',
+    ]);
+    expect(rows()[1].querySelector('.t span')!.textContent).toBe('pairing open');
+    expect(rows()[2].querySelector('.t span')!.textContent).toBe('pairing off');
+    const join = rows()[1].querySelector('button')!;
+    expect(join.textContent).toBe('Join via Bluetooth');
+    join.click();
+    expect(actions.joinViaBluetooth).toHaveBeenCalledWith(zv);
+  });
+
+  test('Join via Bluetooth waits while a connect runs', async () => {
+    setup();
+    await flush();
+    store.set({ connecting: { phase: 'joining', text: 'Joining X' } });
+    expect(rows()[1].querySelector('button')!.disabled).toBe(true);
+    store.set({ connecting: null });
+    expect(rows()[1].querySelector('button')!.disabled).toBe(false);
+  });
+
+  test('scans every 10 s, never two at once, and stops on unmount', async () => {
+    let finish: (v: Found[]) => void = () => {};
+    bleAnswer = () => new Promise((resolve) => (finish = resolve));
+    setup();
+    await flush();
+    expect(scans()).toHaveLength(1);
+    // The first scan is still running: no second one starts.
+    await vi.advanceTimersByTimeAsync(25_000);
+    expect(scans()).toHaveLength(1);
+    finish([zv]);
+    await flush();
+    expect(scans()).toHaveLength(2);
+    finish([zv]);
+    await vi.advanceTimersByTimeAsync(9_000);
+    expect(scans()).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(scans()).toHaveLength(3);
+    finish([zv]);
+    await flush();
+    unmount();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(scans()).toHaveLength(3);
+    unmount = () => {};
+  });
+
+  test('unavailable Bluetooth is said once, the Wi-Fi cameras stay and nothing retries', async () => {
+    bleAnswer = () => Promise.reject('Bluetooth unavailable: this app may not use Bluetooth');
+    setup();
+    await flush();
+    const quiet = [...root.querySelectorAll('.devices p')].filter((p) => p.textContent === UNAVAILABLE);
+    expect(quiet).toHaveLength(1);
+    expect(rows().map((r) => r.querySelector('.t b')!.textContent)).toEqual(['ILCE-7M4']);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(scans()).toHaveLength(1);
+    expect([...root.querySelectorAll('.devices p')].filter((p) => p.textContent === UNAVAILABLE)).toHaveLength(1);
+    // With no Wi-Fi camera either, the line still stands beside the looking line.
+    store.set({ nearby: [] });
+    expect(root.querySelector('.devices')!.textContent).toContain(UNAVAILABLE);
+  });
+
+  test('another error leaves the list as it was and scans again later', async () => {
+    setup();
+    await flush();
+    bleAnswer = () => Promise.reject('Bluetooth failed: timed out after 5000 ms waiting to start scanning');
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(scans()).toHaveLength(2);
+    expect(rows()).toHaveLength(2);
+    expect(root.querySelector('.devices')!.textContent).not.toContain(UNAVAILABLE);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(scans()).toHaveLength(3);
+  });
+
+  test('with Bluetooth off in App settings nothing is scanned', async () => {
+    setup({ bluetooth: false });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(scans()).toHaveLength(0);
+    expect(rows()).toHaveLength(1);
+    // Turned on while the screen is up, scanning starts.
+    store.set({ settings: { ...store.get().settings!, bluetooth: true } });
+    await flush();
+    expect(scans()).toHaveLength(1);
+    expect(rows()).toHaveLength(2);
+    store.set({ settings: { ...store.get().settings!, bluetooth: false } });
+    expect(rows()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(scans()).toHaveLength(1);
+  });
+
+  test("a failed read shows under its camera once, until the list changes", async () => {
+    setup();
+    await flush();
+    const failure =
+      'Rimix could not read the Wi-Fi details over Bluetooth (timed out). Scan the QR code or type the name and password instead.';
+    store.set({ bleFailed: { [zv.address]: failure } });
+    const lines = () => [...root.querySelectorAll('.devices p')].filter((p) => p.textContent === failure);
+    expect(lines()).toHaveLength(1);
+    // The same camera heard again: the line stays, once.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(lines()).toHaveLength(1);
+    // Another camera appears: the list changed, so the failure is forgotten.
+    bleAnswer = () => Promise.resolve([zv, unnamed]);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(lines()).toHaveLength(0);
+    expect(store.get().bleFailed).toEqual({});
   });
 });

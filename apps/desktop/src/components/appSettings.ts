@@ -1,11 +1,12 @@
 // The App settings button and popover: Appearance and Layout as segmented
-// controls, Connection, Receive from camera, then Save to, then the
+// controls, Connection (with the Bluetooth switch), Receive from camera, then Save to, then the
 // shortcut hint. These settings are about Rimix itself; the camera's
 // settings live in their own popover.
 
 import type { Actions } from '../actions';
 import { button, el, icon } from '../dom';
 import {
+  bleRetry,
   openLogs,
   type AppSettings,
   type Appearance,
@@ -17,7 +18,7 @@ import {
 import { listWebcams } from '../qr/scanner';
 import { defaultSettings, watch, type AppStore } from '../state';
 import { applyAppearance, applyLayout } from '../theme';
-import { saveToSection, sect } from './sidePanels';
+import { saveToSection, sect, switchRow } from './sidePanels';
 
 const KEYBOARD_GLYPH =
   '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><rect x="1" y="2.5" width="10" height="7" rx="1.5"/><path d="M3.5 7.5h5" stroke-linecap="round"/></svg>';
@@ -230,6 +231,24 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       }),
     );
   };
+  // Bluetooth: turning it on tries the radio again first, so a scan right
+  // after does not get the unavailable answer remembered from before.
+  const bluetoothGroup = el('div', 'group');
+  bluetoothGroup.setAttribute('role', 'list');
+  const setBluetooth = (on: boolean) => {
+    if (!on) {
+      change({ bluetooth: false });
+      return;
+    }
+    void bleRetry()
+      .catch(() => {})
+      .then(() => change({ bluetooth: true }));
+  };
+  const bluetoothOn = () => store.get().settings?.bluetooth ?? true;
+  const bluetoothRow = switchRow('Bluetooth', bluetoothOn(), () => setBluetooth(!bluetoothOn()));
+  bluetoothGroup.append(bluetoothRow);
+  const bluetoothSwitch = bluetoothRow.querySelector('[role="switch"]')!;
+
   const logsGroup = el('div', 'group');
   logsGroup.setAttribute('role', 'list');
   const logsRow = el('div', 'r');
@@ -247,7 +266,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   hint.innerHTML = KEYBOARD_GLYPH;
   hint.append(shortcutHint());
   pop.append(el('div', 'ttl', 'App settings'), sect('Appearance', theme.el), sect('Layout', layout.el),
-    sect('Connection', wifi.el, webcamGroup, logsGroup, el('div', 'sub', 'Remembered cameras'), remembered),
+    sect('Connection', wifi.el, bluetoothGroup, webcamGroup, logsGroup, el('div', 'sub', 'Remembered cameras'), remembered),
     receive.el, saveTo.el, hint);
   pop.hidden = arrow.hidden = true;
 
@@ -284,6 +303,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     theme.sync(s?.appearance);
     layout.sync(s?.layout);
     wifi.sync(s?.wifiJoin);
+    bluetoothSwitch.setAttribute('aria-checked', String(s?.bluetooth ?? true));
   });
   const offRecent = watch(store, (s) => s.settings?.recentCameras, (list) => fillRemembered(list ?? []));
 

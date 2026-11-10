@@ -18,6 +18,7 @@ const settings: AppSettings = {
   wifiJoin: 'Automatic',
   webcamId: null,
   presets: [],
+  bluetooth: true,
 };
 
 describe('Save to', () => {

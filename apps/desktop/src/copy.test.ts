@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'vitest';
 import {
   askToJoinText,
+  BLE_UNAVAILABLE,
+  bleCameraName,
+  bleFailedText,
+  bleNearbyText,
+  bleReadingText,
+  isBleUnavailable,
+  PAIRING_OFF,
+  PAIRING_OPEN,
   connectErrorMessage,
   connectingText,
   findingText,
@@ -167,5 +175,41 @@ describe('fingerprint copy', () => {
     expect(fingerprintChangedText('SHA256:old', 'SHA256:new')).toBe(
       "This camera's fingerprint changed. Stored: SHA256:old. Camera now: SHA256:new. If you reset the camera, forget it in App settings and connect again; otherwise do not connect.",
     );
+  });
+});
+
+describe('Bluetooth', () => {
+  const zv = {
+    address: 'fake-zv-e10',
+    advert: { name: 'ZV-E10', model_code: 'E1', pairing_open: true, address: 'fake-zv-e10' },
+  };
+
+  test('a camera is called by its advertised name, else by its model code', () => {
+    expect(bleCameraName(zv)).toBe('ZV-E10');
+    expect(bleNearbyText(zv)).toBe('ZV-E10 nearby');
+    const unnamed = { ...zv, advert: { ...zv.advert, name: null } };
+    expect(bleCameraName(unnamed)).toBe('Sony camera E1');
+    expect(bleNearbyText(unnamed)).toBe('Sony camera E1 nearby');
+  });
+
+  test('the badges and progress line', () => {
+    expect(PAIRING_OPEN).toBe('pairing open');
+    expect(PAIRING_OFF).toBe('pairing off');
+    expect(bleReadingText('ZV-E10')).toBe('Reading Wi-Fi details from ZV-E10 over Bluetooth');
+  });
+
+  test('a failed handoff points at the other ways in', () => {
+    expect(bleFailedText('Bluetooth failed: timed out after 5000 ms waiting to connect')).toBe(
+      'Rimix could not read the Wi-Fi details over Bluetooth (timed out after 5000 ms waiting to connect). Scan the QR code or type the name and password instead.',
+    );
+    expect(bleFailedText('no such Bluetooth device or characteristic')).toBe(
+      'Rimix could not read the Wi-Fi details over Bluetooth (no such Bluetooth device or characteristic). Scan the QR code or type the name and password instead.',
+    );
+  });
+
+  test('unavailable Bluetooth is told by its error and says so quietly', () => {
+    expect(isBleUnavailable('Bluetooth unavailable: Bluetooth is turned off')).toBe(true);
+    expect(isBleUnavailable('Bluetooth failed: timed out')).toBe(false);
+    expect(BLE_UNAVAILABLE).toBe('Bluetooth is off or not allowed; nearby cameras come from Wi-Fi only.');
   });
 });

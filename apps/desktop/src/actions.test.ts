@@ -25,6 +25,7 @@ vi.mock('./ipc', () => ({
   cardList: vi.fn(),
   cardDownload: vi.fn(),
   cardMode: vi.fn(),
+  bleHandoff: vi.fn(),
 }));
 
 const camera = cameraState as unknown as CameraState;
@@ -64,6 +65,7 @@ beforeEach(() => {
   vi.mocked(ipc.joinNetwork).mockReset().mockResolvedValue();
   vi.mocked(ipc.waitForCamera).mockReset().mockResolvedValue(found);
   vi.mocked(ipc.disconnect).mockReset().mockResolvedValue();
+  vi.mocked(ipc.bleHandoff).mockReset().mockResolvedValue({ ssid: SSID, password: '12345678' });
 });
 
 describe('connect from the main screen', () => {
@@ -740,5 +742,52 @@ describe('card', () => {
     await createActions(store).disconnect();
     expect(store.get().cardOpen).toBe(false);
     expect(store.get().card).toEqual(emptyCard());
+  });
+});
+
+describe('join via Bluetooth', () => {
+  const zv: ipc.Found = {
+    address: 'fake-zv-e10',
+    advert: { name: 'ZV-E10', model_code: 'E1', pairing_open: true, address: 'fake-zv-e10' },
+  };
+
+  test('reads the Wi-Fi details over Bluetooth, then joins and connects', async () => {
+    const store = storeWith('Automatic');
+    const texts: string[] = [];
+    store.subscribe((s) => s.connecting && texts.push(s.connecting.text));
+    expect(await createActions(store).joinViaBluetooth(zv)).toBe(true);
+    expect(texts[0]).toBe('Reading Wi-Fi details from ZV-E10 over Bluetooth');
+    expect(ipc.bleHandoff).toHaveBeenCalledWith('fake-zv-e10');
+    expect(ipc.joinNetwork).toHaveBeenCalledWith(SSID, '12345678');
+    expect(ipc.connect).toHaveBeenCalledWith('192.168.122.1:15740', SSID, null);
+    expect(store.get().screen).toBe('main');
+  });
+
+  test('a failed read is remembered for that camera and nothing is joined', async () => {
+    vi.mocked(ipc.bleHandoff).mockRejectedValue('Bluetooth failed: timed out after 5000 ms waiting to connect');
+    const store = storeWith('Automatic');
+    expect(await createActions(store).joinViaBluetooth(zv)).toBe(false);
+    expect(ipc.joinNetwork).not.toHaveBeenCalled();
+    expect(store.get().connecting).toBeNull();
+    expect(store.get().bleFailed).toEqual({
+      'fake-zv-e10':
+        'Rimix could not read the Wi-Fi details over Bluetooth (timed out after 5000 ms waiting to connect). Scan the QR code or type the name and password instead.',
+    });
+  });
+
+  test('unavailable Bluetooth is said once and stops the Bluetooth list', async () => {
+    vi.mocked(ipc.bleHandoff).mockRejectedValue('Bluetooth unavailable: Bluetooth is turned off');
+    const store = storeWith('Automatic', {}, { bleNearby: [zv] });
+    expect(await createActions(store).joinViaBluetooth(zv)).toBe(false);
+    expect(store.get().bleUnavailable).toBe(true);
+    expect(store.get().bleNearby).toEqual([]);
+    expect(store.get().bleFailed).toEqual({});
+    expect(store.get().connecting).toBeNull();
+  });
+
+  test('does nothing while another connect runs', async () => {
+    const store = storeWith('Automatic', {}, { connecting: { phase: 'joining', text: 'Joining X' } });
+    expect(await createActions(store).joinViaBluetooth(zv)).toBe(false);
+    expect(ipc.bleHandoff).not.toHaveBeenCalled();
   });
 });

@@ -47,6 +47,7 @@ describe('startApp', () => {
         wifiJoin: 'Automatic',
         webcamId: null,
         presets: [],
+        bluetooth: true,
       },
     });
 
