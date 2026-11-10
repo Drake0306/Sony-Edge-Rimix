@@ -195,6 +195,7 @@ fn exit_code(err: &anyhow::Error) -> i32 {
         return match cli {
             CliError::Usage(_) => 2,
             CliError::Io(_) => 5,
+            CliError::Refused(_) => 4,
         };
     }
     match err.downcast_ref::<Error>() {
@@ -344,5 +345,13 @@ mod tests {
         assert_eq!(code(WifiError::Failed("X did not come up".into())), 4);
         assert_eq!(code(WifiError::NoWifi), 4);
         assert_eq!(code(WifiError::Unsupported), 4);
+    }
+
+    #[test]
+    fn a_refusal_while_watching_exits_4() {
+        let err = anyhow::Error::new(CliError::Refused(
+            "the camera refused the username or password".into(),
+        ));
+        assert_eq!(exit_code(&err), 4);
     }
 }

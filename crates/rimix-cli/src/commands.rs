@@ -32,12 +32,15 @@ pub enum CliError {
     Usage(String),
     /// A local file or a capture failed (exit 5).
     Io(String),
+    /// The camera stopped accepting this computer while watching: its SSH
+    /// login was refused or its fingerprint changed (exit 4).
+    Refused(String),
 }
 
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CliError::Usage(m) | CliError::Io(m) => f.write_str(m),
+            CliError::Usage(m) | CliError::Io(m) | CliError::Refused(m) => f.write_str(m),
         }
     }
 }
@@ -330,6 +333,13 @@ pub async fn liveview(target: &Target, frames: u32, out: &Path) -> Result<()> {
     result
 }
 
+/// Whether a `Disconnected` reason means the camera refused this computer
+/// for good (a refused SSH login or a changed fingerprint), so reconnecting
+/// has stopped.
+pub fn refusal(reason: &str) -> bool {
+    reason.contains("refused the username or password") || reason.contains("fingerprint changed")
+}
+
 pub async fn watch(target: &Target, out: &Path, exit_after: Option<Duration>) -> Result<()> {
     let camera = open(target, None, Some(out), true, true).await?;
     let quit = async {
@@ -346,13 +356,20 @@ pub async fn watch(target: &Target, out: &Path, exit_after: Option<Duration>) ->
     });
     let mut rx = camera.subscribe();
     println!("connected");
+    let mut outcome = Ok(());
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => break,
             _ = &mut quit => break,
             event = rx.recv() => match event {
                 Ok(CameraEvent::Connected) => println!("connected"),
-                Ok(CameraEvent::Disconnected { reason }) => println!("disconnected: {reason}"),
+                Ok(CameraEvent::Disconnected { reason }) => {
+                    println!("disconnected: {reason}");
+                    if refusal(&reason) {
+                        outcome = Err(anyhow::Error::new(CliError::Refused(reason)));
+                        break;
+                    }
+                }
                 Ok(CameraEvent::Reconnecting { attempt }) => println!("reconnecting #{attempt}"),
                 Ok(CameraEvent::CaptureStarted { filename }) => println!("receiving {filename}"),
                 Ok(CameraEvent::CaptureSaved(saved)) => println!("saved {}", saved.path.display()),
@@ -366,7 +383,7 @@ pub async fn watch(target: &Target, out: &Path, exit_after: Option<Duration>) ->
         }
     }
     camera.disconnect().await;
-    Ok(())
+    outcome
 }
 
 /// The Wi-Fi under `RIMIX_WIFI=fake` or the real one.
@@ -374,11 +391,12 @@ fn wifi() -> Wifi {
     Wifi::from_env(Arc::new(SystemRunner))
 }
 
-/// How a network name reads: macOS often hides it even while joined.
+/// How a network name reads: the system (macOS especially) often hides it
+/// even while joined.
 fn network_text(name: Option<&str>, address: Option<&str>) -> String {
     match (name, address) {
         (Some(name), _) => name.to_string(),
-        (None, Some(_)) => "hidden by macOS".to_string(),
+        (None, Some(_)) => "hidden by the system".to_string(),
         (None, None) => "none".to_string(),
     }
 }
@@ -443,9 +461,22 @@ mod wifi_tests {
     }
 
     #[test]
+    fn a_refused_login_or_changed_fingerprint_ends_watch() {
+        assert!(refusal("the camera refused the username or password"));
+        assert!(refusal(
+            "the camera's fingerprint changed (expected SHA256:a, got SHA256:b)"
+        ));
+        assert!(!refusal("connection reset by peer"));
+        assert!(!refusal("Connection refused (os error 61)"));
+    }
+
+    #[test]
     fn a_hidden_name_with_an_address_says_so() {
         assert_eq!(network_text(Some("Home"), None), "Home");
-        assert_eq!(network_text(None, Some("192.168.1.2")), "hidden by macOS");
+        assert_eq!(
+            network_text(None, Some("192.168.1.2")),
+            "hidden by the system"
+        );
         assert_eq!(network_text(None, None), "none");
     }
 }

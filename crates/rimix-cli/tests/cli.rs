@@ -359,6 +359,67 @@ async fn watch_reconnects_after_a_drop() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn watch_exits_4_when_the_camera_refuses_the_login_on_reconnect() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Command as Std, Stdio};
+
+    let env = ssh_env().await;
+    let out_dir = env.out();
+    let fp = env.sim.fingerprint_sha256.clone().unwrap();
+    let ssh_port = env.sim.ssh_addr.unwrap().port().to_string();
+    let mut child = Std::new(assert_cmd::cargo::cargo_bin("rimix"))
+        .arg("--guid-file")
+        .arg(env.guid())
+        .args(["watch", &env.sim.addr.ip().to_string()])
+        .args(["--ssh-user", "cam", "--ssh-password-stdin", "--ssh-port"])
+        .arg(&ssh_port)
+        .args(["--fingerprint", &fp, "--exit-after", "25", "--out"])
+        .arg(&out_dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"12345678\n")
+        .unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let first = tokio::task::spawn_blocking(move || {
+        let line = lines.next().unwrap().unwrap();
+        (line, lines)
+    })
+    .await
+    .unwrap();
+    assert_eq!(first.0, "connected");
+    let mut lines = first.1;
+    env.sim
+        .events
+        .send(SimCommand::SetSshPassword("changed".into()))
+        .await
+        .unwrap();
+    env.sim
+        .events
+        .send(SimCommand::DropConnection)
+        .await
+        .unwrap();
+    let (status, rest) = tokio::task::spawn_blocking(move || {
+        let rest: Vec<String> = lines.by_ref().map_while(Result::ok).collect();
+        (child.wait().unwrap(), rest)
+    })
+    .await
+    .unwrap();
+    assert_eq!(status.code(), Some(4), "{rest:?}");
+    assert!(
+        rest.iter()
+            .any(|l| l.contains("refused the username or password")),
+        "{rest:?}"
+    );
+    env.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn step_moves_shutter_to_the_neighbouring_value() {
     let env = Env::new(SimConfig::default()).await;
     let mut cmd = rimix(&env.guid());

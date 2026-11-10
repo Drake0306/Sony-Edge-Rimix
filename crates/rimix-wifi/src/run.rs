@@ -37,7 +37,8 @@ pub(crate) fn run_kv_logged(
     )
 }
 
-/// Runs a command and logs it; a `long_output` is logged at `debug` only.
+/// Runs a command and logs it; a `long_output` is logged at `debug` only,
+/// its command line at `info` as usual.
 pub(crate) fn run_with_log(
     runner: &dyn Runner,
     args: &[&str],
@@ -58,6 +59,9 @@ fn log_result(
         Ok(out) => {
             let text = format!("{}{}", out.stdout, out.stderr);
             if long_output {
+                // The command still shows at `info`; only its long answer
+                // waits for `debug`.
+                tracing::info!(cmd = %cmd, "{program}");
                 tracing::debug!(cmd = %cmd, output = %text.trim(), "{program}");
             } else {
                 tracing::info!(cmd = %cmd, output = %text.trim(), "{program}");

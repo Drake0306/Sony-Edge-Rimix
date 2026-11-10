@@ -83,7 +83,7 @@ If the camera's Wi-Fi drops while you work, Rimix tries to rejoin it by itself f
 ## Features
 
 - Live view, shooting, recording and the main exposure settings from the desktop.
-- Wi-Fi joining by QR code, by typed name and password, or from the nearby list. If the network is not visible yet, Rimix says "This Mac can't see <name> yet" and tells you to open Wi-Fi Direct Info on the camera and try again.
+- Wi-Fi joining by QR code, by typed name and password, or from the nearby list. If the network is not visible yet, Rimix says "This computer can't see <name> yet" and tells you to open Wi-Fi Direct Info on the camera and try again.
 - Reconnecting: from the second attempt Rimix rejoins the camera's Wi-Fi by itself. From attempt 5 the top bar says "Reconnecting… if the camera's Wi-Fi dropped, rejoin it from the Wi-Fi menu".
 - Per-model settings: Rimix handles older and newer camera generations differently. Hover the firmware in the top bar to see the generation.
 - Interval timer: in the Scopes and timer panel, open the Interval timer row. Set Every (seconds, at least 2) and Shots (leave empty for no limit), then press Start. The dock shows, for example, "Interval 3 of 20, next in 4 s". Shots skipped because the camera was busy are counted as missed. A dropped link does not stop the run; Disconnect and Stop do.
@@ -96,15 +96,15 @@ Rimix writes a log to `~/Library/Application Support/Rimix/logs/`, one file per 
 
 ```
 rimix wifi status
-rimix wifi join "DIRECT-xxxx"
-printf '%s\n' 'the password' | rimix wifi join "DIRECT-xxxx" --password-stdin
+rimix -v wifi join "DIRECT-xxxx:ZV-E10" 2>&1
+printf '%s\n' 'the password' | rimix -v wifi join "DIRECT-xxxx:ZV-E10" --password-stdin 2>&1
 ```
 
-`status` prints the Wi-Fi device, the network it is on and its address. `join` exits with 3 when the network is not visible and 4 for any other failure.
+`status` prints the Wi-Fi device, the network it is on (or "hidden by the system" when it has an address but the system will not say the name) and its address. `join` prints how many times it tried, the network and the address, or the error; it exits with 3 when the network is not visible and 4 for any other failure. `-v` prints every Wi-Fi command and its answer, with the password hidden; `2>&1` puts those lines in the same output so you can copy all of it.
 
 ## Access Authentication
 
-Bodies from 2022 on (a7 IV, a7R V, a6700, a7C II, ZV-E1, FX3, FX30) can require a username and password before they accept a connection. The ZV-E10 does not. For these cameras, open "This camera uses Access Authentication" on the connect screen and enter the Username and Password shown on the camera. The first time, Rimix shows "This camera's fingerprint is <sha256>. Check it against Access Authen. Info on the camera." Compare it with the camera's screen and press "It matches, connect". A lock in the top bar shows the connection is authenticated.
+Bodies from 2022 on (a7 IV, a7R V, a7CR, a7C II, a7 V, a6700, a9 III, a1 II, ZV-E1, ZV-E10 II, FX3, FX30; the a7 IV and FX3 from firmware 2.00) can require a username and password before they accept a connection. The ZV-E10 does not. For these cameras, open "This camera uses Access Authentication" on the connect screen and enter the Username and Password shown on the camera. The first time, Rimix shows "This camera's fingerprint is <sha256> (MD5 <md5>). Check it against Access Authen. Info on the camera; it may show either form." Compare it with the camera's screen and press "It matches, connect". If the fingerprint later differs from the stored one, Rimix shows both and does not connect: if you reset the camera, forget it in App settings and connect again. A lock in the top bar shows the connection is authenticated.
 
 Rimix stores the username and the fingerprint with the remembered camera, never the password. If the camera refuses the login, Rimix stops reconnecting, because a camera may refuse all connections after repeated bad attempts. Fix the details and connect again.
 
@@ -114,7 +114,7 @@ On the command line:
 printf '%s\n' 'the password' | rimix connect 192.168.122.1 --ssh-user USER --ssh-password-stdin --fingerprint FINGERPRINT
 ```
 
-Without `--fingerprint`, the tool prints the fingerprint and asks you to confirm it on the camera and pass it.
+Without `--fingerprint`, the tool prints the fingerprint and asks you to confirm it on the camera and pass it. `rimix watch` exits with 4 if the camera later refuses the login or its fingerprint changes.
 
 ## Release a version
 

@@ -51,23 +51,25 @@ This tells us whether the QR code on the camera leads to the same network the co
 
 ### If Rimix says it can't see the network
 
-Rimix may say "This Mac can't see DIRECT-xxxx yet". Then:
+Rimix may say "This computer can't see DIRECT-xxxx yet". Then:
 
 1. Check the camera is on its Wi-Fi Direct Info screen (Menu, Network, PC Remote Function, Wi-Fi Direct Info) and stay on it.
 2. Wait ten seconds and try again.
-3. If it still fails, run this in Terminal (it asks for nothing):
+3. If it still fails, run this in Terminal (it asks for nothing), with your camera's network name:
 
    ```
-   rimix wifi join "DIRECT-xxxx"
+   rimix -v wifi join "DIRECT-xxxx:ZV-E10" 2>&1
    ```
 
    Only if the Mac has never joined that network, give the password too:
 
    ```
-   printf '%s\n' 'the password' | rimix wifi join "DIRECT-xxxx" --password-stdin
+   printf '%s\n' 'the password' | rimix -v wifi join "DIRECT-xxxx:ZV-E10" --password-stdin 2>&1
    ```
 
-Send back the output of that command (exit code 3 means the network was not visible, 4 means some other failure) and the newest file in `~/Library/Application Support/Rimix/logs`.
+   `-v` prints every Wi-Fi command Rimix runs and its answer, with the password hidden. At the end it prints how many times it tried, the network it ended up on and the address, or the error.
+
+Send back all the output of that command (exit code 3 means the network was not visible, 4 means some other failure) and the newest file in `~/Library/Application Support/Rimix/logs`.
 
 **What to send back:** the text the phone decoded (blank the password if you prefer, but say whether it matched the Wi-Fi Direct Info screen), what Rimix's status line said, whether the Mac joined the DIRECT-xxxx network by itself, and the output of `nc -vz 192.168.122.1 15740`. Say plainly: "the port answered" or "the port did not answer".
 
@@ -139,7 +141,7 @@ This saves 30 live view frames as JPEG files.
 
 ## 8. If your camera uses Access Authentication
 
-Your ZV-E10 does not, so skip this step. It is for newer bodies (a7 IV, a7R V, a6700, a7C II, ZV-E1, FX3, FX30). The camera shows its username, password and fingerprint under "Access Authen. Info". In Rimix, open "This camera uses Access Authentication" on the connect screen and type the Username and Password. Rimix then shows the camera's fingerprint; compare it with the camera's screen and press "It matches, connect". A lock appears in the top bar once connected.
+Your ZV-E10 does not, so skip this step. It is for newer bodies (a7 IV, a7R V, a7CR, a7C II, a7 V, a6700, a9 III, a1 II, ZV-E1, ZV-E10 II, FX3, FX30; the a7 IV and FX3 from firmware 2.00). The camera shows its username, password and fingerprint under "Access Authen. Info". In Rimix, open "This camera uses Access Authentication" on the connect screen and type the Username and Password. Rimix then shows the camera's fingerprint in two forms (SHA256 and MD5); the camera may show either, so compare the one it shows and press "It matches, connect". If Rimix says the fingerprint changed, it shows the stored one and the camera's current one and will not connect: if you reset the camera, forget it in App settings and connect again. A lock appears in the top bar once connected.
 
 **What to send back:** whether the fingerprint on screen matched, whether the lock appeared, and the newest file in `~/Library/Application Support/Rimix/logs`. Never send the password.
 
