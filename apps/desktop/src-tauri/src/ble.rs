@@ -5,7 +5,10 @@
 //! scripted ZV-E10, `off` none). When Bluetooth turns out to be unavailable
 //! (no adapter, turned off, permission refused) that is remembered: later
 //! commands fail at once with the same text, without asking the radio
-//! again, until [`BleService::retry`]. Nothing read from the camera (the
+//! again, until [`BleService::retry`]. Any other failure (a timeout, the
+//! link dropping) is not remembered: the next command asks the radio again,
+//! as when the system's permission prompt held the first one up. Nothing
+//! read from the camera (the
 //! password above all) is logged.
 
 use std::sync::{Mutex as StdMutex, MutexGuard};
@@ -103,8 +106,9 @@ impl BleService {
         Ok(slot)
     }
 
-    /// The text for `e`. An `Unavailable` is remembered, and the adapter
-    /// dropped so [`BleService::retry`] starts afresh.
+    /// The text for `e`. Only an `Unavailable` is remembered, and the
+    /// adapter dropped so [`BleService::retry`] starts afresh; `Io` and
+    /// `NotFound` leave the next command free to try again.
     fn settle(&self, slot: &mut Slot, e: BleError) -> String {
         if let BleError::Unavailable(why) = &e {
             tracing::warn!(error = %e, "Bluetooth is unavailable");
@@ -112,6 +116,15 @@ impl BleService {
             *slot = None;
         }
         e.to_string()
+    }
+
+    /// A service using `adapter` instead of making one from the environment.
+    #[cfg(test)]
+    fn with_adapter(adapter: Box<dyn BleAdapter>) -> BleService {
+        BleService {
+            adapter: tokio::sync::Mutex::new(Some(adapter)),
+            unavailable: StdMutex::new(None),
+        }
     }
 
     /// Runs `f` on the adapter.
@@ -223,6 +236,51 @@ pub(crate) mod tests {
         assert_eq!(ble.scan(3).await.unwrap_err(), OFF);
         ble.retry().await;
         assert_eq!(ble.scan(3).await.unwrap().len(), 1);
+    }
+
+    /// An adapter whose first scan fails with `Io`; later ones hear nothing.
+    struct FlakyOnce(std::sync::atomic::AtomicBool);
+
+    impl BleAdapter for FlakyOnce {
+        fn scan(
+            &self,
+            _: Duration,
+        ) -> rimix_ble::BoxFuture<'_, Result<Vec<rimix_ble::Found>, BleError>> {
+            let failed = self.0.swap(true, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async move {
+                if failed {
+                    Ok(Vec::new())
+                } else {
+                    Err(BleError::Io("Bluetooth did not answer in time".into()))
+                }
+            })
+        }
+        fn read<'a>(
+            &'a self,
+            _: &'a str,
+            _: rimix_ble::Uuid,
+        ) -> rimix_ble::BoxFuture<'a, Result<Vec<u8>, BleError>> {
+            Box::pin(async { Err(BleError::NotFound) })
+        }
+        fn write<'a>(
+            &'a self,
+            _: &'a str,
+            _: rimix_ble::Uuid,
+            _: &'a [u8],
+        ) -> rimix_ble::BoxFuture<'a, Result<(), BleError>> {
+            Box::pin(async { Err(BleError::NotFound) })
+        }
+    }
+
+    #[tokio::test]
+    async fn an_io_failure_is_not_remembered() {
+        let ble = BleService::with_adapter(Box::new(FlakyOnce(Default::default())));
+        assert_eq!(
+            ble.scan(1).await.unwrap_err(),
+            "Bluetooth failed: Bluetooth did not answer in time"
+        );
+        assert!(lock(&ble.unavailable).is_none());
+        assert_eq!(ble.scan(1).await, Ok(Vec::new()));
     }
 
     #[test]

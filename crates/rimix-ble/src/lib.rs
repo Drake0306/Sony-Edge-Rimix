@@ -11,7 +11,7 @@ use std::pin::Pin;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use uuid::Uuid;
+pub use uuid::Uuid;
 
 mod btleplug_adapter;
 pub mod sony;

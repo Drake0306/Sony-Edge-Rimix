@@ -18,6 +18,9 @@ const LINK_TIMEOUT: Duration = Duration::from_secs(15);
 /// How long any other call on the radio or the camera may take (read,
 /// write, disconnect, scan start and stop, listing what was heard).
 const OP_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long opening the adapter may take. Long, because on first use macOS
+/// holds the call while its Bluetooth permission prompt is up.
+const SETUP_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long to listen when asked for a device the adapter has not seen yet.
 const LOOKUP_SCAN: Duration = Duration::from_secs(4);
 
@@ -107,14 +110,6 @@ impl BtleplugAdapter {
     }
 }
 
-/// A connection-time failure means the radio cannot be used at all.
-fn unavailable(e: btleplug::Error) -> BleError {
-    match map_err(e) {
-        BleError::Io(m) => BleError::Unavailable(m),
-        other => other,
-    }
-}
-
 /// Runs `f` for at most `limit`; past that, `Io("timed out after … waiting
 /// to <what>")`.
 async fn within<T>(
@@ -131,16 +126,25 @@ async fn within<T>(
     }
 }
 
-/// Opening the adapter, bounded: any failure means it cannot be used.
+/// Opening the adapter, bounded by [`SETUP_TIMEOUT`].
 async fn setup<T>(
     f: impl std::future::Future<Output = btleplug::Result<T>>,
 ) -> Result<T, BleError> {
-    match tokio::time::timeout(OP_TIMEOUT, f).await {
-        Ok(r) => r.map_err(unavailable),
-        Err(_) => Err(BleError::Unavailable(format!(
-            "the Bluetooth adapter did not answer within {} s",
-            OP_TIMEOUT.as_secs()
-        ))),
+    setup_answer(tokio::time::timeout(SETUP_TIMEOUT, f).await.ok())
+}
+
+/// What opening the adapter came to; `None` when it did not answer in
+/// time. Only a definite answer (no permission, no adapter) is
+/// `Unavailable`, which callers remember; a timeout or any other failure is
+/// `Io`, so the next try opens the adapter again.
+fn setup_answer<T>(answer: Option<btleplug::Result<T>>) -> Result<T, BleError> {
+    match answer {
+        None => Err(BleError::Io("Bluetooth did not answer in time".to_string())),
+        Some(Ok(v)) => Ok(v),
+        Some(Err(e)) => match map_err(e) {
+            BleError::NotFound => Err(BleError::Io("Bluetooth adapter not found".to_string())),
+            other => Err(other),
+        },
     }
 }
 
@@ -226,6 +230,31 @@ impl BleAdapter for BtleplugAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_definite_setup_answers_are_unavailable() {
+        assert_eq!(
+            setup_answer::<()>(None),
+            Err(BleError::Io("Bluetooth did not answer in time".into()))
+        );
+        assert_eq!(
+            setup_answer::<()>(Some(Err(btleplug::Error::PermissionDenied))),
+            Err(BleError::Unavailable(PERMISSION.into()))
+        );
+        assert_eq!(
+            setup_answer::<()>(Some(Err(btleplug::Error::NoAdapterAvailable))),
+            Err(BleError::Unavailable("no Bluetooth adapter found".into()))
+        );
+        assert!(matches!(
+            setup_answer::<()>(Some(Err(btleplug::Error::RuntimeError("busy".into())))),
+            Err(BleError::Io(_))
+        ));
+        assert!(matches!(
+            setup_answer::<()>(Some(Err(btleplug::Error::TimedOut(Duration::from_secs(1))))),
+            Err(BleError::Io(_))
+        ));
+        assert_eq!(setup_answer(Some(Ok(7))), Ok(7));
+    }
 
     #[tokio::test]
     async fn a_camera_that_never_answers_times_out() {
