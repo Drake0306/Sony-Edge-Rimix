@@ -1,11 +1,13 @@
 //! Sony vendor extensions on top of PTP.
 
+pub mod capture;
 pub mod control;
 pub mod decode;
 pub mod handshake;
 pub mod liveview;
 pub mod property;
 
+pub use capture::{captured_ready, receive_one, Destination, DestinationMode, Received};
 pub use control::{control, focus, set_value, shoot, toggle_record};
 pub use decode::{label_for, Labeled};
 pub use handshake::{sdio_connect, ExtDeviceInfo};

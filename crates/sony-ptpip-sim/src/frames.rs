@@ -1,5 +1,6 @@
-//! The simulator's live view: a moving test picture with focus frame and
-//! level metadata, served on handle 0xFFFFC002.
+//! The simulator's pictures: live view (a moving test picture with focus
+//! frame and level metadata, on handle 0xFFFFC002) and captured stills (on
+//! handle 0xFFFFC001).
 
 use image::codecs::jpeg::JpegEncoder;
 use image::{ExtendedColorType, Rgb, RgbImage};
@@ -51,6 +52,23 @@ pub fn object_info() -> Vec<u8> {
         object_format: FORMAT_JFIF,
         compressed_size: 0,
         filename: "LiveView.jpg".into(),
+        capture_date: String::new(),
+    };
+    encode_object_info(&info)
+}
+
+/// The JPEG of captured shot `shot`, with the shot number drawn as stripes.
+pub fn capture_jpeg(shot: u32) -> Vec<u8> {
+    render(shot)
+}
+
+/// The ObjectInfo answered for captured shot `shot` of `size` bytes.
+pub fn capture_object_info(shot: u32, size: usize) -> Vec<u8> {
+    let info = ObjectInfo {
+        storage_id: 0,
+        object_format: FORMAT_JFIF,
+        compressed_size: u32::try_from(size).unwrap_or(u32::MAX),
+        filename: format!("DSC{shot:05}.JPG"),
         capture_date: String::new(),
     };
     encode_object_info(&info)

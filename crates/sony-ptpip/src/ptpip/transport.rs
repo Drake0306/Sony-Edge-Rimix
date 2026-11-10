@@ -283,8 +283,19 @@ impl PtpIpConnection {
         op: u16,
         params: &[u32],
     ) -> Result<(Vec<u8>, Vec<u32>), Error> {
+        self.command_data_in_with_timeout(op, params, self.timeout)
+            .await
+    }
+
+    /// Like [`command_data_in`](Self::command_data_in), but with `limit` in
+    /// place of the connection's timeout, for large objects such as stills.
+    pub async fn command_data_in_with_timeout(
+        &mut self,
+        op: u16,
+        params: &[u32],
+        limit: Duration,
+    ) -> Result<(Vec<u8>, Vec<u32>), Error> {
         let tid = self.begin()?;
-        let limit = self.timeout;
         let result = with_timeout(limit, async {
             self.send_request(DATA_PHASE_NONE_OR_IN, op, tid, params)
                 .await?;
@@ -392,6 +403,11 @@ impl PtpIpConnection {
             },
         )
         .await
+    }
+
+    /// The limit each command round-trip runs under ([`ConnectOptions::timeout`]).
+    pub fn timeout(&self) -> Duration {
+        self.timeout
     }
 
     /// Subscribes to camera events. Events sent before subscribing are not seen.

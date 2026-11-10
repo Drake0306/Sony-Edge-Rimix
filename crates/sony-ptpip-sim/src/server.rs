@@ -383,6 +383,15 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
             send_data_in(ctx.w, tid, &encode_device_info(&info)).await?;
             RC_OK
         }
+        OP_GET_OBJECT_INFO | OP_GET_OBJECT if params.first() == Some(&HANDLE_CAPTURED_STILL) => {
+            match captured_still(ctx, op, tid).await? {
+                Ok(changed) => {
+                    changed_prop = changed;
+                    RC_OK
+                }
+                Err(rc) => rc,
+            }
+        }
         OP_GET_OBJECT_INFO | OP_GET_OBJECT => {
             let answer = match (op, params.first()) {
                 (OP_GET_OBJECT_INFO, Some(&HANDLE_LIVE_VIEW)) => Ok(frames::object_info()),
@@ -478,6 +487,42 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
         send_prop_changed(ctx.event, prop).await?;
     }
     Ok(())
+}
+
+/// Answers GetObjectInfo or GetObject on the captured still handle. The
+/// inner `Ok` holds the property GetObject changed (0xD215); the inner `Err`
+/// the response code when no picture is waiting.
+async fn captured_still<W: AsyncWriteExt + Unpin>(
+    ctx: &mut Ctx<'_, W>,
+    op: u16,
+    tid: u32,
+) -> Result<Result<Option<u16>, u16>, Error> {
+    let shared = ctx.shared;
+    let waiting = (shared.controls.lock().unwrap())
+        .capture_jpeg(frames::capture_jpeg)
+        .map(|(shot, jpeg)| (shot, jpeg.to_vec()));
+    let Some((shot, jpeg)) = waiting else {
+        return Ok(Err(RC_INVALID_OBJECT_HANDLE));
+    };
+    if op == OP_GET_OBJECT_INFO {
+        send_data_in(ctx.w, tid, &frames::capture_object_info(shot, jpeg.len())).await?;
+        return Ok(Ok(None));
+    }
+    if shared.config.drop_during_capture {
+        let total_len = jpeg.len() as u64;
+        send(ctx.w, &Packet::StartData { tid, total_len }).await?;
+        let head = jpeg[..jpeg.len() / 2].to_vec();
+        send(ctx.w, &Packet::Data { tid, payload: head }).await?;
+        // Ending the session closes both sockets.
+        return Err(Error::Disconnected);
+    }
+    send_data_in(ctx.w, tid, &jpeg).await?;
+    let mut controls = shared.controls.lock().unwrap();
+    let mut props = shared.props.lock().unwrap();
+    Ok(Ok(match controls.pop_capture(&mut props) {
+        Some((_, Outcome::Changed(prop))) => Some(prop),
+        _ => None,
+    }))
 }
 
 /// Runs one 0x9207 control and returns the property it changed, if any.

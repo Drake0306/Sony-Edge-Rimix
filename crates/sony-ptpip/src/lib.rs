@@ -15,3 +15,11 @@ pub mod liveview {
         next_frame, parse_live_view_dataset, start, FocusFrame, LiveViewFrame,
     };
 }
+
+/// Receiving new shots: `capture::captured_ready` to see how many wait, then
+/// `capture::receive_one` for each.
+pub mod capture {
+    pub use crate::sony::capture::{
+        captured_ready, receive_one, Destination, DestinationMode, Received,
+    };
+}

@@ -36,6 +36,9 @@ pub struct SimConfig {
     /// Answer every Nth GetObject on the live view handle with AccessDenied,
     /// as a camera does while it has no new frame.
     pub live_view_busy_every: Option<u32>,
+    /// Cut GetObject on the captured still handle short: send StartData and
+    /// the first half of the picture, then close both sockets.
+    pub drop_during_capture: bool,
 }
 
 impl Default for SimConfig {
@@ -48,6 +51,7 @@ impl Default for SimConfig {
             delay_op: None,
             write_mode_step: false,
             live_view_busy_every: None,
+            drop_during_capture: false,
         }
     }
 }

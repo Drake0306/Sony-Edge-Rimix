@@ -16,8 +16,13 @@ const RELEASE: u16 = 1;
 pub struct Controls {
     full_pressed: bool,
     rec_pressed: bool,
-    /// Pictures taken but not yet fetched; Task 9's GetObject pops these.
+    /// Pictures taken but not yet fetched; GetObject on 0xFFFFC001 pops these.
     capture_queue: u32,
+    /// Pictures fetched so far; the next one is shot number `fetched + 1`.
+    fetched: u32,
+    /// JPEG of the oldest waiting picture, made at GetObjectInfo time so the
+    /// size it reports matches what GetObject sends.
+    pending_jpeg: Option<Vec<u8>>,
     /// Timer that reports focus found while the half press is held.
     focus_timer: Option<AbortHandle>,
 }
@@ -94,6 +99,33 @@ impl Controls {
             }
             _ => Outcome::Unchanged,
         }
+    }
+
+    /// The shot number of the oldest waiting picture, if any.
+    pub fn next_capture(&self) -> Option<u32> {
+        (self.capture_queue > 0).then(|| self.fetched.wrapping_add(1))
+    }
+
+    /// The shot number and JPEG of the oldest waiting picture; the JPEG is
+    /// made once and kept until the picture is popped.
+    pub fn capture_jpeg(&mut self, render: impl FnOnce(u32) -> Vec<u8>) -> Option<(u32, &[u8])> {
+        let shot = self.next_capture()?;
+        Some((shot, self.pending_jpeg.get_or_insert_with(|| render(shot))))
+    }
+
+    /// Removes the oldest waiting picture and returns its shot number.
+    /// 0xD215 becomes `0x8000 | remaining`, or 0 once the queue is empty.
+    pub fn pop_capture(&mut self, props: &mut PropStore) -> Option<(u32, Outcome)> {
+        let shot = self.next_capture()?;
+        self.capture_queue -= 1;
+        self.fetched = shot;
+        self.pending_jpeg = None;
+        let ready = match self.capture_queue {
+            0 => 0,
+            n => 0x8000 | n.min(0x7FFF) as u16,
+        };
+        let outcome = changed(props, PROP_CAPTURED_READY, Some(PtpValue::U16(ready)));
+        Some((shot, outcome))
     }
 
     /// Remembers the running focus timer so a release can cancel it.
