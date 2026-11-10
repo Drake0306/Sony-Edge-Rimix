@@ -55,7 +55,9 @@ fn backoff(attempt: u32) -> Duration {
 }
 
 /// Runs the loops while connected and reconnects when the link drops, until
-/// [`super::Camera::disconnect`] or drop aborts it.
+/// [`super::Camera::disconnect`] or drop aborts it. A reconnect refused by
+/// the camera's SSH server (bad login or changed host key) ends it, with a
+/// Disconnected event carrying that error's text.
 pub(super) async fn supervise(inner: Arc<Inner>, mut events: broadcast::Receiver<PtpEvent>) {
     loop {
         let reason = run_session(&inner, events).await;
@@ -86,6 +88,17 @@ pub(super) async fn supervise(inner: Arc<Inner>, mut events: broadcast::Receiver
                     inner.emit(CameraEvent::Connected);
                     inner.emit_state();
                     break ready;
+                }
+                // Retrying a refused login could trip the camera's lockout,
+                // and a changed host key needs the user: stop reconnecting.
+                Err(e @ (Error::SshAuth | Error::HostKeyMismatch { .. })) => {
+                    tracing::warn!(attempt, error = %e, "reconnect refused by the camera's SSH server; giving up");
+                    lock(&inner.snapshot).connected = false;
+                    inner.emit(CameraEvent::Disconnected {
+                        reason: e.to_string(),
+                    });
+                    inner.emit_state();
+                    return;
                 }
                 Err(e) => tracing::warn!(attempt, error = %e, "reconnect failed"),
             }

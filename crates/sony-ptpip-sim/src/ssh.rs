@@ -42,7 +42,7 @@ pub(crate) struct SshFront {
 /// login attempt is logged to `log` as `ssh auth <method> <user> accepted`
 /// or `... refused` (never the password).
 pub(crate) async fn start(
-    account: SshSimConfig,
+    account: Arc<Mutex<SshSimConfig>>,
     log: Arc<Mutex<Vec<String>>>,
     bind_ip: IpAddr,
     ptp: SocketAddr,
@@ -75,7 +75,7 @@ pub(crate) async fn start(
         }
         _ => ptp,
     };
-    tasks.spawn(serve(listener, config, Arc::new(account), ptp, log));
+    tasks.spawn(serve(listener, config, account, ptp, log));
     SshFront {
         addr,
         fingerprint_sha256,
@@ -97,7 +97,7 @@ fn md5_fingerprint(public_key_blob: &[u8]) -> String {
 async fn serve(
     listener: TcpListener,
     config: Arc<server::Config>,
-    account: Arc<SshSimConfig>,
+    account: Arc<Mutex<SshSimConfig>>,
     ptp: SocketAddr,
     log: Arc<Mutex<Vec<String>>>,
 ) {
@@ -145,7 +145,7 @@ async fn serve_connection(mut tcp: TcpStream, config: Arc<server::Config>, handl
 
 /// One connection's view of the camera's SSH server.
 struct Camera {
-    account: Arc<SshSimConfig>,
+    account: Arc<Mutex<SshSimConfig>>,
     ptp: SocketAddr,
     log: Arc<Mutex<Vec<String>>>,
     failures: u32,
@@ -162,7 +162,11 @@ impl Camera {
     }
 
     fn check(&mut self, method: &str, user: &str, password: &[u8]) -> Result<Auth, russh::Error> {
-        if user == self.account.user && password == self.account.password.as_bytes() {
+        let ok = {
+            let account = self.account.lock().unwrap_or_else(|e| e.into_inner());
+            user == account.user && password == account.password.as_bytes()
+        };
+        if ok {
             self.note(method, user, "accepted");
             return Ok(Auth::Accept);
         }

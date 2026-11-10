@@ -106,6 +106,9 @@ pub enum SimCommand {
     /// Send a PTP/IP ProbeRequest on the event socket. A ProbeResponse that
     /// comes back is logged as `event ProbeResponse`.
     Probe,
+    /// Change the password the SSH front accepts, as resetting the camera's
+    /// Access Authentication does. Ignored without an SSH front.
+    SetSshPassword(String),
     /// Stop the listener and every session.
     Shutdown,
 }

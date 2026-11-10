@@ -105,12 +105,17 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
         }
         None => (None, None),
     };
-    let ssh = match shared.config.ssh.clone() {
+    let ssh_account = shared
+        .config
+        .ssh
+        .clone()
+        .map(|account| Arc::new(Mutex::new(account)));
+    let ssh = match ssh_account.clone() {
         Some(account) => Some(ssh::start(account, log.clone(), addr.ip(), addr, &mut tasks).await),
         None => None,
     };
     let (tx, rx) = mpsc::channel(16);
-    tokio::spawn(run(listener, shared, rx, tasks));
+    tokio::spawn(run(listener, shared, rx, tasks, ssh_account));
     SimHandle {
         addr,
         events: tx,
@@ -128,6 +133,7 @@ async fn run(
     shared: Arc<Shared>,
     mut control: mpsc::Receiver<SimCommand>,
     mut tasks: JoinSet<()>,
+    ssh_account: Option<Arc<Mutex<ssh::SshSimConfig>>>,
 ) {
     loop {
         tokio::select! {
@@ -139,6 +145,10 @@ async fn run(
             },
             cmd = control.recv() => match cmd {
                 None | Some(SimCommand::Shutdown) => break,
+                Some(SimCommand::SetSshPassword(password)) => match &ssh_account {
+                    Some(account) => account.lock().unwrap().password = password,
+                    None => tracing::debug!("no SSH front to change the password of"),
+                },
                 Some(cmd) => {
                     let session = shared.current.lock().unwrap().clone();
                     match session {
@@ -308,6 +318,8 @@ impl Session {
                         }
                         break Ok(());
                     }
+                    // Handled by the listener; never routed to a session.
+                    Some(SimCommand::SetSshPassword(_)) => {}
                     Some(SimCommand::Shutdown) | None => break Ok(()),
                 },
             }

@@ -226,6 +226,53 @@ async fn tunnel_is_reopened_on_reconnect() {
     sim.events.send(SimCommand::Shutdown).await.unwrap();
 }
 
+#[tokio::test]
+async fn refused_login_on_reconnect_stops_reconnecting() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sim = sim().await;
+    let fp = sim.fingerprint_sha256.clone();
+    let camera = Camera::connect(config(&sim, tmp.path(), ssh_config(&sim, PASSWORD, fp)))
+        .await
+        .unwrap();
+    let mut rx = camera.subscribe();
+    sim.events
+        .send(SimCommand::SetSshPassword("changed-on-camera".into()))
+        .await
+        .unwrap();
+    sim.events.send(SimCommand::DropConnection).await.unwrap();
+    let reason = wait_for(
+        &mut rx,
+        "Disconnected for the refused login",
+        |ev| match ev {
+            CameraEvent::Disconnected { reason }
+                if reason.contains("refused the username or password") =>
+            {
+                Some(reason.clone())
+            }
+            _ => None,
+        },
+    )
+    .await;
+    assert_eq!(reason, "the camera refused the username or password");
+    assert!(!camera.state().connected);
+    let more = timeout(Duration::from_secs(3), async {
+        loop {
+            match rx.recv().await {
+                Ok(CameraEvent::Reconnecting { attempt }) => return Some(attempt),
+                Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    })
+    .await;
+    assert!(
+        !matches!(more, Ok(Some(_))),
+        "kept reconnecting after a refused login: {more:?}"
+    );
+    camera.disconnect().await;
+    sim.events.send(SimCommand::Shutdown).await.unwrap();
+}
+
 #[test]
 fn fingerprints_normalise() {
     assert_eq!(
