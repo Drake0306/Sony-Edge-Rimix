@@ -83,7 +83,7 @@ async fn data_out_keeps_the_stream_in_step() {
         .await
         .unwrap_err();
     assert!(
-        matches!(err, Error::Response { code: 0x2005, .. }),
+        matches!(err, Error::Response { code: 0x200F, .. }),
         "got {err:?}"
     );
     assert!(sim

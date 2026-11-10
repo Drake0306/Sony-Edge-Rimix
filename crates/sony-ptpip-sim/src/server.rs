@@ -21,6 +21,12 @@ const DEVICE_VERSION: &str = "2.00";
 const VENDOR_EXT_ID: u32 = 0x11;
 /// How long a command connection waits for its event connection.
 const EVENT_SOCKET_WAIT: Duration = Duration::from_secs(10);
+/// Fixed 0x9202 contents until the property fixture arrives.
+const EXT_PROPERTIES: [u16; 10] = [
+    0x5005, 0x5007, 0x500A, 0x500E, 0x5010, 0xD20D, 0xD21E, 0xD215, 0xD218, 0xD222,
+];
+const EXT_CONTROLS: [u16; 3] = [0xD2C1, 0xD2C2, 0xD2C8];
+const EXT_VERSION: u16 = 0x012C;
 const SUPPORTED_OPS: [u16; 11] = [
     OP_GET_DEVICE_INFO,
     OP_OPEN_SESSION,
@@ -171,6 +177,7 @@ async fn command_connection(mut stream: TcpStream, shared: Arc<Shared>) -> Resul
         shared: shared.clone(),
         stream,
         event,
+        handshake_phase: 0,
     }
     .run(ctl_rx)
     .await
@@ -181,6 +188,8 @@ struct Session {
     shared: Arc<Shared>,
     stream: TcpStream,
     event: TcpStream,
+    /// How many SDIO handshake phases (0x9201) have completed, 0..=3.
+    handshake_phase: u8,
 }
 
 /// Forwards command-socket packets to the session loop; `read_frame` is not
@@ -201,6 +210,7 @@ impl Session {
             shared,
             stream,
             mut event,
+            mut handshake_phase,
         } = self;
         let (r, mut w) = stream.into_split();
         let (pkt_tx, mut packets) = mpsc::channel(16);
@@ -213,7 +223,7 @@ impl Session {
                         Some(Err(e)) => break Err(e),
                         None => break Ok(()),
                     };
-                    if let Err(e) = handle_packet(p, &mut packets, &mut w, &shared).await {
+                    if let Err(e) = handle_packet(p, &mut packets, &mut w, &shared, &mut handshake_phase).await {
                         break Err(e);
                     }
                 }
@@ -302,11 +312,13 @@ async fn handle_packet(
     packets: &mut mpsc::Receiver<Result<Packet, Error>>,
     w: &mut (impl AsyncWriteExt + Unpin),
     shared: &Shared,
+    handshake_phase: &mut u8,
 ) -> Result<(), Error> {
     let Packet::CmdRequest {
         data_phase,
         op,
         tid,
+        params,
         ..
     } = p
     else {
@@ -337,6 +349,20 @@ async fn handle_packet(
             send_data_in(w, tid, &encode_device_info(&info)).await?;
             RC_OK
         }
+        OP_SDIO_CONNECT => {
+            if params.first() == Some(&(*handshake_phase as u32 + 1)) {
+                *handshake_phase += 1;
+                RC_OK
+            } else {
+                RC_INVALID_PARAMETER
+            }
+        }
+        OP_SDIO_GET_EXT_DEVICE_INFO => {
+            send_data_in(w, tid, &encode_ext_device_info()).await?;
+            RC_OK
+        }
+        // Other Sony operations are refused until the handshake completes.
+        0x9200..=0x92FF if *handshake_phase < 3 => RC_ACCESS_DENIED,
         _ => RC_OPERATION_NOT_SUPPORTED,
     };
     send(
@@ -348,4 +374,15 @@ async fn handle_packet(
         },
     )
     .await
+}
+
+fn encode_ext_device_info() -> Vec<u8> {
+    let mut out = EXT_VERSION.to_le_bytes().to_vec();
+    for list in [&EXT_PROPERTIES[..], &EXT_CONTROLS[..]] {
+        out.extend((list.len() as u16).to_le_bytes());
+        for code in list {
+            out.extend(code.to_le_bytes());
+        }
+    }
+    out
 }
