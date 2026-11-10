@@ -131,6 +131,24 @@ describe('dock', () => {
     expect(vi.mocked(invoke).mock.calls.filter((c) => c[0] === 'step_property')).toHaveLength(0);
   });
 
+  test('arrow keys already handled, or pressed inside a menu, step nothing', () => {
+    const { root } = setup();
+    root.querySelectorAll<HTMLButtonElement>('.chip')[1].click();
+    const steps = () => vi.mocked(invoke).mock.calls.filter((c) => c[0] === 'step_property');
+    const handled = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true });
+    handled.preventDefault();
+    document.dispatchEvent(handled);
+    expect(steps()).toHaveLength(0);
+
+    const menu = document.createElement('div');
+    menu.setAttribute('role', 'menu');
+    const item = document.createElement('button');
+    menu.append(item);
+    document.body.append(menu);
+    item.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    expect(steps()).toHaveLength(0);
+  });
+
   test('Escape closes the popover', () => {
     const { root } = setup();
     root.querySelectorAll<HTMLButtonElement>('.chip')[0].click();

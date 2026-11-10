@@ -250,22 +250,55 @@ pub struct ApplyOutcome {
     pub error: Option<String>,
 }
 
+/// How long a preset waits before trying refused values again: a Mode
+/// written earlier in the same preset may not have reached the camera's
+/// other properties yet.
+pub const APPLY_RETRY_WAIT: Duration = Duration::from_millis(300);
+
 /// Writes each value to the camera in order (a preset), carrying on past
-/// any the camera refuses, and reports how each one went.
+/// any the camera refuses. Refused values are tried once more after
+/// [`APPLY_RETRY_WAIT`], so only values refused twice are reported.
 pub async fn apply_values(
     state: &AppState,
     values: Vec<PresetValue>,
 ) -> Result<Vec<ApplyOutcome>, String> {
     let camera = state.camera().await?;
+    let set = |code: u16, raw: PtpValue| {
+        let camera = camera.clone();
+        async move { camera.set(code, raw).await.map_err(|e| e.to_string()) }
+    };
+    Ok(apply_with_retry(values, set, || tokio::time::sleep(APPLY_RETRY_WAIT)).await)
+}
+
+/// [`apply_values`] over any `set`; `settle` runs once, before the retry.
+pub(crate) async fn apply_with_retry<F, Fut, S, SFut>(
+    values: Vec<PresetValue>,
+    mut set: F,
+    settle: S,
+) -> Vec<ApplyOutcome>
+where
+    F: FnMut(u16, PtpValue) -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+    S: FnOnce() -> SFut,
+    SFut: std::future::Future<Output = ()>,
+{
     let mut out = Vec::with_capacity(values.len());
-    for v in values {
-        let error = camera.set(v.code, v.raw).await.err().map(|e| e.to_string());
+    for v in &values {
+        let error = set(v.code, v.raw.clone()).await.err();
         out.push(ApplyOutcome {
             code: v.code,
             error,
         });
     }
-    Ok(out)
+    if out.iter().any(|o| o.error.is_some()) {
+        settle().await;
+        for (v, o) in values.iter().zip(out.iter_mut()) {
+            if o.error.is_some() {
+                o.error = set(v.code, v.raw.clone()).await.err();
+            }
+        }
+    }
+    out
 }
 
 pub async fn step_property(state: &AppState, code: u16, delta: i32) -> Result<(), String> {
@@ -528,6 +561,82 @@ mod tests {
         assert_eq!(short_of(&after, PROP_ISO), "1600");
         assert_ne!(short_of(&after, PROP_SHUTTER_SPEED), "1/125");
         stop(sim, &state).await;
+    }
+
+    #[tokio::test]
+    async fn apply_values_tries_a_refused_value_again_before_reporting_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (sim, state, _) = connected(tmp.path()).await;
+        let camera = state.camera().await.unwrap();
+        let attempts = Arc::new(StdMutex::new(Vec::new()));
+        let log = attempts.clone();
+        let set = |code: u16, raw: PtpValue| {
+            let camera = camera.clone();
+            let log = log.clone();
+            async move {
+                log.lock().unwrap().push(code);
+                camera.set(code, raw).await.map_err(|e| e.to_string())
+            }
+        };
+        let settled = Arc::new(StdMutex::new(0));
+        let settles = settled.clone();
+        let values = vec![
+            PresetValue {
+                code: PROP_ISO,
+                raw: PtpValue::U32(1600),
+            },
+            // Not in the aperture's settable list, so refused both times.
+            PresetValue {
+                code: PROP_F_NUMBER,
+                raw: PtpValue::U16(9999),
+            },
+        ];
+        let out = apply_with_retry(values, set, || async move {
+            *settles.lock().unwrap() += 1;
+        })
+        .await;
+        assert_eq!(
+            *attempts.lock().unwrap(),
+            vec![PROP_ISO, PROP_F_NUMBER, PROP_F_NUMBER]
+        );
+        assert_eq!(*settled.lock().unwrap(), 1);
+        assert!(out[0].error.is_none(), "{:?}", out[0].error);
+        assert!(out[1].error.is_some());
+        stop(sim, &state).await;
+    }
+
+    #[tokio::test]
+    async fn apply_values_reports_a_value_taken_on_the_retry_as_set() {
+        let tries = Arc::new(StdMutex::new(0));
+        let count = tries.clone();
+        let set = |_code: u16, _raw: PtpValue| {
+            let count = count.clone();
+            async move {
+                let mut n = count.lock().unwrap();
+                *n += 1;
+                if *n == 1 {
+                    Err("property cannot be set now".to_string())
+                } else {
+                    Ok(())
+                }
+            }
+        };
+        let values = vec![PresetValue {
+            code: PROP_F_NUMBER,
+            raw: PtpValue::U16(280),
+        }];
+        let out = apply_with_retry(values, set, || async {}).await;
+        assert_eq!(*tries.lock().unwrap(), 2);
+        assert_eq!(out[0].error, None);
+
+        // Nothing refused: no wait and no second pass.
+        let out = apply_with_retry(
+            vec![],
+            |_: u16, _: PtpValue| async { Ok(()) },
+            || async { panic!("no wait when nothing was refused") },
+        )
+        .await;
+        assert!(out.is_empty());
     }
 
     #[tokio::test]

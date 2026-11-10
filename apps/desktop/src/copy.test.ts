@@ -78,6 +78,12 @@ describe('Wi-Fi connect copy', () => {
     );
   });
 
+  test('a detail that ends in a full stop is not doubled', () => {
+    expect(wifiErrorMessage('join', ssid, 'Failed to join network DIRECT-abc1:ZV-E10.')).toBe(
+      'Could not join DIRECT-abc1:ZV-E10: Failed to join network DIRECT-abc1:ZV-E10. Join it from the Wi-Fi menu, then try again.',
+    );
+  });
+
   test('no Wi-Fi at all suggests Nearby', () => {
     expect(wifiErrorMessage('join', ssid, 'This computer has no Wi-Fi')).toBe(
       'This computer has no Wi-Fi. Put the camera and this computer on the same router and use Nearby.',

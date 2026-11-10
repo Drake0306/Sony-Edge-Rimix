@@ -68,7 +68,7 @@ export function wifiErrorMessage(step: 'join' | 'find' | 'wait', ssid: string, d
   if (detail === NO_WIFI) {
     return 'This computer has no Wi-Fi. Put the camera and this computer on the same router and use Nearby.';
   }
-  return `Could not join ${ssid}: ${detail}. Join it from the Wi-Fi menu, then try again.`;
+  return `Could not join ${ssid}: ${detail.replace(/\.+$/, '')}. Join it from the Wi-Fi menu, then try again.`;
 }
 
 export const NOT_A_WIFI_CODE = "This code isn't a camera Wi-Fi code. Check the text below, or type the name and password.";

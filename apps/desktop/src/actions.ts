@@ -74,6 +74,8 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
         settings,
         connecting: null,
         error: null,
+        // Presets belong to a camera; none is active on the new one yet.
+        activePreset: null,
         status: { fps: camera.live_view_fps, lastShotAt: camera.last_shot_at },
       });
       return true;
@@ -114,7 +116,7 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     } catch (e) {
       return fail(ask ? 'wait' : 'find', e);
     }
-    return connectTo(camera.ip, ssid, camera.model || ssid);
+    return connectTo(`${camera.ip}:${camera.ptp_port}`, ssid, camera.model || ssid);
   }
 
   return {

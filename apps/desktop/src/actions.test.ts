@@ -79,7 +79,7 @@ describe('connect over Wi-Fi', () => {
     expect(phases).toEqual(['joining', 'finding', 'connecting']);
     expect(ipc.joinNetwork).toHaveBeenCalledWith(SSID, '12345678');
     expect(ipc.waitForCamera).toHaveBeenCalledWith(FIND_MS);
-    expect(ipc.connect).toHaveBeenCalledWith('192.168.122.1', SSID);
+    expect(ipc.connect).toHaveBeenCalledWith('192.168.122.1:15740', SSID);
     expect(store.get().connecting).toBeNull();
     expect(store.get().screen).toBe('main');
   });
@@ -131,7 +131,7 @@ describe('connect over Wi-Fi', () => {
     const withSsid: RecentCamera = { ip: '192.168.122.1', model: 'ZV-E10', lastUsed: 1, ssid: SSID };
     expect(await actions.connectRecent(withSsid)).toBe(true);
     expect(ipc.joinNetwork).toHaveBeenCalledWith(SSID, null);
-    expect(ipc.connect).toHaveBeenLastCalledWith('192.168.122.1', SSID);
+    expect(ipc.connect).toHaveBeenLastCalledWith('192.168.122.1:15740', SSID);
 
     vi.mocked(ipc.joinNetwork).mockClear();
     expect(await actions.connectRecent({ ...withSsid, ip: '10.0.0.5', ssid: null })).toBe(true);
@@ -147,6 +147,12 @@ describe('connect over Wi-Fi', () => {
     expect(await actions.connectWithWifi({ ssid: SSID, password: 'x' })).toBe(false);
     expect(ipc.connect).not.toHaveBeenCalled();
     expect(ipc.joinNetwork).not.toHaveBeenCalled();
+  });
+
+  test('a connect to another camera forgets the active preset', async () => {
+    const store = storeWith('Automatic', {}, { screen: 'main', camera, activePreset: 2 });
+    expect(await createActions(store).connect('10.0.0.9')).toBe(true);
+    expect(store.get().activePreset).toBeNull();
   });
 
   test('a successful connect clears an error set while it ran', async () => {

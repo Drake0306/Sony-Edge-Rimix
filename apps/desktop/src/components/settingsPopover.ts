@@ -238,6 +238,9 @@ export function stepOnArrow(
   store: AppStore,
   actions: Actions,
 ): boolean {
+  // Another control (a menu, say) has the key already.
+  if (e.defaultPrevented) return false;
+  if (e.target instanceof Element && e.target.closest('[role="menu"]')) return false;
   const delta = ARROW_STEP[e.key];
   const code = popover.activeCode();
   if (delta === undefined || code === null || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) {
