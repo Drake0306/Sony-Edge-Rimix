@@ -81,6 +81,10 @@ The Release workflow builds a universal Mac app and creates a draft release with
 
 For a signed and notarized build, add these repository secrets (Settings, Secrets and variables, Actions): `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`. Without them the workflow still runs and the DMG is unsigned.
 
+### Building a release on your own Mac
+
+On recent macOS (seen on macOS 27), run `cargo build --release -p rimix-desktop --features tauri/custom-protocol` before `pnpm -C apps/desktop exec tauri build`. Without it the build can fail with "can't find crate for serde_derive", because the linker produces proc-macro libraries that macOS refuses to load when the deployment target is 14.0. Also run the build with `CI=true` to skip the DMG window-layout step, which needs Finder automation permission.
+
 ## Develop without a camera
 
 Two environment variables let you run the whole app against the simulated camera. `RIMIX_WIFI=fake` makes Wi-Fi joins succeed instantly, and `RIMIX_CAMERA_ADDR=127.0.0.1:15740` says where the "camera" is after joining.
