@@ -249,6 +249,22 @@ export interface AppSettings {
   presets: Preset[];
 }
 
+/** Receive from camera: the SFTP server the camera's FTP Transfer function pushes files to. */
+export interface SftpStatus {
+  /** Switched on; it may still have failed to start (see `error`). */
+  enabled: boolean;
+  running: boolean;
+  /** `<lan-ip>:<port>`, or null when this computer's address is unknown. */
+  address: string | null;
+  port: number;
+  user: string;
+  /** Rimix's own password for the camera to log in with; shown so it can be typed in. */
+  password: string;
+  fingerprint: string | null;
+  /** Why it is not running, such as `Port 2222 is in use`. */
+  error: string | null;
+}
+
 export const discover = (timeoutMs: number) =>
   invoke<DiscoveredCamera[]>('discover', { timeoutMs });
 /** Joins a Wi-Fi network and waits until it is up. The password is never stored. */
@@ -313,6 +329,11 @@ export const saveSettings = (settings: AppSettings) =>
   invoke<void>('save_settings', { settings });
 /** A saved JPEG's bytes for the filmstrip; rejects for RAW files and files over 25 MB. */
 export const readThumbnail = (path: string) => invoke<ArrayBuffer>('read_thumbnail', { path });
+export const sftpStatus = () => invoke<SftpStatus>('sftp_status');
+/** Turns Receive from camera on or off; a failure to start shows in `sftpStatus`. */
+export const sftpSetEnabled = (enabled: boolean) => invoke<void>('sftp_set_enabled', { enabled });
+/** Makes a new SFTP password; a running receiver restarts with it. */
+export const sftpRegeneratePassword = () => invoke<void>('sftp_regenerate_password');
 /** `null` when the dialog is cancelled. */
 export const pickFolder = () => invoke<string | null>('pick_folder');
 

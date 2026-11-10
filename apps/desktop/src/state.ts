@@ -3,7 +3,7 @@
 
 import { sshErrorMessage } from './copy';
 import type { IntervalRun } from './interval';
-import type { AppSettings, CameraEvent, CameraState, CardMode, CardObject, DiscoveredCamera } from './ipc';
+import type { AppSettings, CameraEvent, CameraState, CardMode, CardObject, DiscoveredCamera, SftpStatus } from './ipc';
 
 export interface Store<T> {
   get(): T;
@@ -122,6 +122,8 @@ export interface AppState {
   card: CardState;
   /** True while the card browser is open. */
   cardOpen: boolean;
+  /** Receive from camera, as last read; null until the settings popover asks. */
+  sftp: SftpStatus | null;
 }
 
 export interface PendingFingerprint {
@@ -171,6 +173,7 @@ export const initialState = (): AppState => ({
   interval: null,
   card: emptyCard(),
   cardOpen: false,
+  sftp: null,
 });
 
 /** What the app uses when the settings file cannot be read. */
@@ -272,10 +275,29 @@ function cardEvent(card: CardState, event: CameraEvent): CardState | null {
  * is the active camera's.
  */
 export function applyEvent(state: AppState, event: CameraEvent, cameraId: string | null = state.activeId): Partial<AppState> {
+  if (cameraId === SFTP_CAMERA_ID) return receivedPatch(state, event);
   if (cameraId !== null && !(cameraId in state.cameras)) return {};
   const patch = cameraPatch(state, event, cameraId);
   const card = cameraId === state.activeId ? cardEvent(state.card, event) : null;
   return card ? { ...patch, card } : patch;
+}
+
+/** The camera id files the camera pushed over SFTP are tagged with. */
+export const SFTP_CAMERA_ID = 'sftp';
+
+/** The label on tiles of files the camera pushed over SFTP. */
+export const RECEIVED_LABEL = 'Received';
+
+/**
+ * A file the camera pushed over SFTP joins the captures; it belongs to no
+ * connected camera, so nothing else changes.
+ */
+function receivedPatch(state: AppState, event: CameraEvent): Partial<AppState> {
+  if (typeof event !== 'object' || !('CaptureSaved' in event)) return {};
+  const { path, filename, bytes } = event.CaptureSaved;
+  const item: CaptureItem = { path, filename, bytes, cameraId: SFTP_CAMERA_ID, cameraLabel: RECEIVED_LABEL };
+  const captures = [item, ...state.captures.filter((c) => c.path !== path)];
+  return { captures: captures.slice(0, MAX_CAPTURES) };
 }
 
 /** What `applyEvent` changes apart from the card. */

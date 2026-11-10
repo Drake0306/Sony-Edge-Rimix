@@ -1,6 +1,7 @@
 // The last six captures, newest first, with files still arriving from the
 // camera shown on top with a progress bar. While several cameras are
-// connected, each tile names the camera it came from.
+// connected, each tile names the camera it came from; files the camera
+// pushed over SFTP always say Received.
 
 import type { Actions } from '../actions';
 import { el } from '../dom';
@@ -8,6 +9,7 @@ import { readThumbnail } from '../ipc';
 import {
   cameraCount,
   MAX_CAPTURES,
+  SFTP_CAMERA_ID,
   transferCamera,
   transferName,
   watch,
@@ -94,7 +96,8 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
     const busy = Object.entries(transfers).map(([key, tr]) =>
       tile(transferName(key), el('span', 'pic'), labelOf(transferCamera(key)), tr),
     );
-    const done = captures.map((c) => tile(c.filename, picture(c), several ? c.cameraLabel || null : null));
+    const captionOf = (c: CaptureItem) => (several || c.cameraId === SFTP_CAMERA_ID ? c.cameraLabel || null : null);
+    const done = captures.map((c) => tile(c.filename, picture(c), captionOf(c)));
     const tiles = [...busy, ...done].slice(0, MAX_CAPTURES);
     strip.replaceChildren(...(tiles.length ? tiles : [el('p', 'empty', 'Shots appear here')]));
   }

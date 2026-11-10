@@ -1,10 +1,19 @@
 // The App settings button and popover: Appearance and Layout as segmented
-// controls, then Save to, then the shortcut hint. These settings are about
-// Rimix itself; the camera's settings live in their own popover.
+// controls, Connection, Receive from camera, then Save to, then the
+// shortcut hint. These settings are about Rimix itself; the camera's
+// settings live in their own popover.
 
 import type { Actions } from '../actions';
 import { button, el, icon } from '../dom';
-import { openLogs, type AppSettings, type Appearance, type Layout, type RecentCamera, type WifiJoin } from '../ipc';
+import {
+  openLogs,
+  type AppSettings,
+  type Appearance,
+  type Layout,
+  type RecentCamera,
+  type SftpStatus,
+  type WifiJoin,
+} from '../ipc';
 import { listWebcams } from '../qr/scanner';
 import { defaultSettings, watch, type AppStore } from '../state';
 import { applyAppearance, applyLayout } from '../theme';
@@ -61,6 +70,96 @@ function segmented<T extends string>(
 }
 
 const where = (rc: RecentCamera) => rc.ssid ?? rc.ip;
+
+export const SFTP_HINT =
+  'On the camera: Menu, Network, FTP Transfer Func., Server Setting; choose SFTP, enter this address, username and password.';
+
+/** Where the camera sends to: the LAN address, or a stand-in with the port when it is unknown. */
+export const sftpAddress = (st: SftpStatus) => st.address ?? `this computer's address:${st.port}`;
+
+function infoRow(key: string, value: string, valueClass = 'v'): HTMLElement {
+  const r = el('div', 'r');
+  r.setAttribute('role', 'listitem');
+  r.append(el('span', 'k', key), el('span', valueClass, value));
+  return r;
+}
+
+/**
+ * Receive from camera: a switch, and while it is on, what to type into the
+ * camera's FTP Transfer server settings. `refresh` re-reads the status
+ * (the popover calls it when it opens); `reset` hides the password again.
+ */
+function receiveSection(store: AppStore, actions: Actions) {
+  const toggle = button('switch', undefined, 'Receive from camera');
+  toggle.setAttribute('role', 'switch');
+  toggle.append(el('i'));
+  toggle.addEventListener('click', () => void actions.setSftpEnabled(store.get().sftp?.enabled !== true));
+  const switchRow = el('div', 'r');
+  switchRow.setAttribute('role', 'listitem');
+  switchRow.append(el('span', 'k', 'Receive from camera'), toggle);
+  const rows = el('div', 'group sftp');
+  rows.setAttribute('role', 'list');
+  rows.append(switchRow);
+  const details = el('div', 'sftp-details');
+  const error = el('div', 'sftp-error');
+  error.setAttribute('role', 'status');
+  let revealed = false;
+
+  // The password row is kept, so Show keeps its place while it toggles.
+  const password = el('div', 'r');
+  password.setAttribute('role', 'listitem');
+  const secret = el('span', 'v');
+  const show = button('pathbtn');
+  password.append(el('span', 'k', 'Password'), secret, show);
+  const paint = () => {
+    const word = store.get().sftp?.password ?? '';
+    secret.textContent = revealed ? word : '•'.repeat(word.length);
+    show.textContent = revealed ? 'Hide' : 'Show';
+    show.setAttribute('aria-label', revealed ? 'Hide password' : 'Show password');
+  };
+  show.addEventListener('click', () => {
+    revealed = !revealed;
+    paint();
+  });
+  const fresh = button('pathbtn', 'New password');
+  fresh.addEventListener('click', () => void actions.regenerateSftpPassword());
+  const freshRow = el('div', 'r');
+  freshRow.setAttribute('role', 'listitem');
+  freshRow.append(el('span', 'k', ''), fresh);
+
+  const render = (st: SftpStatus | null) => {
+    const on = st?.enabled === true;
+    toggle.setAttribute('aria-checked', String(on));
+    toggle.classList.toggle('on', on);
+    error.textContent = st?.error ?? '';
+    error.hidden = !st?.error;
+    paint();
+    if (!st || !on) {
+      rows.replaceChildren(switchRow);
+      details.replaceChildren();
+      return;
+    }
+    rows.replaceChildren(
+      switchRow,
+      infoRow('Address', sftpAddress(st)),
+      infoRow('Username', st.user),
+      password,
+      ...(st.fingerprint ? [infoRow('Fingerprint', st.fingerprint, 'v fp')] : []),
+      freshRow,
+    );
+    details.replaceChildren(el('div', 'sftp-hint', SFTP_HINT));
+  };
+  const off = watch(store, (s) => s.sftp, render);
+  return {
+    el: sect('Receive from camera', rows, error, details),
+    refresh: () => void actions.refreshSftp(),
+    reset: () => {
+      revealed = false;
+      paint();
+    },
+    destroy: off,
+  };
+}
 
 export function mount(root: HTMLElement, store: AppStore, actions: Actions): () => void {
   const gear = button('gear glass quiet', undefined, 'App settings');
@@ -142,13 +241,14 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   logsRow.append(el('span', 'k', 'Logs'), showLogs);
   logsGroup.append(logsRow);
 
+  const receive = receiveSection(store, actions);
   const saveTo = saveToSection(store, actions);
   const hint = el('div', 'hint');
   hint.innerHTML = KEYBOARD_GLYPH;
   hint.append(shortcutHint());
   pop.append(el('div', 'ttl', 'App settings'), sect('Appearance', theme.el), sect('Layout', layout.el),
     sect('Connection', wifi.el, webcamGroup, logsGroup, el('div', 'sub', 'Remembered cameras'), remembered),
-    saveTo.el, hint);
+    receive.el, saveTo.el, hint);
   pop.hidden = arrow.hidden = true;
 
   const setOpen = (open: boolean) => {
@@ -159,6 +259,9 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
         cams = list;
         fillWebcams();
       });
+      receive.refresh();
+    } else {
+      receive.reset();
     }
     if (open) pop.querySelector<HTMLElement>('.mini .on, button')?.focus();
   };
@@ -188,6 +291,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     off();
     offRecent();
     saveTo.destroy();
+    receive.destroy();
     document.removeEventListener('keydown', onKey);
     [gear, arrow, pop].forEach((e) => e.remove());
   };

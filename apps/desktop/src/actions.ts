@@ -76,6 +76,12 @@ export interface Actions {
   /** Starts the interval timer on the active camera; the app's ticker shoots on its schedule. */
   startInterval(plan: IntervalPlan): void;
   stopInterval(): void;
+  /** Reads Receive from camera's status into the store. */
+  refreshSftp(): Promise<void>;
+  /** Turns Receive from camera on or off, then reads its status again. */
+  setSftpEnabled(enabled: boolean): Promise<void>;
+  /** Makes a new password for the camera to log in with, then reads the status again. */
+  regenerateSftpPassword(): Promise<void>;
   toast(message: string): void;
 }
 
@@ -155,6 +161,20 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     } catch (e) {
       toast(message(e));
     }
+  }
+
+  async function refreshSftp(): Promise<void> {
+    try {
+      store.set({ sftp: (await ipc.sftpStatus()) ?? null });
+    } catch (e) {
+      toast(message(e));
+    }
+  }
+
+  /** Runs an SFTP command, then reads the status whatever happened. */
+  async function sftpThen(p: Promise<unknown>): Promise<void> {
+    await p.catch((e) => toast(message(e)));
+    await refreshSftp();
   }
 
   /** A connect in flight is never doubled, whichever way it was started. */
@@ -481,6 +501,9 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     stopInterval: () => store.set({ interval: null }),
     cardRefresh,
     cardDownload,
+    refreshSftp,
+    setSftpEnabled: (enabled) => sftpThen(ipc.sftpSetEnabled(enabled)),
+    regenerateSftpPassword: () => sftpThen(ipc.sftpRegeneratePassword()),
     toast,
   };
 }

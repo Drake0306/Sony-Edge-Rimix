@@ -189,6 +189,45 @@ describe('several cameras', () => {
   });
 });
 
+describe('received from the camera over SFTP', () => {
+  const base = (fixture as unknown as { StateChanged: CameraState }).StateChanged;
+  const zv = { ...base, model: 'ZV-E10' };
+  const A = '10.0.0.5:15740';
+  const received: CameraEvent = {
+    CaptureSaved: { path: '/p/DSC00001-1.JPG', bytes: 4, filename: 'DSC00001-1.JPG', camera_filename: '/DSC00001.JPG' },
+  };
+
+  test('starts unknown', () => {
+    expect(initialState().sftp).toBeNull();
+  });
+
+  test('a file tagged sftp lands in captures as Received and touches nothing else', () => {
+    const s: AppState = {
+      ...initialState(),
+      screen: 'main',
+      cameras: { [A]: zv },
+      activeId: A,
+      camera: zv,
+      transfers: { [`${A}/DSC00001.JPG`]: { received: 1, total: 4 } },
+      card: { ...emptyCard(), downloads: { 7: { received: 0, total: 4 } } },
+    };
+    const patch = applyEvent(s, received, 'sftp');
+    expect(Object.keys(patch)).toEqual(['captures']);
+    expect(patch.captures?.[0]).toEqual({
+      path: '/p/DSC00001-1.JPG', filename: 'DSC00001-1.JPG', bytes: 4, cameraId: 'sftp', cameraLabel: 'Received',
+    });
+  });
+
+  test('received files arrive with no camera connected', () => {
+    const patch = applyEvent(initialState(), received, 'sftp');
+    expect(patch.captures?.map((c) => c.cameraLabel)).toEqual(['Received']);
+  });
+
+  test('other events tagged sftp change nothing', () => {
+    expect(applyEvent(initialState(), { CaptureProgress: { filename: 'A.JPG', received: 1, total: 2 } }, 'sftp')).toEqual({});
+  });
+});
+
 test('default settings carry the connection and preset fields', () => {
   const s = defaultSettings('/x');
   expect(s.wifiJoin).toBe('Automatic');

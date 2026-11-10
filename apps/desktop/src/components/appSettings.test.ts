@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import type { AppSettings } from '../ipc';
+import type { AppSettings, SftpStatus } from '../ipc';
 import { createStore, initialState } from '../state';
 import { createActions } from '../actions';
 import { mount, shortcutHint } from './appSettings';
@@ -85,7 +85,7 @@ describe('app settings', () => {
   test('popover rows, Save to and the shortcut hint', () => {
     const { root } = setup();
     const heads = [...root.querySelectorAll('.apppop .sect .h span')].map((s) => s.textContent);
-    expect(heads).toEqual(['Appearance', 'Layout', 'Connection', 'Save to']);
+    expect(heads).toEqual(['Appearance', 'Layout', 'Connection', 'Receive from camera', 'Save to']);
     expect(root.querySelector('.apppop .hint')!.textContent).toMatch(/^Shortcut: (⌘|Ctrl\+), opens settings$/);
   });
 
@@ -201,5 +201,114 @@ describe('app settings', () => {
     const { root } = setup({ recentCameras: [] });
     expect(root.querySelector('.apppop .remembered .quiet')!.textContent).toBe('None yet');
     expect(root.querySelector('.apppop .remembered .r')).toBeNull();
+  });
+
+  describe('Receive from camera', () => {
+    const off: SftpStatus = {
+      enabled: false, running: false, address: null, port: 2222, user: 'rimix', password: 'abc123def456',
+      fingerprint: null, error: null,
+    };
+    const on: SftpStatus = { ...off, enabled: true, running: true, address: '192.168.1.20:2222', fingerprint: 'SHA256:xyz' };
+    let status: SftpStatus = off;
+    beforeEach(() => {
+      status = off;
+      vi.mocked(invoke).mockImplementation((cmd: string) =>
+        Promise.resolve(cmd === 'sftp_status' ? status : undefined) as Promise<never>,
+      );
+    });
+    afterEach(() => vi.mocked(invoke).mockImplementation(() => Promise.resolve() as Promise<never>));
+
+    const section = (root: HTMLElement) =>
+      [...root.querySelectorAll('.apppop .sect')].find((s) => s.querySelector('.h span')?.textContent === 'Receive from camera')!;
+    const rows = (root: HTMLElement) =>
+      Object.fromEntries(
+        [...section(root).querySelectorAll('.r')].map((r) => [r.querySelector('.k')?.textContent, r.querySelector('.v')?.textContent]),
+      );
+    const toggle = (root: HTMLElement) => section(root).querySelector<HTMLButtonElement>('[role="switch"]')!;
+    const open = async () => {
+      press(',', { metaKey: true });
+      await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('sftp_status'));
+    };
+
+    test('is off with only its switch until switched on', async () => {
+      const { root, store } = setup();
+      await open();
+      await vi.waitFor(() => expect(store.get().sftp).toEqual(off));
+      expect(toggle(root).getAttribute('aria-checked')).toBe('false');
+      expect(toggle(root).getAttribute('aria-label')).toBe('Receive from camera');
+      expect(Object.keys(rows(root))).not.toContain('Address');
+      expect(section(root).querySelector('.hint')).toBeNull();
+    });
+
+    test('switching on enables it, then shows the address, login and fingerprint', async () => {
+      const { root } = setup();
+      await open();
+      status = on;
+      toggle(root).click();
+      expect(invoke).toHaveBeenCalledWith('sftp_set_enabled', { enabled: true });
+      await vi.waitFor(() => expect(toggle(root).getAttribute('aria-checked')).toBe('true'));
+      const r = rows(root);
+      expect(r.Address).toBe('192.168.1.20:2222');
+      expect(r.Username).toBe('rimix');
+      expect(r.Password).not.toContain('abc123def456');
+      expect(r.Fingerprint).toBe('SHA256:xyz');
+      expect(section(root).querySelector('.sftp-hint')!.textContent).toBe(
+        'On the camera: Menu, Network, FTP Transfer Func., Server Setting; choose SFTP, enter this address, username and password.',
+      );
+      expect([...section(root).querySelectorAll('button')].map((b) => b.textContent)).toContain('New password');
+    });
+
+    test('Show reveals the password and hides it again', async () => {
+      status = on;
+      const { root } = setup();
+      await open();
+      await vi.waitFor(() => expect(rows(root).Password).toBeDefined());
+      const show = [...section(root).querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Show')!;
+      show.click();
+      expect(rows(root).Password).toBe('abc123def456');
+      expect(show.textContent).toBe('Hide');
+      show.click();
+      expect(rows(root).Password).not.toContain('abc123def456');
+    });
+
+    test('an unknown address names this computer with the port', async () => {
+      status = { ...on, address: null, port: 2223 };
+      const { root } = setup();
+      await open();
+      await vi.waitFor(() => expect(rows(root).Address).toBe("this computer's address:2223"));
+    });
+
+    test('New password asks for one and shows it', async () => {
+      status = on;
+      const { root } = setup();
+      await open();
+      await vi.waitFor(() => expect(rows(root).Fingerprint).toBe('SHA256:xyz'));
+      status = { ...on, password: 'zzzzzzzzzzzz' };
+      [...section(root).querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'New password')!.click();
+      expect(invoke).toHaveBeenCalledWith('sftp_regenerate_password');
+      const show = [...section(root).querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Show')!;
+      await vi.waitFor(() => {
+        show.click();
+        expect(rows(root).Password).toBe('zzzzzzzzzzzz');
+      });
+    });
+
+    test('a port in use shows in the section', async () => {
+      status = { ...on, running: false, fingerprint: null, error: 'Port 2222 is in use' };
+      const { root } = setup();
+      await open();
+      await vi.waitFor(() => expect(section(root).querySelector('.sftp-error')?.textContent).toBe('Port 2222 is in use'));
+    });
+
+    test('switching off disables it', async () => {
+      status = on;
+      const { root } = setup();
+      await open();
+      await vi.waitFor(() => expect(toggle(root).getAttribute('aria-checked')).toBe('true'));
+      status = off;
+      toggle(root).click();
+      expect(invoke).toHaveBeenCalledWith('sftp_set_enabled', { enabled: false });
+      await vi.waitFor(() => expect(Object.keys(rows(root))).not.toContain('Address'));
+    });
   });
 });

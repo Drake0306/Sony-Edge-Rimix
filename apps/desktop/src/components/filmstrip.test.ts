@@ -47,4 +47,16 @@ describe('filmstrip', () => {
     expect(labels()).toEqual(['ZV-E10']);
     unmount();
   });
+
+  test('files received over SFTP are labelled Received even with one camera or none', () => {
+    const { store, unmount, labels } = mountWith({
+      cameras: { [A]: { ...base, model: 'ZV-E10' } },
+      activeId: A,
+      captures: [shot('DSC00009.JPG', 'sftp', 'Received'), shot('DSC00001.ARW', A, 'ZV-E10')],
+    });
+    expect(labels()).toEqual(['Received']);
+    store.set({ cameras: {}, activeId: null });
+    expect(labels()).toEqual(['Received']);
+    unmount();
+  });
 });
