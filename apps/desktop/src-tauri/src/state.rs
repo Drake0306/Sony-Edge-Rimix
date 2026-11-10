@@ -2226,6 +2226,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_card_download_and_an_upload_of_one_name_both_survive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (state, _) = sftp_state(tmp.path());
+        crate::sftp::set_enabled(&state, true).await.unwrap();
+        let st = crate::sftp::status(&state).await;
+        let sim = spawn(SimConfig::default()).await;
+        connect(&state, &sim.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        let jpeg = card_list(&state, None).await.unwrap()[0].clone();
+        assert_eq!(jpeg.filename, "DSC00010.JPG");
+        let uploaded = vec![7u8; 300 * 1024];
+        let (downloaded, ()) = timeout(Duration::from_secs(60), async {
+            tokio::join!(
+                card_download(&state, None, jpeg.handle),
+                upload(st.port, &st.user, &st.password, "/DSC00010.JPG", &uploaded)
+            )
+        })
+        .await
+        .unwrap();
+        let downloaded = PathBuf::from(downloaded.unwrap());
+        let dir = tmp.path().join("shots");
+        assert_eq!(downloaded.parent(), Some(dir.as_path()));
+        wait_for("the upload was not saved", || {
+            std::fs::read_dir(&dir)
+                .unwrap()
+                .filter(|e| {
+                    let name = e.as_ref().unwrap().file_name();
+                    !name.to_string_lossy().starts_with('.')
+                })
+                .count()
+                == 2
+        })
+        .await;
+        let mut names: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| !n.starts_with('.'))
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["DSC00010-1.JPG", "DSC00010.JPG"]);
+        let card_bytes = std::fs::read(&downloaded).unwrap();
+        assert_eq!(card_bytes.len() as u64, jpeg.bytes);
+        assert!(card_bytes
+            .iter()
+            .enumerate()
+            .all(|(i, b)| *b == sim_byte(jpeg.handle, i as u64)));
+        let other = names
+            .iter()
+            .map(|n| dir.join(n))
+            .find(|p| *p != downloaded)
+            .unwrap();
+        assert_eq!(std::fs::read(other).unwrap(), uploaded);
+        stop(sim, &state).await;
+        crate::sftp::set_enabled(&state, false).await.unwrap();
+    }
+
+    #[tokio::test]
     async fn a_port_in_use_is_shown_as_the_error() {
         let tmp = tempfile::tempdir().unwrap();
         let (state, _) = sftp_state(tmp.path());

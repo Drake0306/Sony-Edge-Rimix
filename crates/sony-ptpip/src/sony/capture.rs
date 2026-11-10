@@ -190,13 +190,39 @@ fn save(dir: &Path, name: &str, data: &[u8]) -> std::io::Result<(PathBuf, String
     result
 }
 
-/// Renames the complete file `part` to a free name for `name` in `dir`
-/// (see [`free_name`]), holding the naming lock; returns the path and name.
+/// Moves the complete file `part` to a free name for `name` in `dir` (see
+/// [`free_name`]), holding the naming lock, without ever replacing an
+/// existing file; returns the path and name.
 pub(crate) fn place(part: &Path, dir: &Path, name: &str) -> std::io::Result<(PathBuf, String)> {
     let _naming = NAMING.lock().unwrap_or_else(|e| e.into_inner());
-    let (path, filename) = free_name(dir, name)?;
-    std::fs::rename(part, &path)?;
-    Ok((path, filename))
+    // The lock only covers this process's own savers; another saver in the
+    // folder (the other receiver, another app) may take the name at any
+    // moment. A hard link fails rather than replace an existing file, so
+    // a taken name moves on to the next suffix and nothing is overwritten.
+    for _ in 0..=MAX_SUFFIX + 1 {
+        let (path, filename) = free_name(dir, name)?;
+        match std::fs::hard_link(part, &path) {
+            Ok(()) => {
+                if let Err(e) = std::fs::remove_file(part) {
+                    tracing::warn!(part = %part.display(), error = %e, "saved, but the partial file could not be removed");
+                }
+                return Ok((path, filename));
+            }
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
+            Err(e) => {
+                // No hard links on this volume (exFAT, FAT, some network
+                // shares): rename, which the lock guards against this
+                // process's own savers.
+                tracing::debug!(error = %e, "hard link refused; renaming instead");
+                std::fs::rename(part, &path)?;
+                return Ok((path, filename));
+            }
+        }
+    }
+    Err(std::io::Error::new(
+        ErrorKind::AlreadyExists,
+        format!("every name from {name} to suffix -{MAX_SUFFIX} is taken"),
+    ))
 }
 
 /// Keeps a shot that could not be saved (`cause`) in `recovery`. Returns
@@ -247,8 +273,10 @@ pub(crate) fn check_filename(name: &str) -> Result<&str, Error> {
 
 /// `dir/name`, or `dir/<stem>-N.<ext>` with the first free N up to 999.
 pub(crate) fn free_name(dir: &Path, name: &str) -> std::io::Result<(PathBuf, String)> {
+    // Taken means anything at the path, a dangling link included.
+    let taken = |p: &Path| std::fs::symlink_metadata(p).is_ok();
     let path = dir.join(name);
-    if !path.exists() {
+    if !taken(&path) {
         return Ok((path, name.to_string()));
     }
     let (stem, ext) = match name.rsplit_once('.') {
@@ -261,7 +289,7 @@ pub(crate) fn free_name(dir: &Path, name: &str) -> std::io::Result<(PathBuf, Str
             None => format!("{stem}-{n}"),
         };
         let path = dir.join(&candidate);
-        if !path.exists() {
+        if !taken(&path) {
             return Ok((path, candidate));
         }
     }
@@ -286,6 +314,30 @@ mod tests {
         assert_eq!(path, tmp.path().join("DSC00001-1.ARW"));
         std::fs::write(tmp.path().join("NOEXT"), b"").unwrap();
         assert_eq!(free_name(tmp.path(), "NOEXT").unwrap().1, "NOEXT-1");
+    }
+
+    #[test]
+    fn place_never_replaces_a_file_and_leaves_no_part() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("DSC00001.JPG"), b"first").unwrap();
+        let part = tmp.path().join(".rimix-DSC00001.JPG.part");
+        std::fs::write(&part, b"second").unwrap();
+        let (path, name) = place(&part, tmp.path(), "DSC00001.JPG").unwrap();
+        assert_eq!(name, "DSC00001-1.JPG");
+        assert_eq!(std::fs::read(&path).unwrap(), b"second");
+        assert_eq!(
+            std::fs::read(tmp.path().join("DSC00001.JPG")).unwrap(),
+            b"first"
+        );
+        assert!(!part.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_dangling_link_counts_as_taken() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(tmp.path().join("gone"), tmp.path().join("A.JPG")).unwrap();
+        assert_eq!(free_name(tmp.path(), "A.JPG").unwrap().1, "A-1.JPG");
     }
 
     #[test]
