@@ -1,6 +1,6 @@
 # Testing Rimix with your real camera
 
-Everything in Rimix so far has only been tried against a simulated camera. This guide is how we find out what your ZV-E10 (firmware 2.00) really does. Plan on about 30 minutes. Do the steps in order, top to bottom, and after each one send back what the "What to send back" line asks for.
+Everything in Rimix so far has only been tried against a simulated camera. This guide is how we find out what your ZV-E10 (firmware 2.00) really does. Plan on about 30 minutes for steps 1 to 8, and about 30 more for steps 9 to 11. Do the steps in order, top to bottom, and after each one send back what the "What to send back" line asks for.
 
 Three steps decide what happens next. They are marked **Changes the plan**: step 2 (the QR test), step 3 (pairing) and step 4 (the property dump).
 
@@ -144,6 +144,74 @@ This saves 30 live view frames as JPEG files.
 Your ZV-E10 does not, so skip this step. It is for newer bodies (a7 IV, a7R V, a7CR, a7C II, a7 V, a6700, a9 III, a1 II, ZV-E1, ZV-E10 II, FX3, FX30; the a7 IV and FX3 from firmware 2.00). The camera shows its username, password and fingerprint under "Access Authen. Info". In Rimix, open "This camera uses Access Authentication" on the connect screen and type the Username and Password. Rimix then shows the camera's fingerprint in two forms (SHA256 and MD5); the camera may show either, so compare the one it shows and press "It matches, connect". If Rimix says the fingerprint changed, it shows the stored one and the camera's current one and will not connect: if you reset the camera, forget it in App settings and connect again. A lock appears in the top bar once connected.
 
 **What to send back:** whether the fingerprint on screen matched, whether the lock appeared, and the newest file in `~/Library/Application Support/Rimix/logs`. Never send the password.
+
+## 9. Browse card
+
+This tells us whether the ZV-E10 lists its card while Rimix controls it in PC Remote mode.
+
+1. Connect in the app as in step 7.
+2. In the Cameras panel, press "Browse card". Note what the panel shows: a list of files, "No files on the card", "This camera needs its own transfer mode for card browsing; not available yet", or an error.
+3. If files are listed, press "Download" on one photo and, if there is one, on a short video. The row should show progress and then "Saved", and the file should appear in the filmstrip and the Save to folder.
+4. Note what the camera's own screen shows while the panel is open.
+5. Disconnect the app, then try the same from the command line (the Mac still on the camera's network):
+
+   ```
+   rimix card list 192.168.122.1
+   rimix card get 192.168.122.1 <handle or name from the list> --out ~/Desktop/rimix-test
+   ```
+
+**What to send back:** what the Browse card panel showed, whether Download worked for a photo and a video (and the file sizes), what the camera's screen showed, the output of both `card` commands, and the newest file in `~/Library/Application Support/Rimix/logs`.
+
+## 10. Receive from camera (SFTP)
+
+This tests the camera sending files to Rimix with its own FTP Transfer function. For this one the camera and the Mac must be on the same router (your home Wi-Fi), not the camera's Wi-Fi Direct network.
+
+1. Join the Mac to your home Wi-Fi.
+2. In the Rimix app, open App settings and turn on "Receive from camera". The section shows an Address, a Username, a Password and a Fingerprint.
+3. On the camera: Menu, Network, FTP Transfer Func., Server Setting. Choose SFTP and enter the Address (the part before the colon as the host, the number after it as the port), the Username and the Password from Rimix. Connect the camera to your home Wi-Fi if it asks.
+4. If the camera shows a fingerprint when it first connects, compare it with the Fingerprint in Rimix.
+5. Send one test photo from the camera's FTP Transfer menu. It should appear in the filmstrip, labelled "Received", and in the Save to folder.
+6. If the app does not work, try the command line instead (stop the app first, it uses the same port):
+
+   ```
+   printf '%s\n' 'a password' | rimix sftp serve --dir ~/Desktop/rimix-test --password-stdin
+   ```
+
+   It prints the address, user and fingerprint to enter on the camera (with "a password" as the password), then a "received" line for each file. Press Ctrl-C to stop it.
+
+Write down the real names of the camera menu items you went through; ours are a guess beyond "FTP Transfer Func." and "Server Setting".
+
+**What to send back:** the menu names you saw, whether the camera accepted the server settings, whether it showed a fingerprint and whether it matched, whether the test photo arrived (and its name and size), any error the camera or Rimix showed, and the newest file in `~/Library/Application Support/Rimix/logs`. Never send the password.
+
+## 11. Bluetooth
+
+This tests finding the camera over Bluetooth, reading its Wi-Fi details that way, and the Bluetooth remote shutter. macOS may ask to let Terminal (or Rimix) use Bluetooth; allow it.
+
+1. Turn the camera's Bluetooth on: Menu, Network, Bluetooth. Write down the real menu names.
+2. In Terminal:
+
+   ```
+   rimix ble scan
+   ```
+
+   It lists the Sony cameras heard: name, model, pairing and address. If the camera offers a way to wait for pairing in that menu, run the scan once while it waits and once without, and note the pairing column each time.
+3. Read the camera's Wi-Fi details over Bluetooth, using the name or address from the scan:
+
+   ```
+   rimix ble handoff ZV-E10
+   ```
+
+   It prints `ssid:` with the network name and `password: (hidden, N chars)`. Compare the name with Wi-Fi Direct Info.
+4. Pair the Mac from the camera's Bluetooth menu (Menu, Network, Bluetooth), accepting on both the camera and the Mac. Then:
+
+   ```
+   rimix ble shoot ZV-E10
+   ```
+
+   It prints `shot:` and the camera's name. Check whether the camera actually fired.
+5. In the app, with Bluetooth on in App settings, check whether the connect screen's Nearby card shows "ZV-E10 nearby", and try "Join via Bluetooth".
+
+**What to send back:** the output of `ble scan` (both times), `ble handoff` and `ble shoot` (blank the network name if you like, but say whether it matched Wi-Fi Direct Info), whether the shutter fired, what Nearby showed and whether Join via Bluetooth connected, the real Bluetooth menu names, and the newest file in `~/Library/Application Support/Rimix/logs`.
 
 ## If something goes wrong
 

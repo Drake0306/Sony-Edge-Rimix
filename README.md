@@ -4,13 +4,16 @@ A desktop companion for Sony Alpha cameras that connects over Wi-Fi, the way Son
 
 ## Status
 
-Phase 1 works against a simulated camera: the protocol library, a command line tool and a desktop app all run and pass their tests there. None of it has been tried on a real camera yet. To change that, follow [docs/camera-testing.md](docs/camera-testing.md).
+Phases 1 to 4 work against a simulated camera: the protocol library, a command line tool and a desktop app all run and pass their tests there. None of it has been tried on a real camera yet. To change that, follow [docs/camera-testing.md](docs/camera-testing.md).
 
 ## What's inside
 
 - `crates/sony-ptpip` is the protocol library that talks to the camera over Wi-Fi (PTP/IP).
 - `crates/sony-ptpip-sim` is a simulated camera (`sony-ptpip-sim`) for trying things without hardware.
-- `crates/rimix-cli` is the command line tool (`rimix`): discover, connect, props, set, step, shoot, record, liveview, watch, wifi.
+- `crates/rimix-cli` is the command line tool (`rimix`): discover, connect, props, set, step, shoot, record, liveview, watch, card, wifi, ble, sftp.
+- `crates/rimix-wifi` joins the camera's Wi-Fi network.
+- `crates/rimix-ble` finds Sony cameras over Bluetooth and reads their Wi-Fi details.
+- `crates/rimix-sftp` is the SFTP server behind Receive from camera.
 - `apps/desktop` is the desktop app, built with Tauri.
 - `docs/` holds the design and the real-camera test guide.
 
@@ -80,12 +83,25 @@ The connect screen has three ways in:
 
 If the camera's Wi-Fi drops while you work, Rimix tries to rejoin it by itself from the second reconnect attempt. If that does not work, join the camera's network again from the Wi-Fi menu, or press Disconnect and connect again.
 
+### Several cameras at once
+
+Several cameras can be connected at the same time when they are all on the same router (set "PC Remote Cnct Method" to Access Point on each camera and join them to your router). A Mac can be on only one Wi-Fi Direct network at a time, so joining a camera's own DIRECT- network drops any camera connected through another network name. Cameras on the router, reached by address, stay connected.
+
+### Bluetooth
+
+With Bluetooth on (App settings, Connection, the Bluetooth switch), Nearby also lists Sony cameras heard over Bluetooth, under the Wi-Fi ones, as "<model> nearby" with "pairing open" or "pairing off". "Join via Bluetooth" reads the camera's Wi-Fi name and password over Bluetooth, then joins and connects as usual. The password is never kept. If Bluetooth is off or Rimix may not use it, Nearby says "Bluetooth is off or not allowed; nearby cameras come from Wi-Fi only." The Bluetooth remote shutter on the command line (`rimix ble shoot`) needs the Mac paired first, from the camera's Menu, Network, Bluetooth.
+
 ## Features
 
 - Live view, shooting, recording and the main exposure settings from the desktop.
 - Wi-Fi joining by QR code, by typed name and password, or from the nearby list. If the network is not visible yet, Rimix says "This computer can't see <name> yet" and tells you to open Wi-Fi Direct Info on the camera and try again.
 - Reconnecting: from the second attempt Rimix rejoins the camera's Wi-Fi by itself. From attempt 5 the top bar says "Reconnecting… if the camera's Wi-Fi dropped, rejoin it from the Wi-Fi menu".
 - Per-model settings: Rimix handles older and newer camera generations differently. Hover the firmware in the top bar to see the generation.
+- Scopes: in the Scopes and timer panel, switch on Waveform, False colour, Zebra or Thirds grid over the live view.
+- Several cameras: the Cameras panel lists every connected camera; click one to make it the one the controls act on. "Add a camera" opens the connect screen while the others stay connected, and "Back to <model>" returns to them. "Shoot all" fires every connected camera at once, and "Disconnect all" drops them all. While several cameras are connected, each filmstrip tile is labelled with the camera it came from. See "Several cameras at once" above for the Wi-Fi limits.
+- Browse card: in the Cameras panel, "Browse card" lists the active camera's card, newest first. "Download" saves a file (videos too) into the Save to folder and into the filmstrip, and the row then says "Saved". Files of 4 GB or more say "Too large to download". An empty card says "No files on the card".
+- Receive from camera: in App settings, the Receive from camera switch starts an SFTP server the camera's FTP Transfer function can send to. While it is on, the section shows the Address, Username, Password and Fingerprint to type into the camera, and "New password" makes a new password. The hint reads "On the camera: Menu, Network, FTP Transfer Func., Server Setting; choose SFTP, enter this address, username and password." Received files land in the Save to folder and in the filmstrip, labelled "Received".
+- Bluetooth: see "Bluetooth" under "Connect your camera".
 - Interval timer: in the Scopes and timer panel, open the Interval timer row. Set Every (seconds, at least 2) and Shots (leave empty for no limit), then press Start. The dock shows, for example, "Interval 3 of 20, next in 4 s". Shots skipped because the camera was busy are counted as missed. A dropped link does not stop the run; Disconnect and Stop do.
 
 ## Logs
@@ -101,6 +117,19 @@ printf '%s\n' 'the password' | rimix -v wifi join "DIRECT-xxxx:ZV-E10" --passwor
 ```
 
 `status` prints the Wi-Fi device, the network it is on (or "hidden by the system" when it has an address but the system will not say the name) and its address. `join` prints how many times it tried, the network and the address, or the error; it exits with 3 when the network is not visible and 4 for any other failure. `-v` prints every Wi-Fi command and its answer, with the password hidden; `2>&1` puts those lines in the same output so you can copy all of it.
+
+## Command line card, Bluetooth and SFTP
+
+```
+rimix card list 192.168.122.1
+rimix card get 192.168.122.1 DSC00001.JPG --out ~/Desktop/rimix-test
+rimix ble scan
+rimix ble handoff ZV-E10
+rimix ble shoot ZV-E10
+printf '%s\n' 'a password' | rimix sftp serve --dir ~/Desktop/rimix-test --password-stdin
+```
+
+`card list` prints the card's files, newest first: kind, size, date, handle and name. `card get` downloads one file by its handle or name, resuming a partial download left in the folder. `ble scan` lists the Sony cameras heard over Bluetooth (name, model, pairing, address; `--seconds` sets how long it listens). `ble handoff` prints the camera's Wi-Fi name and only the length of its password. `ble shoot` takes a photo with the camera's Bluetooth remote shutter. `sftp serve` runs the SFTP server on port 2222 (`--port`) for the user `rimix` (`--user`), prints the address, user and fingerprint to type into the camera, then one line per received file, until Ctrl-C.
 
 ## Access Authentication
 
@@ -154,9 +183,24 @@ RIMIX_WIFI=fake RIMIX_CAMERA_ADDR=127.0.0.1:15740 RIMIX_SSH_PORT=<port> pnpm tau
 
 On the command line tool, the matching flag is `--ssh-port`.
 
+All the environment variables:
+
+- `RIMIX_WIFI=fake`: Wi-Fi joins succeed at once without touching the Wi-Fi.
+- `RIMIX_CAMERA_ADDR=<ip:port>`: where the camera is after a join.
+- `RIMIX_SSH_PORT=<port>`: the camera's SSH port for Access Authentication (22 by default).
+- `RIMIX_BLE=fake`: Bluetooth finds a pretend ZV-E10 whose network is `DIRECT-abc1:ZV-E10` with password `12345678`. `RIMIX_BLE=off`: Bluetooth is unavailable for this run.
+- `RIMIX_WEBCAM=off`: the connect screen never opens the webcam and says "Webcam off for this run" on the scan card. Useful for smoke tests on a machine without a webcam, or to avoid the camera permission prompt.
+- `RIMIX_LOG=<level>`: the log level, for example `debug`.
+
+A full smoke test without any hardware:
+
+```
+RIMIX_WIFI=fake RIMIX_CAMERA_ADDR=127.0.0.1:15740 RIMIX_BLE=fake RIMIX_WEBCAM=off pnpm tauri dev
+```
+
 ## Testing with a real camera
 
-[docs/camera-testing.md](docs/camera-testing.md) is a step-by-step checklist for a Sony ZV-E10, written for the camera's owner. It takes about 30 minutes and says what to send back after each step.
+[docs/camera-testing.md](docs/camera-testing.md) is a step-by-step checklist for a Sony ZV-E10, written for the camera's owner. It takes about an hour (steps 9 to 11 cover Browse card, Receive from camera and Bluetooth) and says what to send back after each step.
 
 ## Research
 
