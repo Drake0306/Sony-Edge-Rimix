@@ -20,6 +20,9 @@ const UNREACHABLE = [
  * camera; a connect timeout means the camera was not reached at all.
  */
 export function connectErrorMessage(err: string, ip: string): string {
+  // Before the unreachable check: a refused login says "refused" too.
+  const ssh = sshErrorMessage(err);
+  if (ssh) return ssh;
   const e = err.toLowerCase();
   if (e.includes(PAIRING_TIMEOUT)) {
     return 'The camera asked you to allow this computer. Press OK on the camera, then try again.';
@@ -30,6 +33,30 @@ export function connectErrorMessage(err: string, ip: string): string {
   const detail = err.replace(/^Cannot connect to [^:]+(:\d+)?: /, '');
   return `Could not connect to the camera at ${ip}: ${detail}`;
 }
+
+/** sony-ptpip's `Error::SshAuth` Display text. */
+const SSH_AUTH = 'the camera refused the username or password';
+/** How sony-ptpip's `Error::HostKeyMismatch` Display text starts. */
+const HOST_KEY_CHANGED = "the camera's fingerprint changed";
+
+/**
+ * The message for an Access Authentication failure (a refused login or a
+ * changed fingerprint) in a connect error or a `Disconnected` reason, or
+ * null for any other error.
+ */
+export function sshErrorMessage(err: string): string | null {
+  if (err.includes(SSH_AUTH)) {
+    return 'The camera refused the username or password. Check Access Authen. Info on the camera and try again.';
+  }
+  if (err.includes(HOST_KEY_CHANGED)) {
+    return "The camera's fingerprint changed. If you reset the camera, forget it in App settings and connect again; otherwise do not connect.";
+  }
+  return null;
+}
+
+/** The connect screen's confirmation line for a camera's SSH fingerprint. */
+export const fingerprintText = (sha256: string) =>
+  `This camera's fingerprint is ${sha256}. Check it against Access Authen. Info on the camera.`;
 
 /** The connect screen's message for a webcam error (a DOMException name from getUserMedia). */
 export function webcamErrorMessage(e: unknown): string {

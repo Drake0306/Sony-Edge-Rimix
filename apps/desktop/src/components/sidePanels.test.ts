@@ -1,8 +1,10 @@
 import { describe, expect, test, vi } from 'vitest';
-import type { AppSettings } from '../ipc';
+import cameraState from '../fixtures/camera-state.json';
+import type { Actions } from '../actions';
+import type { AppSettings, CameraState, RecentCamera } from '../ipc';
 import { createActions } from '../actions';
 import { createStore, initialState } from '../state';
-import { saveToSection } from './sidePanels';
+import { mount, saveToSection } from './sidePanels';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(() => Promise.resolve()) }));
 
@@ -39,5 +41,30 @@ describe('Save to', () => {
     store.set({ saveError: null });
     expect(line()!.hidden).toBe(true);
     section.destroy();
+  });
+});
+
+describe('Cameras', () => {
+  test('the current camera, once its link is lost, reconnects from its row', () => {
+    const rc: RecentCamera = {
+      ip: '192.168.122.1', model: 'ILCE-7M4', lastUsed: 1, ssid: null, sshUser: 'cam', sshFingerprint: 'SHA256:x',
+    };
+    const camera = { ...(cameraState as unknown as CameraState), model: 'ILCE-7M4', connected: true };
+    const store = createStore({
+      ...initialState(),
+      screen: 'main' as const,
+      camera,
+      settings: { ...settings, recentCameras: [rc], lastIp: rc.ip },
+    });
+    const actions = { connectRecent: vi.fn(() => Promise.resolve(false)), disconnect: vi.fn() } as unknown as Actions;
+    const root = document.createElement('div');
+    const unmount = mount(root, store, actions);
+    const row = () => root.querySelector<HTMLButtonElement>('[aria-label="Cameras"] button')!;
+    row().click();
+    expect(actions.connectRecent).not.toHaveBeenCalled();
+    store.set({ camera: { ...camera, connected: false } });
+    row().click();
+    expect(actions.connectRecent).toHaveBeenCalledWith(rc);
+    unmount();
   });
 });

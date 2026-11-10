@@ -1,11 +1,11 @@
 // The connect screen: scan the camera's QR code, pick a nearby camera, or
-// type its Wi-Fi name and password (with the address field under Advanced),
-// plus recently used cameras.
+// type its Wi-Fi name and password (with the Access Authentication login and
+// the address field under their own disclosures), plus recently used cameras.
 
 import type { Actions } from '../actions';
-import { NOT_A_WIFI_CODE, webcamErrorMessage } from '../copy';
+import { fingerprintText, NOT_A_WIFI_CODE, webcamErrorMessage } from '../copy';
 import { button, el, icon } from '../dom';
-import { discover } from '../ipc';
+import { discover, type SshLogin } from '../ipc';
 import { parseWifiQr } from '../qr/payload';
 import { createScanner, webcamSupported } from '../qr/scanner';
 import { watch, type AppStore } from '../state';
@@ -39,6 +39,35 @@ function input(id: string, label: string, value = ''): [HTMLLabelElement, HTMLIn
   return [lbl, i];
 }
 
+/** A disclosure button and the box it shows and hides. */
+function disclosure(text: string, box: HTMLElement): HTMLButtonElement {
+  const t = button('textbtn disclosure', text);
+  t.setAttribute('aria-expanded', 'false');
+  box.hidden = true;
+  return t;
+}
+
+function setOpen(toggle: HTMLButtonElement, box: HTMLElement, open: boolean): void {
+  box.hidden = !open;
+  toggle.setAttribute('aria-expanded', String(open));
+}
+
+/** A password field with its Show/Hide button; `extra` goes after them. */
+function passwordRow(id: string, label: string, ...extra: HTMLElement[]): [HTMLElement, HTMLInputElement] {
+  const [lbl, i] = input(id, label);
+  i.type = 'password';
+  i.placeholder = label;
+  const show = button('textbtn', 'Show');
+  show.addEventListener('click', () => {
+    const hidden = i.type === 'password';
+    i.type = hidden ? 'text' : 'password';
+    show.textContent = hidden ? 'Hide' : 'Show';
+  });
+  const row = el('div', 'field');
+  row.append(lbl, i, show, ...extra);
+  return [row, i];
+}
+
 function submitButton(): HTMLButtonElement {
   const b = button('pbtn', 'Connect');
   b.type = 'submit';
@@ -59,7 +88,22 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   const headline = el('div', 'headline');
   const message = el('p', 'message');
   message.setAttribute('role', 'status');
-  headline.append(el('h1', '', 'Connect a camera'), el('p', '', 'Three ways in. Pick whichever is nearest to hand.'), message);
+  // A camera's SSH fingerprint to compare with its screen before connecting.
+  const confirm = el('div', 'fingerprint glass');
+  confirm.hidden = true;
+  confirm.setAttribute('role', 'alert');
+  const confirmText = el('p');
+  const matches = button('pbtn', 'It matches, connect');
+  const cancel = button('textbtn', 'Cancel');
+  const confirmRow = el('div', 'row');
+  confirmRow.append(matches, cancel);
+  confirm.append(confirmText, confirmRow);
+  headline.append(
+    el('h1', '', 'Connect a camera'),
+    el('p', '', 'Three ways in. Pick whichever is nearest to hand.'),
+    message,
+    confirm,
+  );
 
   // 1. Scan the QR code
   const video = el('video');
@@ -111,18 +155,23 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   ssid.placeholder = 'DIRECT-xxxx:ZV-E10';
   const ssidRow = el('div', 'field');
   ssidRow.append(ssidLabel, ssid);
-  const [pwLabel, pw] = input('pw', 'Password');
-  pw.type = 'password';
-  pw.placeholder = 'Password';
-  const show = button('textbtn', 'Show');
-  const pwRow = el('div', 'field');
-  pwRow.append(pwLabel, pw, show, submitButton());
+  const [pwRow, pw] = passwordRow('pw', 'Password', submitButton());
   creds.append(ssidRow, pwRow);
 
-  const advToggle = button('textbtn disclosure', 'Advanced: connect by address');
-  advToggle.setAttribute('aria-expanded', 'false');
+  // Access Authentication: the camera's SSH login, never stored.
+  const ssh = el('div', 'ssh');
+  ssh.setAttribute('role', 'group');
+  ssh.setAttribute('aria-label', 'Access Authentication');
+  const sshToggle = disclosure('This camera uses Access Authentication', ssh);
+  const [userLabel, sshUser] = input('ssh-user', 'Username');
+  sshUser.placeholder = 'Username';
+  const userRow = el('div', 'field');
+  userRow.append(userLabel, sshUser);
+  const [sshPwRow, sshPw] = passwordRow('ssh-pw', 'Password');
+  ssh.append(userRow, sshPwRow, el('p', '', 'Shown on the camera under Access Authen. Info.'));
+
   const advanced = el('div', 'advanced');
-  advanced.hidden = true;
+  const advToggle = disclosure('Advanced: connect by address', advanced);
   const addrForm = el('form', 'field');
   const [ipLabel, ip] = input('ip', 'Camera address', DEFAULT_IP);
   addrForm.append(ipLabel, ip, submitButton());
@@ -131,6 +180,8 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     'Type the Wi-Fi name and password',
     creds,
     el('p', '', 'Shown on the camera under Menu, Network, PC Remote Function, Wi-Fi Direct Info.'),
+    sshToggle,
+    ssh,
     advToggle,
     advanced,
   );
@@ -185,6 +236,17 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     scanAgain.hidden = text === null;
   };
 
+  /** The login to send with a connect: only while the box is open with a username. */
+  const login = (): SshLogin | null => {
+    const user = sshUser.value.trim();
+    return !ssh.hidden && user ? { user, password: sshPw.value, fingerprint: null } : null;
+  };
+
+  const openLogin = () => {
+    setOpen(sshToggle, ssh, true);
+    (sshUser.value.trim() ? sshPw : sshUser).focus();
+  };
+
   const showPaste = () => {
     pasteBox.hidden = false;
   };
@@ -223,7 +285,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       return;
     }
     if (!fromScanner) {
-      if (store.get().connecting === null) await actions.connectWithWifi(wifi);
+      if (store.get().connecting === null) await actions.connectWithWifi(wifi, login());
       return;
     }
     if (text === failedText || store.get().connecting !== null) {
@@ -235,7 +297,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     pw.value = wifi.password;
     area.value = text;
     showPaste();
-    const ok = await actions.connectWithWifi(wifi);
+    const ok = await actions.connectWithWifi(wifi, login());
     if (!ok) {
       if (!stopped) setFailedText(text);
       rescan();
@@ -251,11 +313,6 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     setFailedText(null);
     restartScanner();
   });
-  show.addEventListener('click', () => {
-    const hidden = pw.type === 'password';
-    pw.type = hidden ? 'text' : 'password';
-    show.textContent = hidden ? 'Hide' : 'Show';
-  });
   creds.addEventListener('submit', (e) => {
     e.preventDefault();
     const name = ssid.value.trim();
@@ -263,17 +320,22 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       ssid.focus();
       return;
     }
-    void actions.connectWithWifi({ ssid: name, password: pw.value });
+    void actions.connectWithWifi({ ssid: name, password: pw.value }, login());
+  });
+  sshToggle.addEventListener('click', () => {
+    setOpen(sshToggle, ssh, ssh.hidden);
+    if (!ssh.hidden) sshUser.focus();
   });
   advToggle.addEventListener('click', () => {
-    advanced.hidden = !advanced.hidden;
-    advToggle.setAttribute('aria-expanded', String(!advanced.hidden));
+    setOpen(advToggle, advanced, advanced.hidden);
     if (!advanced.hidden) ip.focus();
   });
   addrForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (ip.value.trim()) void actions.connect(ip.value);
+    if (ip.value.trim()) void actions.connect(ip.value, null, login());
   });
+  matches.addEventListener('click', () => void store.get().pendingFingerprint?.retry());
+  cancel.addEventListener('click', () => store.set({ pendingFingerprint: null }));
 
   const offs = [
     // Progress while connecting, otherwise the last error.
@@ -281,6 +343,25 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       message.textContent = s.connecting?.text ?? s.error ?? '';
       message.classList.toggle('error', !s.connecting && !!s.error);
       applyBusy();
+    }),
+    watch(store, (s) => s.pendingFingerprint, (pending) => {
+      confirm.hidden = pending === null;
+      confirmText.textContent = pending ? fingerprintText(pending.sha256) : '';
+    }),
+    // A remembered Access Authentication camera: fill in what is known and
+    // wait for the password.
+    watch(store, (s) => s.sshPrefill, (prefill) => {
+      if (!prefill) return;
+      sshUser.value = prefill.user;
+      sshPw.value = '';
+      if (prefill.ssid) {
+        ssid.value = prefill.ssid;
+        pw.value = '';
+      } else {
+        ip.value = prefill.ip;
+        setOpen(advToggle, advanced, true);
+      }
+      openLogin();
     }),
     watch(store, (s) => s.settings?.webcamId ?? null, () => {
       if (scannerStarted) restartScanner();
@@ -296,7 +377,15 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
           const t = el('div', 't');
           t.append(el('b', '', cam.model || cam.friendly_name), el('span', '', cam.ip));
           const b = button('pbtn', 'Connect', `Connect to ${cam.model} at ${cam.ip}`);
-          b.addEventListener('click', () => void actions.connect(cam.ip));
+          b.addEventListener('click', () => {
+            // A camera that offers Access Authentication may need its
+            // login: the first click opens it instead of connecting.
+            if (cam.ssh_supported === true && ssh.hidden) {
+              openLogin();
+              return;
+            }
+            void actions.connect(cam.ip, null, login());
+          });
           d.append(t, b);
           return d;
         }),

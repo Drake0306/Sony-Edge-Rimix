@@ -8,10 +8,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use commands::{CliError, Target};
 use rimix_wifi::WifiError;
 use sony_ptpip::error::Error;
+use sony_ptpip::SshConfig;
 
 #[derive(Parser)]
 #[command(
@@ -30,6 +31,25 @@ struct Cli {
     command: Cmd,
 }
 
+/// Access Authentication, on every camera command.
+#[derive(Args)]
+struct SshArgs {
+    /// Log in to the camera's SSH tunnel as this user (Access Authen. Info
+    /// on the camera); the password is read from stdin.
+    #[arg(long, value_name = "USER", requires = "ssh_password_stdin")]
+    ssh_user: Option<String>,
+    /// Read the SSH password from the first line of stdin.
+    #[arg(long, requires = "ssh_user")]
+    ssh_password_stdin: bool,
+    /// The camera's SSH fingerprint, as shown on the camera
+    /// (`SHA256:...` or MD5 `aa:bb:...`).
+    #[arg(long, value_name = "FINGERPRINT", requires = "ssh_user")]
+    fingerprint: Option<String>,
+    /// The camera's SSH port.
+    #[arg(long, default_value_t = 22, hide = true, value_name = "PORT")]
+    ssh_port: u16,
+}
+
 #[derive(Subcommand)]
 enum Cmd {
     /// Find cameras on the network.
@@ -45,6 +65,8 @@ enum Cmd {
     Connect {
         #[arg(value_parser = parse_addr)]
         ip: SocketAddr,
+        #[command(flatten)]
+        ssh: SshArgs,
         /// Name shown on the camera's pairing prompt.
         #[arg(long)]
         name: Option<String>,
@@ -53,6 +75,8 @@ enum Cmd {
     Props {
         #[arg(value_parser = parse_addr)]
         ip: SocketAddr,
+        #[command(flatten)]
+        ssh: SshArgs,
         /// Show every property, enabled or not.
         #[arg(long)]
         all: bool,
@@ -61,6 +85,8 @@ enum Cmd {
     Set {
         #[arg(value_parser = parse_addr)]
         ip: SocketAddr,
+        #[command(flatten)]
+        ssh: SshArgs,
         #[arg(value_parser = parse_code)]
         code: u16,
         value: String,
@@ -69,6 +95,8 @@ enum Cmd {
     Step {
         #[arg(value_parser = parse_addr)]
         ip: SocketAddr,
+        #[command(flatten)]
+        ssh: SshArgs,
         #[arg(value_parser = parse_code)]
         code: u16,
         #[arg(allow_hyphen_values = true)]
@@ -78,6 +106,8 @@ enum Cmd {
     Shoot {
         #[arg(value_parser = parse_addr)]
         ip: SocketAddr,
+        #[command(flatten)]
+        ssh: SshArgs,
         #[arg(long, default_value = ".")]
         out: PathBuf,
     },
@@ -85,11 +115,15 @@ enum Cmd {
     Record {
         #[arg(value_parser = parse_addr)]
         ip: SocketAddr,
+        #[command(flatten)]
+        ssh: SshArgs,
     },
     /// Save live view frames as JPEG files.
     Liveview {
         #[arg(value_parser = parse_addr)]
         ip: SocketAddr,
+        #[command(flatten)]
+        ssh: SshArgs,
         #[arg(long, default_value_t = 1)]
         frames: u32,
         #[arg(long, default_value = ".")]
@@ -99,6 +133,8 @@ enum Cmd {
     Watch {
         #[arg(value_parser = parse_addr)]
         ip: SocketAddr,
+        #[command(flatten)]
+        ssh: SshArgs,
         #[arg(long, default_value = ".")]
         out: PathBuf,
         /// Quit after this many seconds (for tests).
@@ -144,7 +180,8 @@ fn parse_code(text: &str) -> Result<u16, String> {
     u16::from_str_radix(digits, 16).map_err(|_| format!("{text:?} is not a hex property code"))
 }
 
-/// 3 when the camera cannot be reached, 4 when it refuses, 5 for local I/O
+/// 3 when the camera cannot be reached or its SSH fingerprint needs
+/// confirming, 4 when it refuses (including its SSH login), 5 for local I/O
 /// and capture failures, 2 for arguments clap cannot check, else 1. For
 /// Wi-Fi: 3 when the network is not visible, 4 for any other failure.
 fn exit_code(err: &anyhow::Error) -> i32 {
@@ -166,17 +203,44 @@ fn exit_code(err: &anyhow::Error) -> i32 {
             | Error::Timeout
             | Error::PairingTimeout
             | Error::Disconnected
-            | Error::Protocol(_),
+            | Error::Protocol(_)
+            | Error::HostKeyUnknown { .. },
         ) => 3,
         Some(
             Error::Response { .. }
             | Error::Unsupported(_)
             | Error::SshAuth
-            | Error::HostKeyMismatch { .. }
-            | Error::HostKeyUnknown { .. },
+            | Error::HostKeyMismatch { .. },
         ) => 4,
         Some(Error::Recovered { .. }) => 5,
         None => 1,
+    }
+}
+
+/// The tunnel settings from the SSH options, reading the password from
+/// stdin; `None` without `--ssh-user`.
+fn ssh_config(args: SshArgs) -> anyhow::Result<Option<SshConfig>> {
+    let Some(user) = args.ssh_user else {
+        return Ok(None);
+    };
+    let password = commands::read_password(std::io::stdin().lock())?
+        .ok_or_else(|| CliError::Usage("--ssh-password-stdin found no password on stdin".into()))?;
+    Ok(Some(SshConfig {
+        user,
+        password,
+        expected_fingerprint: args.fingerprint,
+        port: args.ssh_port,
+    }))
+}
+
+/// What to print instead of the error, when the camera's SSH fingerprint
+/// has not been confirmed yet.
+fn fingerprint_prompt(err: &anyhow::Error) -> Option<String> {
+    match err.downcast_ref::<Error>()? {
+        Error::HostKeyUnknown { sha256, md5 } => Some(format!(
+            "Fingerprint: {sha256} (md5 {md5})\nConfirm it on the camera and pass --fingerprint"
+        )),
+        _ => None,
     }
 }
 
@@ -190,27 +254,46 @@ fn guid_path(arg: Option<PathBuf>) -> PathBuf {
 
 async fn run(cli: Cli) -> anyhow::Result<()> {
     let guid_file = guid_path(cli.guid_file);
-    let target = |ip| Target {
-        addr: ip,
-        guid_file: guid_file.clone(),
+    let target = |ip, ssh: SshArgs| -> anyhow::Result<Target> {
+        Ok(Target {
+            addr: ip,
+            guid_file: guid_file.clone(),
+            ssh: ssh_config(ssh)?,
+        })
     };
     match cli.command {
         Cmd::Discover {
             timeout,
             ssdp_target,
         } => commands::discover(Duration::from_secs(timeout), ssdp_target).await,
-        Cmd::Connect { ip, name } => commands::connect(&target(ip), name).await,
-        Cmd::Props { ip, all } => commands::props(&target(ip), all).await,
-        Cmd::Set { ip, code, value } => commands::set(&target(ip), code, &value).await,
-        Cmd::Step { ip, code, delta } => commands::step(&target(ip), code, delta).await,
-        Cmd::Shoot { ip, out } => commands::shoot(&target(ip), &out).await,
-        Cmd::Record { ip } => commands::record(&target(ip)).await,
-        Cmd::Liveview { ip, frames, out } => commands::liveview(&target(ip), frames, &out).await,
+        Cmd::Connect { ip, ssh, name } => commands::connect(&target(ip, ssh)?, name).await,
+        Cmd::Props { ip, ssh, all } => commands::props(&target(ip, ssh)?, all).await,
+        Cmd::Set {
+            ip,
+            ssh,
+            code,
+            value,
+        } => commands::set(&target(ip, ssh)?, code, &value).await,
+        Cmd::Step {
+            ip,
+            ssh,
+            code,
+            delta,
+        } => commands::step(&target(ip, ssh)?, code, delta).await,
+        Cmd::Shoot { ip, ssh, out } => commands::shoot(&target(ip, ssh)?, &out).await,
+        Cmd::Record { ip, ssh } => commands::record(&target(ip, ssh)?).await,
+        Cmd::Liveview {
+            ip,
+            ssh,
+            frames,
+            out,
+        } => commands::liveview(&target(ip, ssh)?, frames, &out).await,
         Cmd::Watch {
             ip,
+            ssh,
             out,
             exit_after,
-        } => commands::watch(&target(ip), &out, exit_after.map(Duration::from_secs)).await,
+        } => commands::watch(&target(ip, ssh)?, &out, exit_after.map(Duration::from_secs)).await,
         Cmd::Wifi { action } => match action {
             WifiCmd::Status => commands::wifi_status().await,
             WifiCmd::Join {
@@ -234,7 +317,10 @@ async fn main() -> ExitCode {
     match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("error: {err:#}");
+            match fingerprint_prompt(&err) {
+                Some(prompt) => eprintln!("{prompt}"),
+                None => eprintln!("error: {err:#}"),
+            }
             ExitCode::from(exit_code(&err) as u8)
         }
     }

@@ -1,6 +1,7 @@
 // A tiny observable store and the reducer that folds camera events into the
 // app state. Components read with `get()` and re-render on `subscribe`.
 
+import { sshErrorMessage } from './copy';
 import type { AppSettings, CameraEvent, CameraState, DiscoveredCamera } from './ipc';
 
 export interface Store<T> {
@@ -68,6 +69,26 @@ export interface AppState {
   presetBusy: number | null;
   /** The slot last applied without failures, until another is applied or the camera disconnects. */
   activePreset: number | null;
+  /**
+   * A camera's SSH fingerprint waiting for the user to compare it with the
+   * camera's screen; `retry` runs the same connect again with it confirmed.
+   */
+  pendingFingerprint: PendingFingerprint | null;
+  /** A remembered Access Authentication camera whose password the connect screen asks for. */
+  sshPrefill: SshPrefill | null;
+}
+
+export interface PendingFingerprint {
+  sha256: string;
+  md5: string;
+  retry: () => Promise<boolean>;
+}
+
+/** Where the connect screen fills in a remembered camera's login (no password is kept). */
+export interface SshPrefill {
+  user: string;
+  ssid: string | null;
+  ip: string;
 }
 
 export type AppStore = Store<AppState>;
@@ -90,6 +111,8 @@ export const initialState = (): AppState => ({
   error: null,
   presetBusy: null,
   activePreset: null,
+  pendingFingerprint: null,
+  sshPrefill: null,
 });
 
 /** What the app uses when the settings file cannot be read. */
@@ -137,6 +160,13 @@ export function applyEvent(state: AppState, event: CameraEvent): Partial<AppStat
     };
   }
   if ('Reconnecting' in event) return { reconnecting: event.Reconnecting.attempt };
+  if ('Disconnected' in event) {
+    // The camera refused the login or its fingerprint changed: reconnecting
+    // has stopped, so say why and leave the camera shown as disconnected.
+    const error = sshErrorMessage(event.Disconnected.reason);
+    if (!error) return {};
+    return { reconnecting: null, error, camera: state.camera && { ...state.camera, connected: false } };
+  }
   if ('CaptureProgress' in event) {
     const { filename, received, total } = event.CaptureProgress;
     return { transfers: { ...state.transfers, [filename]: { received, total } } };

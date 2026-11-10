@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import fixture from './fixtures/state-changed.json';
 import captureSaved from './fixtures/capture-saved.json';
 import { applyEvent, createStore, defaultSettings, initialState } from './state';
-import type { CameraEvent } from './ipc';
+import type { CameraEvent, CameraState } from './ipc';
 
 describe('store', () => {
   test('set merges and notifies subscribers', () => {
@@ -65,6 +65,24 @@ describe('store', () => {
     expect(applyEvent(s, failed)).toEqual({});
     s = { ...s, ...applyEvent(s, captureSaved as unknown as CameraEvent) };
     expect(s.saveError).toBeNull();
+  });
+
+  test('a refused SSH login ends reconnecting with its message and keeps the main screen', () => {
+    const camera = (fixture as unknown as { StateChanged: CameraState }).StateChanged;
+    const s = { ...initialState(), screen: 'main' as const, camera, reconnecting: 2 };
+    const patch = applyEvent(s, { Disconnected: { reason: 'the camera refused the username or password' } });
+    expect(patch.reconnecting).toBeNull();
+    expect(patch.error).toBe(
+      'The camera refused the username or password. Check Access Authen. Info on the camera and try again.',
+    );
+    expect(patch.camera?.connected).toBe(false);
+    expect(patch.screen).toBeUndefined();
+    const changed = applyEvent(s, {
+      Disconnected: { reason: "the camera's fingerprint changed (expected SHA256:a, got SHA256:b)" },
+    });
+    expect(changed.error).toMatch(/^The camera's fingerprint changed\./);
+    // A plain link loss changes nothing here: reconnecting reports itself.
+    expect(applyEvent(s, { Disconnected: { reason: 'connection reset' } })).toEqual({});
   });
 
   test('events without state changes leave the state alone', () => {

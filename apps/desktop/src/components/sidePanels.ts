@@ -139,7 +139,12 @@ function cameras(store: AppStore, actions: Actions): { el: HTMLElement; destroy:
     const rows: HTMLElement[] = [];
     if (camera) {
       const r = rowButton(camera.model, 'this', 'check');
-      r.querySelector('button')!.prepend(el('i', camera.connected ? 'dot' : 'dot off'));
+      const b = r.querySelector('button')!;
+      b.prepend(el('i', camera.connected ? 'dot' : 'dot off'));
+      // Once the link is lost for good (a refused login, say), the row
+      // connects to the camera again.
+      const current = settings?.recentCameras.find((c) => c.ip === settings.lastIp);
+      if (!camera.connected && current) b.addEventListener('click', () => void actions.connectRecent(current));
       rows.push(r);
     }
     for (const rc of settings?.recentCameras ?? []) {

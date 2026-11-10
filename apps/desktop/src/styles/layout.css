@@ -304,6 +304,14 @@ body{overflow:hidden}
 .field textarea:focus-visible{box-shadow:var(--focus)!important;outline:0}
 .field.paste{align-items:flex-end}
 .advanced{display:flex;flex-direction:column;gap:8px}
+/* Access Authentication: the SSH login and the fingerprint to confirm */
+.ssh{display:flex;flex-direction:column;gap:8px}
+.headline .fingerprint{margin-top:12px;max-width:620px;padding:12px 14px;border-radius:14px;display:flex;flex-direction:column;gap:10px;text-shadow:none}
+.fingerprint p{margin:0;color:var(--ink);font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+.fingerprint .row{display:flex;align-items:center;gap:14px}
+.fingerprint .textbtn{align-self:center}
+.status .lock{display:inline-flex;color:var(--ink-2)}
+.status .lock svg{width:11px;height:11px}
 
 /* toasts */
 .toasts{position:fixed;left:50%;top:64px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;z-index:70;pointer-events:none}

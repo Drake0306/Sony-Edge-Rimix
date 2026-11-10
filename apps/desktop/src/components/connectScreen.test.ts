@@ -49,8 +49,7 @@ describe('connect screen', () => {
       'Nearby',
       'Type the Wi-Fi name and password',
     ]);
-    const adv = root.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
-    expect(adv.textContent).toBe('Advanced: connect by address');
+    const adv = byText('Advanced: connect by address');
     expect(adv.getAttribute('aria-expanded')).toBe('false');
     expect(root.querySelector('#ip')!.closest('[hidden]')).not.toBeNull();
     adv.click();
@@ -73,7 +72,7 @@ describe('connect screen', () => {
     root.querySelector<HTMLInputElement>('#ssid')!.value = 'DIRECT-abc1:ZV-E10';
     root.querySelector<HTMLInputElement>('#pw')!.value = '12345678';
     root.querySelector<HTMLInputElement>('#pw')!.closest('form')!.requestSubmit();
-    expect(actions.connectWithWifi).toHaveBeenCalledWith({ ssid: 'DIRECT-abc1:ZV-E10', password: '12345678' });
+    expect(actions.connectWithWifi).toHaveBeenCalledWith({ ssid: 'DIRECT-abc1:ZV-E10', password: '12345678' }, null);
   });
 
   test('Show reveals the password', () => {
@@ -90,7 +89,7 @@ describe('connect screen', () => {
   test('the address under Advanced connects as before', () => {
     byText('Advanced: connect by address').click();
     root.querySelector<HTMLInputElement>('#ip')!.closest('form')!.requestSubmit();
-    expect(actions.connect).toHaveBeenCalledWith('192.168.122.1');
+    expect(actions.connect).toHaveBeenCalledWith('192.168.122.1', null, null);
   });
 
   test('pasted text that is not a Wi-Fi code is explained and left for editing', () => {
@@ -112,6 +111,7 @@ describe('connect screen', () => {
     byText('Use this text').click();
     expect(actions.connectWithWifi).toHaveBeenCalledWith(
       expect.objectContaining({ ssid: 'DIRECT-abc1:ZV-E10', password: '12345678' }),
+      null,
     );
   });
 
@@ -127,6 +127,121 @@ describe('connect screen', () => {
     expect(buttons.every((b) => !b.disabled)).toBe(true);
     expect(message().textContent).toBe('Something failed');
     expect(message().classList.contains('error')).toBe(true);
+  });
+});
+
+describe('Access Authentication', () => {
+  beforeEach(() => setup());
+  afterEach(() => unmount());
+
+  const SHA = 'SHA256:q1w2e3r4t5y6u7i8o9p0asdfghjklzxcvbnm1234567';
+  const disclosure = () => byText('This camera uses Access Authentication');
+  const user = () => root.querySelector<HTMLInputElement>('#ssh-user')!;
+  const pass = () => root.querySelector<HTMLInputElement>('#ssh-pw')!;
+  const nearbyCamera = (ssh: boolean | null) => ({
+    model: 'ILCE-7M4',
+    friendly_name: 'ILCE-7M4',
+    ip: '192.168.1.20',
+    ptp_port: 15740,
+    ptp_version: null,
+    pairing_required: null,
+    ssh_supported: ssh,
+    source: 'Ssdp' as const,
+  });
+
+  test('sits closed under the name and password, above Advanced', () => {
+    const d = disclosure();
+    expect(d.getAttribute('aria-expanded')).toBe('false');
+    const order = [...root.querySelectorAll('button[aria-expanded]')].map((b) => b.textContent);
+    expect(order).toEqual(['This camera uses Access Authentication', 'Advanced: connect by address']);
+    expect(user().closest('[hidden]')).not.toBeNull();
+    expect(pass().type).toBe('password');
+    d.click();
+    expect(d.getAttribute('aria-expanded')).toBe('true');
+    expect(user().closest('[hidden]')).toBeNull();
+    expect(root.querySelector('label[for="ssh-user"]')!.textContent).toBe('Username');
+    expect(root.querySelector('label[for="ssh-pw"]')!.textContent).toBe('Password');
+  });
+
+  test('its Show reveals the password', () => {
+    disclosure().click();
+    const show = pass().parentElement!.querySelector<HTMLButtonElement>('button')!;
+    expect(show.textContent).toBe('Show');
+    show.click();
+    expect(pass().type).toBe('text');
+  });
+
+  test('an open login with a username goes with every connect', () => {
+    disclosure().click();
+    user().value = 'cam';
+    pass().value = '12345678';
+    const login = { user: 'cam', password: '12345678', fingerprint: null };
+    root.querySelector<HTMLInputElement>('#ssid')!.value = 'DIRECT-zz:ILCE-7M4';
+    root.querySelector<HTMLInputElement>('#pw')!.closest('form')!.requestSubmit();
+    expect(actions.connectWithWifi).toHaveBeenCalledWith({ ssid: 'DIRECT-zz:ILCE-7M4', password: '' }, login);
+    byText('Advanced: connect by address').click();
+    root.querySelector<HTMLInputElement>('#ip')!.closest('form')!.requestSubmit();
+    expect(actions.connect).toHaveBeenCalledWith('192.168.122.1', null, login);
+    // Closed again, the login is left out.
+    disclosure().click();
+    root.querySelector<HTMLInputElement>('#ip')!.closest('form')!.requestSubmit();
+    expect(actions.connect).toHaveBeenLastCalledWith('192.168.122.1', null, null);
+  });
+
+  test('a nearby camera that supports it opens the login before connecting', () => {
+    store.set({ nearby: [nearbyCamera(true)] });
+    const connect = () => root.querySelector<HTMLButtonElement>('.device .pbtn')!;
+    connect().click();
+    expect(disclosure().getAttribute('aria-expanded')).toBe('true');
+    expect(actions.connect).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(user());
+    user().value = 'cam';
+    pass().value = 'pw';
+    connect().click();
+    expect(actions.connect).toHaveBeenCalledWith('192.168.1.20', null, {
+      user: 'cam',
+      password: 'pw',
+      fingerprint: null,
+    });
+  });
+
+  test('a nearby camera without it connects at once', () => {
+    store.set({ nearby: [nearbyCamera(null)] });
+    root.querySelector<HTMLButtonElement>('.device .pbtn')!.click();
+    expect(actions.connect).toHaveBeenCalledWith('192.168.1.20', null, null);
+    expect(disclosure().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  test('a remembered camera fills the username and waits for the password', () => {
+    store.set({ sshPrefill: { user: 'cam', ssid: 'DIRECT-zz:ILCE-7M4', ip: '192.168.122.1' } });
+    expect(disclosure().getAttribute('aria-expanded')).toBe('true');
+    expect(user().value).toBe('cam');
+    expect(pass().value).toBe('');
+    expect(root.querySelector<HTMLInputElement>('#ssid')!.value).toBe('DIRECT-zz:ILCE-7M4');
+    expect(document.activeElement).toBe(pass());
+    expect(actions.connectWithWifi).not.toHaveBeenCalled();
+
+    // Known only by address: the address is filled under Advanced.
+    store.set({ sshPrefill: { user: 'ops', ssid: null, ip: '10.0.0.7' } });
+    expect(byText('Advanced: connect by address').getAttribute('aria-expanded')).toBe('true');
+    expect(root.querySelector<HTMLInputElement>('#ip')!.value).toBe('10.0.0.7');
+    expect(user().value).toBe('ops');
+  });
+
+  test('a fingerprint to confirm is shown until confirmed or cancelled', () => {
+    const block = () => root.querySelector<HTMLElement>('.fingerprint')!;
+    expect(block().hidden).toBe(true);
+    const retry = vi.fn(() => Promise.resolve(true));
+    store.set({ pendingFingerprint: { sha256: SHA, md5: 'aa:bb', retry } });
+    expect(block().hidden).toBe(false);
+    expect(block().querySelector('p')!.textContent).toBe(
+      `This camera's fingerprint is ${SHA}. Check it against Access Authen. Info on the camera.`,
+    );
+    byText('It matches, connect').click();
+    expect(retry).toHaveBeenCalledTimes(1);
+    byText('Cancel').click();
+    expect(store.get().pendingFingerprint).toBeNull();
+    expect(block().hidden).toBe(true);
   });
 });
 
@@ -278,7 +393,7 @@ describe('scanning', () => {
     report(OTHER);
     await vi.advanceTimersByTimeAsync(0);
     expect(actions.connectWithWifi).toHaveBeenCalledTimes(2);
-    expect(actions.connectWithWifi).toHaveBeenLastCalledWith(expect.objectContaining({ ssid: 'DIRECT-xyz9:A7IV' }));
+    expect(actions.connectWithWifi).toHaveBeenLastCalledWith(expect.objectContaining({ ssid: 'DIRECT-xyz9:A7IV' }), null);
   });
 
   test('Scan again lets the same code connect again', async () => {

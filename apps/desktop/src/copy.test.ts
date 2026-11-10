@@ -7,6 +7,7 @@ import {
   joiningText,
   NOT_A_WIFI_CODE,
   reconnectingText,
+  sshErrorMessage,
   wifiErrorMessage,
 } from './copy';
 
@@ -121,5 +122,34 @@ describe('reconnectingText', () => {
     expect(reconnectingText(1)).toBe('Reconnecting');
     expect(reconnectingText(4)).toBe('Reconnecting');
     expect(reconnectingText(5)).toBe("Reconnecting… if the camera's Wi-Fi dropped, rejoin it from the Wi-Fi menu");
+  });
+});
+
+describe('sshErrorMessage', () => {
+  const AUTH = 'The camera refused the username or password. Check Access Authen. Info on the camera and try again.';
+  const CHANGED =
+    "The camera's fingerprint changed. If you reset the camera, forget it in App settings and connect again; otherwise do not connect.";
+
+  test('a refused login and a changed fingerprint have their own words', () => {
+    expect(sshErrorMessage('the camera refused the username or password')).toBe(AUTH);
+    expect(
+      sshErrorMessage("the camera's fingerprint changed (expected SHA256:aaa, got SHA256:bbb)"),
+    ).toBe(CHANGED);
+    expect(sshErrorMessage('I/O error: Connection refused (os error 61)')).toBeNull();
+  });
+
+  test('connectErrorMessage uses them rather than calling the camera unreachable', () => {
+    expect(
+      connectErrorMessage(
+        'Cannot connect to 192.168.122.1:15740: the camera refused the username or password',
+        '192.168.122.1',
+      ),
+    ).toBe(AUTH);
+    expect(
+      connectErrorMessage(
+        "Cannot connect to 192.168.122.1:15740: the camera's fingerprint changed (expected SHA256:a, got SHA256:b)",
+        '192.168.122.1',
+      ),
+    ).toBe(CHANGED);
   });
 });

@@ -144,6 +144,21 @@ export interface RecentCamera {
   lastUsed: number;
   /** The camera's Wi-Fi network name, when known. Never its password. */
   ssid: string | null;
+  /** The Access Authentication username, for a camera reached through SSH. Never the password. */
+  sshUser?: string | null;
+  /** The SSH host key fingerprint the user confirmed for this camera. */
+  sshFingerprint?: string | null;
+}
+
+/**
+ * The login for a camera with Access Authentication. The password travels
+ * only in the `connect` call; it is never stored. `fingerprint` is the one
+ * the user confirmed, or null on a first connect.
+ */
+export interface SshLogin {
+  user: string;
+  password: string;
+  fingerprint: string | null;
 }
 
 export type WifiJoin = 'Automatic' | 'Ask';
@@ -194,10 +209,12 @@ export const waitForCamera = (timeoutMs: number) =>
   invoke<DiscoveredCamera>('wait_for_camera', { timeoutMs });
 /**
  * `ip` is an IP address (port 15740) or `ip:port`. `ssid` is the camera's
- * Wi-Fi name, remembered with the camera when known.
+ * Wi-Fi name, remembered with the camera when known. With `ssh` the session
+ * runs through the camera's Access Authentication tunnel; when the
+ * fingerprint needs confirming it rejects with `HOSTKEY <sha256> <md5>`.
  */
-export const connect = (ip: string, ssid: string | null = null) =>
-  invoke<CameraState>('connect', { ip, ssid });
+export const connect = (ip: string, ssid: string | null = null, ssh: SshLogin | null = null) =>
+  invoke<CameraState>('connect', { ip, ssid, ssh });
 export const disconnect = () => invoke<void>('disconnect');
 export const getState = () => invoke<CameraState | null>('get_state');
 export const setProperty = (code: number, raw: PtpValue) =>

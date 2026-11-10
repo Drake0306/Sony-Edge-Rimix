@@ -2,7 +2,7 @@ use std::path::Path;
 
 use assert_cmd::Command;
 use predicates::prelude::*;
-use sony_ptpip_sim::{spawn, SimCommand, SimConfig, SimHandle};
+use sony_ptpip_sim::{spawn, SimCommand, SimConfig, SimHandle, SshSimConfig};
 
 fn rimix(guid: &Path) -> Command {
     let mut cmd = Command::cargo_bin("rimix").unwrap();
@@ -189,6 +189,94 @@ async fn record_reports_the_new_state() {
     assert!(out.status.success(), "{:?}", out);
     assert_eq!(stdout(&out).trim(), "Recording started");
     env.finish().await;
+}
+
+/// A simulator behind an SSH front, like a camera with Access
+/// Authentication on.
+async fn ssh_env() -> Env {
+    Env::new(SimConfig {
+        ssh: Some(SshSimConfig {
+            user: "cam".into(),
+            password: "12345678".into(),
+        }),
+        ..SimConfig::default()
+    })
+    .await
+}
+
+/// Through SSH the camera is named by its IP: its own port 15740 is only
+/// reached through the tunnel, here on the simulator's SSH port.
+fn ssh_args(env: &Env, cmd: &mut Command) {
+    let ssh_port = env.sim.ssh_addr.unwrap().port().to_string();
+    cmd.arg(env.sim.addr.ip().to_string()).args([
+        "--ssh-user",
+        "cam",
+        "--ssh-password-stdin",
+        "--ssh-port",
+        &ssh_port,
+    ]);
+    cmd.write_stdin("12345678\n");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn shoot_through_ssh_saves_a_file() {
+    let env = ssh_env().await;
+    let out_dir = env.out();
+    let fp = env.sim.fingerprint_sha256.clone().unwrap();
+    let mut cmd = rimix(&env.guid());
+    cmd.arg("shoot");
+    ssh_args(&env, &mut cmd);
+    cmd.args(["--fingerprint", &fp, "--out"]).arg(&out_dir);
+    let out = run(cmd).await;
+    assert!(out.status.success(), "{:?}", out);
+    assert!(stdout(&out).starts_with("Saved "), "{}", stdout(&out));
+    assert_eq!(std::fs::read_dir(&out_dir).unwrap().count(), 1);
+    env.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unconfirmed_fingerprint_is_printed_and_exits_3() {
+    let env = ssh_env().await;
+    let sha256 = env.sim.fingerprint_sha256.clone().unwrap();
+    let md5 = env.sim.fingerprint_md5.clone().unwrap();
+    let mut cmd = rimix(&env.guid());
+    cmd.arg("connect");
+    ssh_args(&env, &mut cmd);
+    let out = run(cmd).await;
+    assert_eq!(out.status.code(), Some(3), "{:?}", out);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains(&format!(
+            "Fingerprint: {sha256} (md5 {md5})\nConfirm it on the camera and pass --fingerprint"
+        )),
+        "{err}"
+    );
+    assert!(!err.contains("12345678"), "{err}");
+    env.finish().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_ssh_password_exits_4() {
+    let env = ssh_env().await;
+    let fp = env.sim.fingerprint_sha256.clone().unwrap();
+    let mut cmd = rimix(&env.guid());
+    cmd.arg("props");
+    ssh_args(&env, &mut cmd);
+    cmd.args(["--fingerprint", &fp]).write_stdin("wrong\n");
+    let out = run(cmd).await;
+    assert_eq!(out.status.code(), Some(4), "{:?}", out);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("refused the username or password"), "{err}");
+    env.finish().await;
+}
+
+#[test]
+fn ssh_user_needs_the_password_on_stdin() {
+    let tmp = tempfile::tempdir().unwrap();
+    rimix(&tmp.path().join("guid"))
+        .args(["shoot", "127.0.0.1", "--ssh-user", "cam"])
+        .assert()
+        .code(2);
 }
 
 #[test]

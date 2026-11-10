@@ -79,7 +79,7 @@ describe('connect over Wi-Fi', () => {
     expect(phases).toEqual(['joining', 'finding', 'connecting']);
     expect(ipc.joinNetwork).toHaveBeenCalledWith(SSID, '12345678');
     expect(ipc.waitForCamera).toHaveBeenCalledWith(FIND_MS);
-    expect(ipc.connect).toHaveBeenCalledWith('192.168.122.1:15740', SSID);
+    expect(ipc.connect).toHaveBeenCalledWith('192.168.122.1:15740', SSID, null);
     expect(store.get().connecting).toBeNull();
     expect(store.get().screen).toBe('main');
   });
@@ -131,12 +131,12 @@ describe('connect over Wi-Fi', () => {
     const withSsid: RecentCamera = { ip: '192.168.122.1', model: 'ZV-E10', lastUsed: 1, ssid: SSID };
     expect(await actions.connectRecent(withSsid)).toBe(true);
     expect(ipc.joinNetwork).toHaveBeenCalledWith(SSID, null);
-    expect(ipc.connect).toHaveBeenLastCalledWith('192.168.122.1:15740', SSID);
+    expect(ipc.connect).toHaveBeenLastCalledWith('192.168.122.1:15740', SSID, null);
 
     vi.mocked(ipc.joinNetwork).mockClear();
     expect(await actions.connectRecent({ ...withSsid, ip: '10.0.0.5', ssid: null })).toBe(true);
     expect(ipc.joinNetwork).not.toHaveBeenCalled();
-    expect(ipc.connect).toHaveBeenLastCalledWith('10.0.0.5', null);
+    expect(ipc.connect).toHaveBeenLastCalledWith('10.0.0.5', null, null);
   });
 
   test('a connect in flight is not started twice', async () => {
@@ -197,6 +197,68 @@ describe('connect over Wi-Fi', () => {
     const store = storeWith('Automatic', { recentCameras: [a, b], lastIp: a.ip });
     await createActions(store).forgetCamera(b);
     expect(store.get().settings).toMatchObject({ recentCameras: [a], lastIp: a.ip });
+  });
+});
+
+describe('Access Authentication', () => {
+  const SHA = 'SHA256:q1w2e3r4t5y6u7i8o9p0asdfghjklzxcvbnm1234567';
+  const MD5 = 'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99';
+  const login = { user: 'cam', password: '12345678', fingerprint: null };
+
+  test('an unconfirmed fingerprint waits for the user instead of failing', async () => {
+    vi.mocked(ipc.connect).mockRejectedValueOnce(`HOSTKEY ${SHA} ${MD5}`);
+    const store = storeWith('Automatic');
+    expect(await createActions(store).connect('192.168.122.1', null, login)).toBe(false);
+    expect(ipc.connect).toHaveBeenCalledWith('192.168.122.1', null, login);
+    const pending = store.get().pendingFingerprint;
+    expect(pending).toMatchObject({ sha256: SHA, md5: MD5 });
+    expect(store.get().error).toBeNull();
+    expect(store.get().connecting).toBeNull();
+    expect(store.get().screen).toBe('connect');
+  });
+
+  test('confirming re-runs the same connect with the fingerprint', async () => {
+    vi.mocked(ipc.connect).mockRejectedValueOnce(`HOSTKEY ${SHA} ${MD5}`);
+    const store = storeWith('Automatic');
+    const actions = createActions(store);
+    await actions.connectWithWifi({ ssid: SSID, password: 'x' }, login);
+    expect(ipc.connect).toHaveBeenLastCalledWith('192.168.122.1:15740', SSID, login);
+    vi.mocked(ipc.joinNetwork).mockClear();
+    expect(await store.get().pendingFingerprint!.retry()).toBe(true);
+    expect(ipc.connect).toHaveBeenLastCalledWith('192.168.122.1:15740', SSID, { ...login, fingerprint: SHA });
+    // The network is already joined: only the connect runs again.
+    expect(ipc.joinNetwork).not.toHaveBeenCalled();
+    expect(store.get().pendingFingerprint).toBeNull();
+    expect(store.get().screen).toBe('main');
+  });
+
+  test('a new connect attempt drops a fingerprint waiting for confirmation', async () => {
+    const store = storeWith('Automatic', {}, {
+      pendingFingerprint: { sha256: SHA, md5: MD5, retry: () => Promise.resolve(true) },
+    });
+    await createActions(store).connect('10.0.0.5');
+    expect(store.get().pendingFingerprint).toBeNull();
+  });
+
+  test('a remembered fingerprint is used when the login has none', async () => {
+    const rc: RecentCamera = {
+      ip: '192.168.122.1:15740', model: 'ILCE-7M4', lastUsed: 1, ssid: SSID, sshUser: 'cam', sshFingerprint: SHA,
+    };
+    const store = storeWith('Automatic', { recentCameras: [rc] });
+    await createActions(store).connectWithWifi({ ssid: SSID, password: '' }, login);
+    expect(ipc.connect).toHaveBeenLastCalledWith('192.168.122.1:15740', SSID, { ...login, fingerprint: SHA });
+  });
+
+  test('a remembered Access Authentication camera asks for its password instead of connecting', async () => {
+    const rc: RecentCamera = {
+      ip: '192.168.122.1', model: 'ILCE-7M4', lastUsed: 1, ssid: SSID, sshUser: 'cam', sshFingerprint: SHA,
+    };
+    const store = storeWith('Automatic', { recentCameras: [rc] }, { screen: 'main', camera });
+    expect(await createActions(store).connectRecent(rc)).toBe(false);
+    expect(ipc.connect).not.toHaveBeenCalled();
+    expect(ipc.joinNetwork).not.toHaveBeenCalled();
+    expect(store.get().screen).toBe('connect');
+    expect(store.get().sshPrefill).toEqual({ user: 'cam', ssid: SSID, ip: '192.168.122.1' });
   });
 });
 

@@ -10,7 +10,7 @@ import {
   joiningText,
   wifiErrorMessage,
 } from './copy';
-import type { AppSettings, Preset, PtpValue, RecentCamera } from './ipc';
+import type { AppSettings, Preset, PtpValue, RecentCamera, SshLogin } from './ipc';
 import { describeFailures, upsertPreset } from './presets';
 import type { WifiCredentials } from './qr/payload';
 import type { AppStore } from './state';
@@ -21,11 +21,18 @@ export const FIND_MS = 30_000;
 export const ASK_FIND_MS = 90_000;
 
 export interface Actions {
-  /** Connects by address; `ssid` is remembered with the camera when known. */
-  connect(ip: string, ssid?: string | null): Promise<boolean>;
+  /**
+   * Connects by address; `ssid` is remembered with the camera when known.
+   * `ssh` logs in to a camera with Access Authentication.
+   */
+  connect(ip: string, ssid?: string | null, ssh?: SshLogin | null): Promise<boolean>;
   /** Joins the camera's network (or waits for the user to), finds the camera and connects. */
-  connectWithWifi(creds: WifiCredentials): Promise<boolean>;
-  /** Reconnects a remembered camera through its network when known, else its address. */
+  connectWithWifi(creds: WifiCredentials, ssh?: SshLogin | null): Promise<boolean>;
+  /**
+   * Reconnects a remembered camera through its network when known, else its
+   * address. One with Access Authentication opens the connect screen with
+   * its username filled in instead, since its password is never kept.
+   */
   connectRecent(rc: RecentCamera): Promise<boolean>;
   forgetCamera(rc: RecentCamera): Promise<void>;
   disconnect(): Promise<void>;
@@ -46,6 +53,21 @@ export interface Actions {
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** The fingerprints in the `connect` error `HOSTKEY <sha256> <md5>`, or null for any other error. */
+export function parseHostKey(err: string): { sha256: string; md5: string } | null {
+  const m = /^HOSTKEY (\S+) ?(\S*)$/.exec(err);
+  return m ? { sha256: m[1], md5: m[2] } : null;
+}
+
+/**
+ * The fingerprint confirmed earlier for the camera on this network (or at
+ * this address when the network is unknown), told apart as in forgetCamera.
+ */
+function rememberedFingerprint(settings: AppSettings | null, ip: string, ssid: string | null): string | null {
+  const same = (c: RecentCamera) => (ssid ? c.ssid === ssid : !c.ssid && c.ip === ip.trim());
+  return settings?.recentCameras.find(same)?.sshFingerprint ?? null;
+}
+
 export function createActions(store: AppStore, toast: (m: string) => void = () => {}): Actions {
   const run = (p: Promise<unknown>) => void p.catch((e) => toast(message(e)));
 
@@ -59,14 +81,23 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
   }
 
   /** A connect in flight is never doubled, whichever way it was started. */
-  const connectOnce = (ip: string, ssid: string | null, name: string) =>
-    store.get().connecting ? Promise.resolve(false) : connectTo(ip, ssid, name);
+  const connectOnce = (ip: string, ssid: string | null, name: string, ssh: SshLogin | null) =>
+    store.get().connecting ? Promise.resolve(false) : connectTo(ip, ssid, name, ssh);
 
   /** `name` is what the progress line calls the camera. */
-  async function connectTo(ip: string, ssid: string | null, name: string): Promise<boolean> {
-    store.set({ error: null, connecting: { phase: 'connecting', text: connectingText(name) } });
+  async function connectTo(ip: string, ssid: string | null, name: string, ssh: SshLogin | null): Promise<boolean> {
+    const login =
+      ssh && !ssh.fingerprint
+        ? { ...ssh, fingerprint: rememberedFingerprint(store.get().settings, ip, ssid) }
+        : ssh;
+    store.set({
+      error: null,
+      pendingFingerprint: null,
+      sshPrefill: null,
+      connecting: { phase: 'connecting', text: connectingText(name) },
+    });
     try {
-      const camera = await ipc.connect(ip, ssid);
+      const camera = await ipc.connect(ip, ssid, login);
       const settings = await ipc.getSettings().catch(() => store.get().settings);
       store.set({
         screen: 'main',
@@ -80,10 +111,21 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
       });
       return true;
     } catch (e) {
-      const error = connectErrorMessage(message(e), ip.trim());
+      const hostKey = login ? parseHostKey(message(e)) : null;
       // Connecting drops the previous camera first, so after a failed
       // switch there may be no camera left to show.
       const camera = await ipc.getState().catch(() => null);
+      if (hostKey && login) {
+        // Not an error: the user compares the fingerprint with the camera's
+        // screen on the connect screen, then connects again with it.
+        const retry = () =>
+          store.get().connecting
+            ? Promise.resolve(false)
+            : connectTo(ip, ssid, name, { ...login, fingerprint: hostKey.sha256 });
+        store.set({ error: null, camera, connecting: null, screen: 'connect', pendingFingerprint: { ...hostKey, retry } });
+        return false;
+      }
+      const error = connectErrorMessage(message(e), ip.trim());
       store.set(
         camera
           ? { error, camera, connecting: null }
@@ -93,8 +135,9 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     }
   }
 
-  async function connectWithWifi({ ssid, password }: WifiCredentials): Promise<boolean> {
+  async function connectWithWifi({ ssid, password }: WifiCredentials, ssh: SshLogin | null = null): Promise<boolean> {
     if (store.get().connecting) return false;
+    store.set({ pendingFingerprint: null });
     const fail = (step: 'join' | 'find' | 'wait', e: unknown) => {
       store.set({ connecting: null, error: wifiErrorMessage(step, ssid, message(e)) });
       return false;
@@ -116,14 +159,27 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     } catch (e) {
       return fail(ask ? 'wait' : 'find', e);
     }
-    return connectTo(`${camera.ip}:${camera.ptp_port}`, ssid, camera.model || ssid);
+    return connectTo(`${camera.ip}:${camera.ptp_port}`, ssid, camera.model || ssid, ssh);
+  }
+
+  async function connectRecent(rc: RecentCamera): Promise<boolean> {
+    if (rc.sshUser) {
+      if (store.get().connecting) return false;
+      store.set({
+        screen: 'connect',
+        error: null,
+        pendingFingerprint: null,
+        sshPrefill: { user: rc.sshUser, ssid: rc.ssid, ip: rc.ip },
+      });
+      return false;
+    }
+    return rc.ssid ? connectWithWifi({ ssid: rc.ssid, password: '' }) : connectOnce(rc.ip, null, rc.ip, null);
   }
 
   return {
-    connect: (ip, ssid) => connectOnce(ip, ssid ?? null, ip.trim()),
+    connect: (ip, ssid, ssh) => connectOnce(ip, ssid ?? null, ip.trim(), ssh ?? null),
     connectWithWifi,
-    connectRecent: (rc) =>
-      rc.ssid ? connectWithWifi({ ssid: rc.ssid, password: '' }) : connectOnce(rc.ip, null, rc.ip),
+    connectRecent,
     async forgetCamera(rc) {
       const settings = store.get().settings;
       if (!settings) return;

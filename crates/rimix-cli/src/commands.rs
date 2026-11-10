@@ -12,6 +12,7 @@ use sony_ptpip::capture::{Destination, DestinationMode};
 use sony_ptpip::ptp::PtpValue;
 use sony_ptpip::{
     default_host_name, load_or_create_guid, Camera, CameraConfig, CameraEvent, PropertySummary,
+    SshConfig,
 };
 use tokio::sync::broadcast::{error::RecvError, Receiver};
 use tokio::time::{timeout_at, Instant};
@@ -51,6 +52,8 @@ fn io_error(what: &str, e: std::io::Error) -> anyhow::Error {
 pub struct Target {
     pub addr: SocketAddr,
     pub guid_file: PathBuf,
+    /// The camera's Access Authentication login, when given.
+    pub ssh: Option<SshConfig>,
 }
 
 async fn open(
@@ -75,7 +78,7 @@ async fn open(
         auto_receive,
         reconnect,
         before_reconnect: None,
-        ssh: None,
+        ssh: target.ssh.clone(),
     })
     .await
     .with_context(|| format!("cannot connect to {}", target.addr))?;
@@ -397,7 +400,7 @@ pub async fn wifi_status() -> Result<()> {
 }
 
 /// The first line of stdin without its line ending; `None` when empty.
-fn read_password(input: impl std::io::BufRead) -> Result<Option<String>> {
+pub fn read_password(input: impl std::io::BufRead) -> Result<Option<String>> {
     let mut line = String::new();
     let mut input = input;
     input
