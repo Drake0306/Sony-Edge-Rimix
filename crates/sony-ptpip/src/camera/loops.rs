@@ -1,6 +1,7 @@
 //! The supervisor and the three loops it runs while connected. Each loop
 //! returns only when the connection is gone, with the reason as text.
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -8,7 +9,7 @@ use tokio::sync::broadcast::{self, error::RecvError};
 use tokio::task::JoinSet;
 use tokio::time::{interval, sleep, MissedTickBehavior};
 
-use super::{connect_once, lock, CameraEvent, Inner};
+use super::{connect_once, lock, CameraEvent, Inner, RecentShot};
 use crate::capture::{captured_ready, receive_one};
 use crate::error::Error;
 use crate::liveview::next_frame;
@@ -225,52 +226,59 @@ async fn capture_loop(inner: Arc<Inner>) -> String {
 /// Fetches the oldest waiting shot and emits its events.
 ///
 /// A camera can offer a shot again, for example when the link dropped before
-/// it learned the transfer finished. Such a repeat (same camera file name
-/// and size as one of the last [`RECENT_SHOTS`] saved) must still be fetched,
-/// or the camera keeps offering it, so it is downloaded through
-/// [`receive_one`] like any other and the saved copy is then deleted, with
-/// no events.
+/// it learned the transfer finished. Such a repeat must still be fetched, or
+/// the camera keeps offering it, so it is downloaded through [`receive_one`]
+/// like any other. If one of the last [`RECENT_SHOTS`] saved has the same
+/// camera file name and size, and its file on disk holds exactly the same
+/// bytes, the new copy is deleted and [`CameraEvent::CaptureSkipped`] is
+/// emitted. Anything less than an exact match is kept: numbering restarts
+/// after a card format, and raw files are nearly constant in size.
 ///
-/// The file is written by `receive_one` with blocking `std::fs` calls on this
-/// task.
+/// The file is written by `receive_one`, and compared, with blocking
+/// `std::fs` calls on this task.
 async fn receive_next(inner: &Inner, conn: &mut PtpIpConnection) -> Result<(), Error> {
     let (info, _) = conn
         .command_data_in(OP_GET_OBJECT_INFO, &[HANDLE_CAPTURED_STILL])
         .await?;
     let info = parse_object_info(&info)?;
     let filename = info.filename;
-    let key = (filename.clone(), u64::from(info.compressed_size));
-    let repeat = lock(&inner.recent).contains(&key);
-    if !repeat {
-        inner.emit(CameraEvent::CaptureStarted {
-            filename: filename.clone(),
-        });
-    }
+    let size = u64::from(info.compressed_size);
+    inner.emit(CameraEvent::CaptureStarted {
+        filename: filename.clone(),
+    });
     let dest = lock(&inner.destination).clone();
     let mut on_progress = |received, total| {
-        if !repeat {
-            inner.emit(CameraEvent::CaptureProgress {
-                filename: filename.clone(),
-                received,
-                total,
-            });
-        }
+        inner.emit(CameraEvent::CaptureProgress {
+            filename: filename.clone(),
+            received,
+            total,
+        });
     };
     match receive_one(conn, &dest, &mut on_progress).await {
-        Ok(saved) if repeat => {
-            tracing::info!(file = %filename, "camera offered a shot again; removing the repeat");
-            if let Err(e) = std::fs::remove_file(&saved.path) {
-                tracing::warn!(path = %saved.path.display(), error = %e, "could not remove a repeated shot");
-            }
-            Ok(())
-        }
         Ok(saved) => {
+            let earlier: Vec<PathBuf> = lock(&inner.recent)
+                .iter()
+                .filter(|r| r.filename == filename && r.size == size)
+                .map(|r| r.path.clone())
+                .collect();
+            if earlier.iter().any(|path| same_contents(path, &saved.path)) {
+                tracing::info!(file = %filename, "camera offered a shot again; removing the repeat");
+                if let Err(e) = std::fs::remove_file(&saved.path) {
+                    tracing::warn!(path = %saved.path.display(), error = %e, "could not remove a repeated shot");
+                }
+                inner.emit(CameraEvent::CaptureSkipped { filename });
+                return Ok(());
+            }
             {
                 let mut recent = lock(&inner.recent);
                 if recent.len() == RECENT_SHOTS {
                     recent.pop_front();
                 }
-                recent.push_back(key);
+                recent.push_back(RecentShot {
+                    filename,
+                    size,
+                    path: saved.path.clone(),
+                });
             }
             inner.mark_shot();
             inner.emit(CameraEvent::CaptureSaved(saved));
@@ -292,9 +300,29 @@ async fn receive_next(inner: &Inner, conn: &mut PtpIpConnection) -> Result<(), E
     }
 }
 
+/// True only if both files can be read and hold the same bytes.
+fn same_contents(a: &Path, b: &Path) -> bool {
+    match (std::fs::read(a), std::fs::read(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_identical_readable_files_match() {
+        let tmp = tempfile::tempdir().unwrap();
+        let [a, b, c] = ["a", "b", "c"].map(|n| tmp.path().join(n));
+        std::fs::write(&a, b"same").unwrap();
+        std::fs::write(&b, b"same").unwrap();
+        std::fs::write(&c, b"diff").unwrap();
+        assert!(same_contents(&a, &b));
+        assert!(!same_contents(&a, &c));
+        assert!(!same_contents(&tmp.path().join("missing"), &b));
+    }
 
     #[test]
     fn backoff_doubles_then_caps() {

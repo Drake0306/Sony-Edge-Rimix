@@ -44,6 +44,10 @@ pub struct SimConfig {
     /// recently fetched picture back in the capture queue, as a camera does
     /// when the link drops before it learns the transfer finished.
     pub redeliver_after_drop: bool,
+    /// After this many pictures have been fetched, numbering starts over at
+    /// DSC00001, as after formatting the card. Later pictures differ byte for
+    /// byte from earlier ones with the same number but keep their size.
+    pub restart_numbering_after: Option<u32>,
     /// Answer SSDP M-SEARCH requests on this 127.0.0.1 UDP port (0 picks
     /// one) and serve the UPnP descriptions over HTTP; `None` disables both.
     pub ssdp_port: Option<u16>,
@@ -61,6 +65,7 @@ impl Default for SimConfig {
             live_view_busy_every: None,
             drop_during_capture: false,
             redeliver_after_drop: false,
+            restart_numbering_after: None,
             ssdp_port: None,
         }
     }

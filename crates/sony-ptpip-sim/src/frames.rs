@@ -57,9 +57,25 @@ pub fn object_info() -> Vec<u8> {
     encode_object_info(&info)
 }
 
+/// Byte offset of the JFIF X density field in the encoder's output.
+const JFIF_X_DENSITY: usize = 14;
+
 /// The JPEG of captured shot `shot`, with the shot number drawn as stripes.
-pub fn capture_jpeg(shot: u32) -> Vec<u8> {
-    render(shot)
+/// For `generation` above 0 (numbering has started over) the JFIF density
+/// carries the generation, so the file differs from generation 0's shot of
+/// the same number byte for byte while keeping its size.
+pub fn capture_jpeg(shot: u32, generation: u32) -> Vec<u8> {
+    let mut jpeg = render(shot);
+    if generation > 0 {
+        assert_eq!(
+            &jpeg[6..11],
+            b"JFIF\0",
+            "encoder output starts with a JFIF header"
+        );
+        let density = u16::try_from(generation.saturating_add(1)).unwrap_or(u16::MAX);
+        jpeg[JFIF_X_DENSITY..JFIF_X_DENSITY + 2].copy_from_slice(&density.to_be_bytes());
+    }
+    jpeg
 }
 
 /// The ObjectInfo answered for captured shot `shot` of `size` bytes.
@@ -135,4 +151,18 @@ fn dataset(jpeg: &[u8]) -> Vec<u8> {
     out.extend(meta);
     out.extend(jpeg);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restarted_numbering_changes_bytes_not_size() {
+        let first = capture_jpeg(1, 0);
+        let again = capture_jpeg(1, 1);
+        assert_eq!(first.len(), again.len());
+        assert_ne!(first, again);
+        image::load_from_memory_with_format(&again, image::ImageFormat::Jpeg).unwrap();
+    }
 }

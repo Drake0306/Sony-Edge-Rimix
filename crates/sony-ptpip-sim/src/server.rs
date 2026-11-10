@@ -543,7 +543,11 @@ async fn captured_still<W: AsyncWriteExt + Unpin>(
     send_data_in(ctx.w, tid, &jpeg).await?;
     let mut controls = shared.controls.lock().unwrap();
     let mut props = shared.props.lock().unwrap();
-    Ok(Ok(match controls.pop_capture(&mut props) {
+    let popped = controls.pop_capture(&mut props);
+    if let Some(after) = shared.config.restart_numbering_after {
+        controls.restart_numbering_at(after);
+    }
+    Ok(Ok(match popped {
         Some((_, Outcome::Changed(prop))) => Some(prop),
         _ => None,
     }))

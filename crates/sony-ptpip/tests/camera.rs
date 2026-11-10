@@ -280,6 +280,12 @@ async fn duplicate_delivery_is_skipped() {
     // The queue is first in, first out, so the repeat of DSC00001 is
     // delivered (and skipped) before DSC00002 arrives.
     camera.shoot().await.unwrap();
+    let skipped = wait_for(&mut rx, "CaptureSkipped", |ev| match ev {
+        CameraEvent::CaptureSkipped { filename } => Some(filename.clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(skipped, "DSC00001.JPG");
     saved.push(
         wait_for(&mut rx, "second CaptureSaved", |ev| match ev {
             CameraEvent::CaptureSaved(r) => Some(r.filename.clone()),
@@ -290,6 +296,72 @@ async fn duplicate_delivery_is_skipped() {
 
     assert_eq!(saved, ["DSC00001.JPG", "DSC00002.JPG"]);
     assert_eq!(names(tmp.path()), ["DSC00001.JPG", "DSC00002.JPG"]);
+    stop(sim, camera).await;
+}
+
+#[tokio::test]
+async fn same_name_and_size_but_different_content_keeps_both() {
+    let tmp = tempfile::tempdir().unwrap();
+    // After the first shot the simulator numbers from DSC00001 again, as
+    // after a card format: same name and size, different bytes.
+    let sim_config = SimConfig {
+        restart_numbering_after: Some(1),
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(sim_config, tmp.path()).await;
+    let mut rx = camera.subscribe();
+    let mut saved = Vec::new();
+    for n in 1..=2 {
+        camera.shoot().await.unwrap();
+        saved.push(
+            wait_for(&mut rx, &format!("CaptureSaved {n}"), |ev| match ev {
+                CameraEvent::CaptureSaved(r) => Some(r.clone()),
+                CameraEvent::CaptureSkipped { filename } => panic!("{filename} was skipped"),
+                _ => None,
+            })
+            .await,
+        );
+    }
+    assert_eq!(saved[0].filename, "DSC00001.JPG");
+    assert_eq!(saved[1].filename, "DSC00001-1.JPG");
+    assert_eq!(saved[0].bytes, saved[1].bytes);
+    assert_eq!(names(tmp.path()), ["DSC00001-1.JPG", "DSC00001.JPG"]);
+    let first = std::fs::read(&saved[0].path).unwrap();
+    let second = std::fs::read(&saved[1].path).unwrap();
+    assert_ne!(first, second);
+    stop(sim, camera).await;
+}
+
+/// Number of 0x9207 controls the simulator has handled.
+fn controls_sent(sim: &SimHandle) -> usize {
+    let log = sim.log.lock().unwrap();
+    log.iter().filter(|l| l.starts_with("op 0x9207 ")).count()
+}
+
+#[tokio::test]
+async fn shoot_focuses_when_focus_mode_is_missing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let source =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../sony-ptpip-sim/fixtures/zv-e10.json");
+    let text = std::fs::read_to_string(source).unwrap();
+    assert!(text.contains("\"code\": \"0x500A\""));
+    let fixture = tmp.path().join("no-focus-mode.json");
+    std::fs::write(
+        &fixture,
+        text.replace("\"code\": \"0x500A\"", "\"code\": \"0x5FFF\""),
+    )
+    .unwrap();
+    let shots = tmp.path().join("shots");
+    let sim_config = SimConfig {
+        fixture,
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(sim_config, &shots).await;
+    assert!(camera.state().properties.iter().all(|p| p.code != 0x500A));
+    let before = controls_sent(&sim);
+    camera.shoot().await.unwrap();
+    // Half press, full press, full release, half release.
+    assert_eq!(controls_sent(&sim) - before, 4);
     stop(sim, camera).await;
 }
 

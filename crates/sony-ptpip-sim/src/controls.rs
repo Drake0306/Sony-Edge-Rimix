@@ -20,6 +20,8 @@ pub struct Controls {
     capture_queue: u32,
     /// Pictures fetched so far; the next one is shot number `fetched + 1`.
     fetched: u32,
+    /// How many times numbering has started over; drawn into each picture.
+    generation: u32,
     /// JPEG of the oldest waiting picture, made at GetObjectInfo time so the
     /// size it reports matches what GetObject sends.
     pending_jpeg: Option<Vec<u8>>,
@@ -110,9 +112,26 @@ impl Controls {
 
     /// The shot number and JPEG of the oldest waiting picture; the JPEG is
     /// made once and kept until the picture is popped.
-    pub fn capture_jpeg(&mut self, render: impl FnOnce(u32) -> Vec<u8>) -> Option<(u32, &[u8])> {
+    pub fn capture_jpeg(
+        &mut self,
+        render: impl FnOnce(u32, u32) -> Vec<u8>,
+    ) -> Option<(u32, &[u8])> {
         let shot = self.next_capture()?;
-        Some((shot, self.pending_jpeg.get_or_insert_with(|| render(shot))))
+        let generation = self.generation;
+        let jpeg = self
+            .pending_jpeg
+            .get_or_insert_with(|| render(shot, generation));
+        Some((shot, jpeg))
+    }
+
+    /// Starts numbering over once `after` pictures have been fetched, as
+    /// after formatting the card. Only applies while nothing is waiting.
+    pub fn restart_numbering_at(&mut self, after: u32) {
+        if self.fetched == after && self.capture_queue == 0 {
+            self.fetched = 0;
+            self.generation += 1;
+            self.last_jpeg = None;
+        }
     }
 
     /// Removes the oldest waiting picture and returns its shot number.

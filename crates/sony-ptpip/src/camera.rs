@@ -23,6 +23,7 @@ mod state;
 
 use std::collections::VecDeque;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -128,6 +129,11 @@ pub enum CameraEvent {
         total: u64,
     },
     CaptureSaved(Received),
+    /// The camera offered a shot already saved, byte for byte; the repeat
+    /// was downloaded and deleted.
+    CaptureSkipped {
+        filename: String,
+    },
     CaptureFailed {
         filename: String,
         error: String,
@@ -156,9 +162,19 @@ struct Inner {
     events: broadcast::Sender<CameraEvent>,
     /// Set by [`Camera::disconnect`] and on drop; the supervisor then stops.
     stop: AtomicBool,
-    /// `(camera file name, size)` of the last shots saved, kept across
-    /// reconnects so a shot the camera offers again is not saved twice.
-    recent: StdMutex<VecDeque<(String, u64)>>,
+    /// The last shots saved, kept across reconnects so a shot the camera
+    /// offers again is not saved twice.
+    recent: StdMutex<VecDeque<RecentShot>>,
+}
+
+/// A saved shot, remembered for spotting a repeated delivery.
+struct RecentShot {
+    /// The camera's file name, before any `-N` suffix.
+    filename: String,
+    /// Size from the camera's ObjectInfo.
+    size: u64,
+    /// Where it was saved.
+    path: PathBuf,
 }
 
 /// What [`connect_once`] sets up.
@@ -342,11 +358,11 @@ impl Camera {
         self.set(code, target).await
     }
 
-    /// Takes a picture, focusing first unless the camera is in manual focus.
+    /// Takes a picture, focusing first unless the camera reports manual focus.
     pub async fn shoot(&self) -> Result<(), Error> {
         let with_af = lock(&self.inner.snapshot)
             .prop(PROP_FOCUS_MODE)
-            .is_some_and(|p| p.current != FOCUS_MODE_MANUAL);
+            .is_none_or(|p| p.current != FOCUS_MODE_MANUAL);
         let mut guard = self.inner.conn.lock().await;
         let conn = guard.as_mut().ok_or(Error::Disconnected)?;
         control::shoot(conn, with_af).await?;
