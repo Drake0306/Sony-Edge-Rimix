@@ -193,4 +193,33 @@ describe('scanning', () => {
     await vi.advanceTimersByTimeAsync(3000);
     expect(start).toHaveBeenCalledTimes(3);
   });
+
+  test('a stray code in view does not replace progress or a failed connect', async () => {
+    vi.useFakeTimers();
+    vi.mocked(webcamSupported).mockReturnValue(true);
+    const start = vi.fn(() => Promise.resolve());
+    let report: (text: string) => void = () => {};
+    vi.mocked(createScanner).mockImplementation((opts) => {
+      report = opts.onResult;
+      return { start, stop: vi.fn() };
+    });
+    setup();
+
+    // Read while a typed connect runs: progress stays, no error is left behind.
+    store.set({ connecting: { phase: 'finding', text: 'Looking for the camera on X' } });
+    report('https://sony.net/app');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(message().textContent).toBe('Looking for the camera on X');
+    expect(store.get().error).toBeNull();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(start).toHaveBeenCalledTimes(2);
+
+    // The connect fails; the next read of the same code leaves the failure in place.
+    const failure = 'Joined X but no camera answered. On the camera, open Menu, Network, PC Remote Function, and stay on that screen.';
+    store.set({ connecting: null, error: failure });
+    report('https://sony.net/app');
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(message().textContent).toBe(failure);
+    expect(start).toHaveBeenCalledTimes(3);
+  });
 });

@@ -138,6 +138,27 @@ describe('connect over Wi-Fi', () => {
     expect(ipc.connect).toHaveBeenLastCalledWith('10.0.0.5', null);
   });
 
+  test('a connect in flight is not started twice', async () => {
+    const store = storeWith('Automatic', {}, { connecting: { phase: 'finding', text: 'Looking' } });
+    const actions = createActions(store);
+    expect(await actions.connect('10.0.0.5')).toBe(false);
+    expect(await actions.connectRecent({ ip: '10.0.0.5', model: 'A7 IV', lastUsed: 1, ssid: null })).toBe(false);
+    expect(await actions.connectWithWifi({ ssid: SSID, password: 'x' })).toBe(false);
+    expect(ipc.connect).not.toHaveBeenCalled();
+    expect(ipc.joinNetwork).not.toHaveBeenCalled();
+  });
+
+  test('a successful connect clears an error set while it ran', async () => {
+    let finish: (c: CameraState) => void = () => {};
+    vi.mocked(ipc.connect).mockReturnValue(new Promise((r) => (finish = r)));
+    const store = storeWith('Automatic');
+    const done = createActions(store).connect('192.168.122.1');
+    store.set({ error: 'stale' });
+    finish(camera);
+    expect(await done).toBe(true);
+    expect(store.get().error).toBeNull();
+  });
+
   test('forgetCamera drops the entry and clears lastIp', async () => {
     const a: RecentCamera = { ip: '192.168.122.1', model: 'ZV-E10', lastUsed: 2, ssid: SSID };
     const b: RecentCamera = { ip: '10.0.0.5', model: 'A7 IV', lastUsed: 1, ssid: null };

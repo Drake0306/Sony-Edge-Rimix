@@ -180,13 +180,22 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   /** Connects with a code's text, or explains why it is not a Wi-Fi code. */
   async function useCode(text: string, fromScanner: boolean): Promise<void> {
     const wifi = parseWifiQr(text);
-    if (!wifi) {
+    if (!wifi && !fromScanner) {
       store.set({ error: NOT_A_WIFI_CODE });
       showPaste();
-      if (!fromScanner) {
-        ssid.focus();
+      ssid.focus();
+      return;
+    }
+    if (!wifi) {
+      // A stray code left in view is read again every few seconds; it must
+      // not replace progress or another error the user still needs.
+      const { connecting, error } = store.get();
+      if (connecting || (error !== null && error !== NOT_A_WIFI_CODE)) {
+        rescan();
         return;
       }
+      store.set({ error: NOT_A_WIFI_CODE });
+      showPaste();
       if (!area.value) area.value = text;
       if (!focusedForCode) ssid.focus();
       focusedForCode = true;

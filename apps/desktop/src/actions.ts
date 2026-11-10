@@ -52,6 +52,10 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     }
   }
 
+  /** A connect in flight is never doubled, whichever way it was started. */
+  const connectOnce = (ip: string, ssid: string | null, name: string) =>
+    store.get().connecting ? Promise.resolve(false) : connectTo(ip, ssid, name);
+
   /** `name` is what the progress line calls the camera. */
   async function connectTo(ip: string, ssid: string | null, name: string): Promise<boolean> {
     store.set({ error: null, connecting: { phase: 'connecting', text: connectingText(name) } });
@@ -63,6 +67,7 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
         camera,
         settings,
         connecting: null,
+        error: null,
         status: { fps: camera.live_view_fps, lastShotAt: camera.last_shot_at },
       });
       return true;
@@ -81,6 +86,7 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
   }
 
   async function connectWithWifi({ ssid, password }: WifiCredentials): Promise<boolean> {
+    if (store.get().connecting) return false;
     const fail = (step: 'join' | 'find' | 'wait', e: unknown) => {
       store.set({ connecting: null, error: wifiErrorMessage(step, ssid, message(e)) });
       return false;
@@ -106,10 +112,10 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
   }
 
   return {
-    connect: (ip, ssid) => connectTo(ip, ssid ?? null, ip.trim()),
+    connect: (ip, ssid) => connectOnce(ip, ssid ?? null, ip.trim()),
     connectWithWifi,
     connectRecent: (rc) =>
-      rc.ssid ? connectWithWifi({ ssid: rc.ssid, password: '' }) : connectTo(rc.ip, null, rc.ip),
+      rc.ssid ? connectWithWifi({ ssid: rc.ssid, password: '' }) : connectOnce(rc.ip, null, rc.ip),
     async forgetCamera(rc) {
       const settings = store.get().settings;
       if (!settings) return;
