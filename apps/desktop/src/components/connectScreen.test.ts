@@ -20,6 +20,7 @@ function fakeActions(): Actions {
     connectRecent: vi.fn(() => Promise.resolve(true)),
     forgetCamera: vi.fn(() => Promise.resolve()),
     joinViaBluetooth: vi.fn(() => Promise.resolve(true)),
+    cancelConnect: vi.fn(() => Promise.resolve()),
   } as unknown as Actions;
 }
 
@@ -704,5 +705,51 @@ describe('Bluetooth in Nearby', () => {
     await vi.advanceTimersByTimeAsync(10_000);
     expect(lines()).toHaveLength(0);
     expect(store.get().bleFailed).toEqual({});
+  });
+});
+
+describe('connecting', () => {
+  const veil = () => root.querySelector<HTMLElement>('.veil')!;
+  const steps = () =>
+    [...veil().querySelectorAll('.csteps li')].map((li) => [li.textContent, li.getAttribute('data-state')]);
+
+  test('nothing covers the screen until a connect starts', () => {
+    setup();
+    expect(veil().hidden).toBe(true);
+    unmount();
+  });
+
+  test('a connect covers the screen with what is happening, step by step, and a way out', () => {
+    setup();
+    store.set({ connecting: { phase: 'joining', text: 'Joining DIRECT-abc1:ZV-E10' } });
+    expect(veil().hidden).toBe(false);
+    expect(veil().getAttribute('role')).toBe('dialog');
+    expect(veil().querySelector('h2')!.textContent).toBe("Joining the camera's Wi-Fi");
+    expect(veil().querySelector('.cdetail')!.textContent).toBe('Joining DIRECT-abc1:ZV-E10');
+    expect(steps()).toEqual([
+      ["Join the camera's Wi-Fi", 'now'],
+      ['Find the camera', 'todo'],
+      ['Connect', 'todo'],
+    ]);
+    store.set({ connecting: { phase: 'finding', text: 'Looking for the camera on DIRECT-abc1:ZV-E10' } });
+    expect(veil().querySelector('h2')!.textContent).toBe('Looking for the camera');
+    expect(steps().map(([, state]) => state)).toEqual(['done', 'now', 'todo']);
+    store.set({ connecting: { phase: 'connecting', text: 'Connecting to ZV-E10. If the camera asks, press OK on it.' } });
+    expect(veil().querySelector('h2')!.textContent).toBe('Connecting');
+    expect(steps().map(([, state]) => state)).toEqual(['done', 'done', 'now']);
+
+    veil().querySelector<HTMLButtonElement>('button')!.click();
+    expect(actions.cancelConnect).toHaveBeenCalled();
+    store.set({ connecting: null });
+    expect(veil().hidden).toBe(true);
+    unmount();
+  });
+
+  test('a connect by address has only the one step, so no list of steps', () => {
+    setup();
+    store.set({ connecting: { phase: 'connecting', text: 'Connecting to 192.168.1.20. If the camera asks, press OK on it.' } });
+    expect(veil().hidden).toBe(false);
+    expect(veil().querySelector<HTMLElement>('.csteps')!.hidden).toBe(true);
+    unmount();
   });
 });

@@ -148,6 +148,7 @@ function scopes(store: AppStore, actions: Actions): { el: HTMLElement; destroy: 
       switchRow('False colour', o.falseColour, flip('falseColour')),
       switchRow('Zebra', o.zebra, flip('zebra')),
       switchRow('Thirds grid', o.thirds, flip('thirds')),
+      switchRow('Focus and face frames', o.frames, flip('frames')),
     ];
     g.prepend(...switches);
   });

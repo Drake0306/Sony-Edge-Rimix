@@ -142,3 +142,28 @@ export function makeStripes(palette: Colours): CanvasPattern | null {
   c.stroke();
   return c.createPattern(tile, 'repeat');
 }
+
+/** A frame with rounded corners, as round as a face: solid, or dashed for a subject being tracked. */
+export function rounded(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  colour: string,
+  shadow: string,
+  dashed: boolean,
+) {
+  ctx.save();
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 2;
+  ctx.shadowColor = shadow;
+  ctx.shadowBlur = 2;
+  ctx.setLineDash(dashed ? [7, 5] : []);
+  const r = Math.min(w, h) * (dashed ? 0.12 : 0.42);
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') ctx.roundRect(x, y, w, h, r);
+  else ctx.rect(x, y, w, h);
+  ctx.stroke();
+  ctx.restore();
+}

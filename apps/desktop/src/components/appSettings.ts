@@ -1,9 +1,10 @@
 // The App settings button and popover: Appearance and Layout as segmented
-// controls, Connection (with the Bluetooth switch), Receive from camera, then Save to, then the
+// controls, Connection (with the Bluetooth switch), FTP transfer from the camera, then Save to, then the
 // shortcut hint. These settings are about Rimix itself; the camera's
 // settings live in their own popover.
 
 import type { Actions } from '../actions';
+import { FTP_NAME, FTP_WHAT } from '../copy';
 import { button, el, icon } from '../dom';
 import {
   bleRetry,
@@ -86,18 +87,18 @@ function infoRow(key: string, value: string, valueClass = 'v'): HTMLElement {
 }
 
 /**
- * Receive from camera: a switch, and while it is on, what to type into the
+ * FTP transfer from the camera: a switch, and while it is on, what to type into the
  * camera's FTP Transfer server settings. `refresh` re-reads the status
  * (the popover calls it when it opens); `reset` hides the password again.
  */
 function receiveSection(store: AppStore, actions: Actions) {
-  const toggle = button('switch', undefined, 'Receive from camera');
+  const toggle = button('switch', undefined, FTP_NAME);
   toggle.setAttribute('role', 'switch');
   toggle.append(el('i'));
   toggle.addEventListener('click', () => void actions.setSftpEnabled(store.get().sftp?.enabled !== true));
   const switchRow = el('div', 'r');
   switchRow.setAttribute('role', 'listitem');
-  switchRow.append(el('span', 'k', 'Receive from camera'), toggle);
+  switchRow.append(el('span', 'k', 'Receive files by FTP'), toggle);
   const rows = el('div', 'group sftp');
   rows.setAttribute('role', 'list');
   rows.append(switchRow);
@@ -152,7 +153,7 @@ function receiveSection(store: AppStore, actions: Actions) {
   };
   const off = watch(store, (s) => s.sftp, render);
   return {
-    el: sect('Receive from camera', rows, error, details),
+    el: sect(FTP_NAME, el('p', 'sftp-what', FTP_WHAT), rows, error, details),
     refresh: () => void actions.refreshSftp(),
     reset: () => {
       revealed = false;

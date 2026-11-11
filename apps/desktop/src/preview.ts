@@ -102,6 +102,7 @@ const settings: AppSettings = {
   presets: presets(num('presets', 4)),
   bluetooth: false,
   saveToComputer: q.get('copy') !== '0',
+  recentCameras: [{ ip: '192.168.122.1:15740', model: 'ZV-E10', lastUsed: 1, ssid: 'DIRECT-YKE1:ZV-E10', sshUser: null }],
 };
 
 /** A stand-in live view frame. */
@@ -136,7 +137,21 @@ mockIPC(
       case 'get_state': return connected ? state : null;
       case 'list_cameras': return connected ? [{ id: CAMERA_ID, model: state.model, active: true }] : [];
       case 'live_view_frame': return frame();
-      case 'live_view_meta': return { width: 1024, height: 576, focus_frames: [] };
+      case 'live_view_meta':
+        return {
+          focus_frames: [{ kind: 2, state: 2, cx: 0.5, cy: 0.52, w: 0.1, h: 0.14 }],
+          face_frames: [{ kind: 1, state: 1, cx: 0.3, cy: 0.42, w: 0.12, h: 0.2 }],
+          tracking_frames: [{ kind: 1, state: 1, cx: 0.72, cy: 0.5, w: 0.16, h: 0.22 }],
+          level_deg: 0.4,
+          fps: 24,
+        };
+      // connecting=joining|finding|connecting holds a connect at that step.
+      case 'join_network': return q.get('connecting') === 'joining' ? new Promise(() => {}) : null;
+      case 'wait_for_camera':
+        return q.get('connecting') === 'finding'
+          ? new Promise(() => {})
+          : { model: 'ZV-E10', friendly_name: 'ZV-E10', ip: '192.168.122.1', ptp_port: 15740, ptp_version: null, pairing_required: null, ssh_supported: null, source: 'Gateway' };
+      case 'connect': return new Promise(() => {});
       case 'discover': case 'ble_scan': case 'card_list': case 'shoot_all': case 'apply_values': return [];
       case 'card_mode': return 'same-session';
       case 'sftp_status': return null;
@@ -152,7 +167,11 @@ await import('./main');
 
 const send = (event: unknown) => emit('camera-event', { camera_id: CAMERA_ID, event });
 window.setTimeout(() => {
-  if (!connected) return;
+  if (!connected) {
+    // Start a connect from the remembered camera, to show the cover.
+    if (q.get('connecting')) document.querySelector<HTMLElement>('.recent .row-btn button, .recent button')?.click();
+    return;
+  }
   void send({ Frame: null });
   void send('Frame');
   if (q.get('transfers') === '1') {

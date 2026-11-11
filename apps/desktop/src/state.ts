@@ -115,7 +115,7 @@ export interface AppState {
   saveError: SaveError | null;
   status: { fps: number; lastShotAt: number | null };
   /** Live view overlays switched from the Scopes panel. */
-  overlays: { thirds: boolean; zebra: boolean; waveform: boolean; falseColour: boolean };
+  overlays: { thirds: boolean; zebra: boolean; waveform: boolean; falseColour: boolean; frames: boolean };
   /** The active camera's reconnect attempt while its link is down, otherwise null. */
   reconnecting: number | null;
   /** Reconnect attempts of every camera whose link is down, by id. */
@@ -187,7 +187,7 @@ export const initialState = (): AppState => ({
   transfers: {},
   saveError: null,
   status: { fps: 0, lastShotAt: null },
-  overlays: { thirds: true, zebra: false, waveform: false, falseColour: false },
+  overlays: { thirds: true, zebra: false, waveform: false, falseColour: false, frames: true },
   reconnecting: null,
   attempts: {},
   connecting: null,

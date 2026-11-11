@@ -269,8 +269,12 @@ describe('dock', () => {
     expect(panel.querySelector('.fstop[aria-checked="true"]')!.textContent).toBe('f/4.0');
     stops.find((b) => b.textContent === 'f/8.0')!.click();
     expect(invoke).toHaveBeenCalledWith('set_property', { code: 0x5007, raw: { U16: 800 } });
-    // Plus and minus stay beside it.
-    expect(root.querySelectorAll('.r[data-code="20487"] .step button')).toHaveLength(2);
+    // The row is a list to open, like Drive; single steps are inside it.
+    expect(root.querySelectorAll('.r[data-code="20487"] .step button')).toHaveLength(0);
+    const nudges = [...panel.querySelectorAll<HTMLButtonElement>('.fnudge button')];
+    expect(nudges.map((b) => b.textContent)).toEqual(['One step wider', 'One step narrower']);
+    nudges[1].click();
+    expect(invoke).toHaveBeenCalledWith('step_property', { code: 0x5007, delta: 1 });
   });
 
   test('Colour temperature unfolds a scale to drag and a box to type in', () => {

@@ -4,6 +4,7 @@
 import * as ipc from './ipc';
 import {
   askToJoinText,
+  CANCELLED,
   bleCameraName,
   bleFailedText,
   bleReadingText,
@@ -69,6 +70,10 @@ export interface Actions {
   /** Shoots every connected camera at once, toasting any that failed. */
   shootAll(): Promise<void>;
   focus(): void;
+  /** Focuses at a point of the live view, `x` and `y` from 0 to 1 across and down the picture. */
+  focusAt(x: number, y: number): void;
+  /** Stops the connect in progress; nothing is shown as an error. */
+  cancelConnect(): Promise<void>;
   toggleRecord(): void;
   stepProperty(code: number, delta: number): void;
   setProperty(code: number, raw: PtpValue): void;
@@ -316,7 +321,7 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
         });
         return false;
       }
-      const error = connectErrorMessage(message(e), ip.trim());
+      const error = message(e) === CANCELLED ? null : connectErrorMessage(message(e), ip.trim());
       store.set(left ? { ...synced, error, connecting: null } : { ...synced, error, connecting: null, screen: 'connect', keepCameras: false });
       return false;
     }
@@ -340,7 +345,9 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     for (const id of elsewhere) await disconnect(id);
     if (activeId === null && current) await disconnect();
     const fail = (step: 'join' | 'find' | 'wait', e: unknown) => {
-      store.set({ connecting: null, error: wifiErrorMessage(step, ssid, message(e)) });
+      // Cancelled by the user: back to the connect screen, with no complaint.
+      const error = message(e) === CANCELLED ? null : wifiErrorMessage(step, ssid, message(e));
+      store.set({ connecting: null, error });
       return false;
     };
     if (!ask) {
@@ -509,6 +516,8 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     shoot: (cameraId) => run(ipc.shoot(cameraId ?? null)),
     shootAll,
     focus: () => run(ipc.focus()),
+    focusAt: (x, y) => run(ipc.focusAt(x, y)),
+    cancelConnect: () => ipc.cancelConnect().catch((e) => toast(message(e))),
     toggleRecord: () => run(ipc.toggleRecord()),
     stepProperty: (code, delta) => run(ipc.stepProperty(code, delta)),
     setProperty: (code, raw) => run(ipc.setProperty(code, raw)),
