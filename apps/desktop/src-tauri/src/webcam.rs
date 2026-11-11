@@ -214,10 +214,14 @@ impl Viewer {
 impl Drop for Viewer {
     fn drop(&mut self) {
         // Never below zero: `stop` may have reset the count already.
-        let _ = self
-            .0
-            .viewers
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1));
+        let viewers = &self.0.viewers;
+        let mut n = viewers.load(Ordering::SeqCst);
+        while n > 0 {
+            match viewers.compare_exchange_weak(n, n - 1, Ordering::SeqCst, Ordering::SeqCst) {
+                Ok(_) => break,
+                Err(now) => n = now,
+            }
+        }
     }
 }
 
