@@ -158,6 +158,10 @@ pub struct PropertySummary {
 pub struct Choice {
     pub raw: PtpValue,
     pub label: String,
+    /// The compact form, as [`PropertySummary::short`]: "P" where `label`
+    /// is "Program Auto".
+    #[serde(default)]
+    pub short: String,
 }
 
 /// What happened, for subscribers.

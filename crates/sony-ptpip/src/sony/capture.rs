@@ -102,7 +102,9 @@ pub async fn ensure_host_delivery(
         }
         match set_value(conn, desc, &to, quirks).await {
             Ok(()) => {
-                tracing::info!(from = ?desc.current, to = ?to, "changed the camera's {what} so pictures are copied to this computer");
+                // The camera answering OK is not yet the change: the real
+                // ZV-E10 said OK and reported the old value afterwards.
+                tracing::info!(from = ?desc.current, to = ?to, "asked the camera to change its {what} so pictures are copied to this computer");
                 written = true;
             }
             Err(e) if matches!(e, Error::Disconnected) || conn.is_disconnected() => return Err(e),

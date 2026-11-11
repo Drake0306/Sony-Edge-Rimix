@@ -10,7 +10,7 @@ use crate::ptp::codes::{
 };
 use crate::ptp::PtpValue;
 use crate::quirks::quirks_for;
-use crate::sony::decode::{label_for, wb_label};
+use crate::sony::decode::{label_for, wb_label, wb_short};
 use crate::sony::property::{Form, PropertyDesc};
 
 /// Colour temperature in kelvin, shown with white balance 0x8007.
@@ -91,9 +91,13 @@ fn summary(desc: &PropertyDesc, colour_temp: Option<u16>) -> PropertySummary {
     let choices = match &desc.form {
         Form::Enum { settable, .. } => settable
             .iter()
-            .map(|raw| Choice {
-                raw: raw.clone(),
-                label: labels(desc.code, raw, colour_temp).0,
+            .map(|raw| {
+                let (label, short) = labels(desc.code, raw, colour_temp);
+                Choice {
+                    raw: raw.clone(),
+                    label,
+                    short,
+                }
             })
             .collect(),
         Form::Range { .. } | Form::None => Vec::new(),
@@ -114,7 +118,13 @@ fn labels(code: u16, value: &PtpValue, colour_temp: Option<u16>) -> (String, Str
     if code == PROP_WHITE_BALANCE {
         if let Some(raw) = value.as_u64().and_then(|v| u16::try_from(v).ok()) {
             let label = wb_label(raw, colour_temp);
-            return (label.clone(), label);
+            // A colour temperature shows as its kelvin value on the chip too.
+            let short = if colour_temp.is_some() && label.ends_with('K') {
+                label.clone()
+            } else {
+                wb_short(raw)
+            };
+            return (label, short);
         }
     }
     match label_for(code, value) {

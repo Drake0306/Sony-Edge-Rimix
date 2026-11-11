@@ -75,6 +75,8 @@ struct Shared {
     /// The files on the card: `config.card`, plus a clip for every movie
     /// recording stopped since.
     card: Mutex<Vec<card::SimCardFile>>,
+    /// Writes of the save destination (0xD222) received so far.
+    destination_writes: AtomicU32,
     /// Bytes of card data sent so far.
     card_sent: AtomicU64,
     /// Set once `drop_during_card_download_at` has dropped the link.
@@ -123,6 +125,7 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
         live_view: Mutex::default(),
         live_view_infos: AtomicU32::new(0),
         controls_seen: AtomicU32::new(0),
+        destination_writes: AtomicU32::new(0),
         card_sent: AtomicU64::new(0),
         card_dropped: AtomicBool::new(false),
     });
@@ -697,6 +700,13 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
             }
         }
         OP_SDIO_SET_EXT_DEVICE_PROP_VALUE if shared.config.write_mode_step => RC_INVALID_PARAMETER,
+        OP_SDIO_SET_EXT_DEVICE_PROP_VALUE
+            if prop_code(&params) == Some(PROP_STILL_DESTINATION)
+                && shared.destination_writes.fetch_add(1, Ordering::SeqCst)
+                    < shared.config.still_destination_ignores_writes =>
+        {
+            RC_OK
+        }
         OP_SDIO_SET_EXT_DEVICE_PROP_VALUE => match (prop_code(&params), &data) {
             (Some(prop), Some(value)) => {
                 let result = shared.props.lock().unwrap().write(prop, value);

@@ -1619,6 +1619,7 @@ mod tests {
                 choices: vec![Choice {
                     raw: PtpValue::U32(0x0001_007D),
                     label: "1/125".into(),
+                    short: "1/125".into(),
                 }],
             }],
             live_view_fps: 29.5,
