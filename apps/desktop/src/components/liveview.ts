@@ -144,7 +144,8 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
   function loop(t: number): void {
     if (stopped) return;
     raf = requestAnimationFrame(loop);
-    if (busy || t - last < FRAME_MS) return;
+    // In webcam mode the picture goes to other apps and is not shown here.
+    if (busy || t - last < FRAME_MS || store.get().feed?.enabled) return;
     last = t;
     busy = true;
     liveViewFrame()

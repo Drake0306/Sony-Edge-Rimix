@@ -3,7 +3,17 @@
 
 import { sshErrorMessage } from './copy';
 import type { IntervalRun } from './interval';
-import type { AppSettings, CameraEvent, CameraState, CardMode, CardObject, DiscoveredCamera, Found, SftpStatus } from './ipc';
+import type {
+  AppSettings,
+  CameraEvent,
+  CameraState,
+  CardMode,
+  CardObject,
+  DiscoveredCamera,
+  FeedStatus,
+  Found,
+  SftpStatus,
+} from './ipc';
 
 export interface Store<T> {
   get(): T;
@@ -134,6 +144,8 @@ export interface AppState {
   sftp: SftpStatus | null;
   /** False when `RIMIX_WEBCAM=off`: the connect screen leaves the webcam alone. */
   webcam: boolean;
+  /** Webcam mode: the camera's picture served to other apps; null until first read. */
+  feed: FeedStatus | null;
 }
 
 export interface PendingFingerprint {
@@ -189,6 +201,7 @@ export const initialState = (): AppState => ({
   cardOpen: false,
   sftp: null,
   webcam: true,
+  feed: null,
 });
 
 /** What the app uses when the settings file cannot be read. */

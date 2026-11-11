@@ -385,3 +385,25 @@ export const pickFolder = () => invoke<string | null>('pick_folder');
 /** Calls `cb` with the camera's id for every camera event except `Frame` (poll `liveViewFrame`). */
 export const onCameraEvent = (cb: (cameraId: CameraId, event: CameraEvent) => void): Promise<UnlistenFn> =>
   listen<TaggedEvent>('camera-event', (e) => cb(e.payload.camera_id, e.payload.event));
+
+/** How much picture the webcam feed carries (the Rust side's `webcam::Quality`). */
+export type FeedQuality = 'Full' | 'Medium' | 'Low';
+
+/** The webcam feed: the live view served on this computer for other apps. */
+export interface FeedStatus {
+  enabled: boolean;
+  /** The page that shows the feed; null while off. */
+  url: string | null;
+  /** The feed itself, for programs that take a video address. */
+  stream_url: string | null;
+  quality: FeedQuality;
+  /** The size of the camera's own frames, once one has been seen. */
+  width: number | null;
+  height: number | null;
+  /** Programs reading the feed right now. */
+  viewers: number;
+}
+
+export const webcamSet = (enabled: boolean) => invoke<FeedStatus>('webcam_set', { enabled });
+export const webcamSetQuality = (quality: FeedQuality) => invoke<FeedStatus>('webcam_set_quality', { quality });
+export const webcamStatus = () => invoke<FeedStatus>('webcam_status');

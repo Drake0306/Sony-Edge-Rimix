@@ -262,3 +262,26 @@ describe('Scopes and timer', () => {
     root.remove();
   });
 });
+
+describe('Webcam switch', () => {
+  test('sits under the cameras, follows the feed and asks for the other state', () => {
+    const root = document.createElement('div');
+    const store = createStore<AppState>({ ...initialState(), screen: 'main' });
+    const setWebcamMode = vi.fn(() => Promise.resolve());
+    const unmount = mount(root, store, { ...createActions(store), setWebcamMode });
+    const sw = () => root.querySelector<HTMLElement>('.group[aria-label="Webcam"] [role="switch"]')!;
+    expect(sw().getAttribute('aria-checked')).toBe('false');
+    sw().click();
+    expect(setWebcamMode).toHaveBeenCalledWith(true);
+    store.set({ feed: { enabled: true, url: 'http://127.0.0.1:8717/', stream_url: null, quality: 'Full', width: null, height: null, viewers: 0 } });
+    expect(sw().getAttribute('aria-checked')).toBe('true');
+    sw().click();
+    expect(setWebcamMode).toHaveBeenLastCalledWith(false);
+    // The destination panel is still there, after the tools.
+    expect([...root.querySelectorAll('.panel')].map((p) => p.querySelector('.h')!.textContent)).toEqual([
+      'Scopes and timer',
+      'Save to',
+    ]);
+    unmount();
+  });
+});

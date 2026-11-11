@@ -13,6 +13,7 @@ import * as liveview from './components/liveview';
 import * as ring from './components/ring';
 import * as sidePanels from './components/sidePanels';
 import * as topbar from './components/topbar';
+import * as webcamMode from './components/webcamMode';
 import { MOVIES_STAY_ON_CARD } from './copy';
 import { el, isTyping } from './dom';
 import { tick } from './interval';
@@ -53,6 +54,7 @@ export const controls: Mount = (root, store, actions) => {
 // Escape handler runs first; the card browser's runs before the controls'.
 const MAIN: Mount[] = [
   liveview.mount,
+  webcamMode.mount,
   topbar.mount,
   appSettings.mount,
   sidePanels.mount,

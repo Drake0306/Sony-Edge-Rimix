@@ -223,14 +223,28 @@ function cameras(store: AppStore, actions: Actions): { el: HTMLElement; destroy:
   return { el: sect('Cameras', g), destroy };
 }
 
+/**
+ * The switch that sends the camera's picture to other apps instead of the
+ * screen: a group of its own under the Cameras list.
+ */
+function webcam(store: AppStore, actions: Actions): { el: HTMLElement; destroy: () => void } {
+  const g = group('list', 'Webcam');
+  g.classList.add('below');
+  const destroy = watch(store, (s) => !!s.feed?.enabled, (on) => {
+    g.replaceChildren(switchRow('Use as a webcam', on, () => void actions.setWebcamMode(!on)));
+  });
+  return { el: g, destroy };
+}
+
 export function mount(root: HTMLElement, store: AppStore, actions: Actions): () => void {
   const col = el('aside', 'leftcol');
   col.setAttribute('aria-label', 'Tools and destination');
-  const parts = [scopes(store, actions), cameras(store, actions), saveToSection(store, actions)];
+  const parts = [scopes(store, actions), cameras(store, actions), webcam(store, actions), saveToSection(store, actions)];
   const tools = el('div', 'panel glass quiet');
+  parts[1].el.append(parts[2].el);
   tools.append(parts[0].el, parts[1].el);
   const dest = el('div', 'panel glass quiet');
-  dest.append(parts[2].el);
+  dest.append(parts[3].el);
   col.append(tools, dest);
   root.append(col);
   return () => {

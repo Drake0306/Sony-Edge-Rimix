@@ -434,3 +434,28 @@ body{overflow:hidden}
   .card-row{grid-template-columns:22px minmax(0,1fr) 56px 120px}
   .card-row .date{display:none}
 }
+
+/* ---------- webcam mode ---------- */
+.screen.webcam-on .scene .frame,.screen.webcam-on .waiting,.screen.webcam-on .thirds,.screen.webcam-on .overlay,
+.screen.webcam-on .focuslbl,.screen.webcam-on .falsecolour,.screen.webcam-on .hist,.screen.webcam-on .wave,.screen.webcam-on .level{display:none}
+.feedpanel{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);width:min(440px,calc(100% - 620px));min-width:340px;max-height:calc(100% - 290px);overflow:auto;padding:20px 22px 18px;border-radius:22px;z-index:5}
+.feedpanel[hidden]{display:none}
+/* Beside the ring there is no dock below, and less room to the right. */
+html[data-layout="ring"] .feedpanel{left:calc((100% - 432px + 278px) / 2);top:50%;max-height:calc(100% - 96px);width:min(440px,calc(100% - 432px - 278px - 32px))}
+@media (max-width:1240px){html[data-layout="ring"] .feedpanel{left:calc((100% - 362px + 264px) / 2);width:min(440px,calc(100% - 362px - 264px - 24px))}}
+.group.below{margin-top:8px}
+.feedpanel h2{margin:0 0 6px;font-size:18px;font-weight:650;line-height:1.25;text-wrap:balance}
+.feedpanel h3{margin:16px 0 6px;font-size:11px;font-weight:600;color:var(--ink-2)}
+.feedpanel .lead{margin:0;font-size:12.5px;line-height:1.45;color:var(--ink-2)}
+.feedpanel .watch{display:inline-flex;align-items:center;gap:7px;margin:12px 0 0;font-size:12.5px;font-weight:600}
+.feedpanel .watch::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--rec);box-shadow:var(--rec-glow)}
+.feedpanel .quality{display:flex;width:100%}
+.feedpanel .quality button{flex:1 1 0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;height:40px;padding:0 6px}
+.feedpanel .quality button b{font-size:12.5px;font-weight:600}
+.feedpanel .quality button small{margin:0;font-size:10.5px;font-weight:500;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.feedpanel .quality button.on small{color:var(--sel-ink-2)}
+.feedpanel .addr{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 11px;border-radius:12px;background:var(--group-bg);box-shadow:0 0 0 .5px var(--group-ring)}
+.feedpanel .addr code{flex:1;min-width:0;font:600 12.5px ui-monospace,"SF Mono",Menlo,monospace;overflow-wrap:anywhere;user-select:all}
+.feedpanel .steps{margin:0;padding-left:18px;font-size:12.5px;line-height:1.5;color:var(--ink)}
+.feedpanel .steps li + li{margin-top:3px}
+.feedpanel .stop{display:block;width:100%;height:32px;margin-top:16px;font-size:12.5px}
