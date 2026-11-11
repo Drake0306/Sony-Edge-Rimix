@@ -28,7 +28,7 @@ mod state;
 use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -233,7 +233,9 @@ struct Inner {
     addr: SocketAddr,
     guid: [u8; 16],
     host_name: String,
-    auto_receive: bool,
+    /// What to do about new pictures and movies: see [`Receive`]. Changed
+    /// while connected by [`Camera::set_receiving`].
+    receive: AtomicU8,
     reconnect: bool,
     before_reconnect: Option<ReconnectHook>,
     ssh: Option<SshConfig>,
@@ -253,6 +255,21 @@ struct Inner {
     /// The last delivery failure reported, as (camera file name, error
     /// text); the same failure again is not reported. Cleared by a save.
     last_failure: StdMutex<Option<(String, String)>>,
+}
+
+/// What a session does about new pictures and movies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub(crate) enum Receive {
+    /// Nothing: the camera's save setting is not touched and nothing is
+    /// fetched (`auto_receive: false`, as the command line tool connects).
+    Leave = 0,
+    /// Copy them to this computer: the camera is asked to save to computer
+    /// and card, and what it offers is fetched.
+    Here = 1,
+    /// Keep them on the card: the camera is put back to saving on its card
+    /// alone and nothing is fetched.
+    CardOnly = 2,
 }
 
 /// A saved shot, remembered for spotting a repeated delivery.
@@ -301,6 +318,14 @@ impl Inner {
 
     fn stopped(&self) -> bool {
         self.stop.load(Ordering::SeqCst)
+    }
+
+    fn receive(&self) -> Receive {
+        match self.receive.load(Ordering::SeqCst) {
+            1 => Receive::Here,
+            2 => Receive::CardOnly,
+            _ => Receive::Leave,
+        }
     }
 
     /// Reads the whole property table and merges it into the snapshot,
@@ -439,7 +464,7 @@ async fn connect_once(inner: &Inner) -> Result<Session, Error> {
     sdio_connect(&mut conn).await?;
     let mut props = read_all_props(&mut conn).await?;
     // A camera saving to its card only never offers a shot to the computer.
-    if inner.auto_receive
+    if inner.receive() == Receive::Here
         && capture::ensure_host_delivery(&mut conn, &props, &quirks_for(&info.model)).await?
     {
         props = read_all_props(&mut conn).await?;
@@ -479,7 +504,11 @@ impl Camera {
             addr: cfg.addr,
             guid: cfg.guid,
             host_name: cfg.host_name,
-            auto_receive: cfg.auto_receive,
+            receive: AtomicU8::new(if cfg.auto_receive {
+                Receive::Here as u8
+            } else {
+                Receive::Leave as u8
+            }),
             reconnect: cfg.reconnect,
             before_reconnect: cfg.before_reconnect,
             ssh: cfg.ssh,
@@ -630,6 +659,17 @@ impl Camera {
             error: e.to_string(),
         });
         e
+    }
+
+    /// Turns copying new pictures and movies to this computer on or off
+    /// while connected. On, the camera is asked to save to computer and card
+    /// and what it then offers is fetched. Off, it is put back to saving on
+    /// its card alone, so it never waits for a computer that will not fetch.
+    /// The change reaches the camera within a second or two; watch
+    /// [`CameraState::shots_to_computer`].
+    pub fn set_receiving(&self, on: bool) {
+        let to = if on { Receive::Here } else { Receive::CardOnly };
+        self.inner.receive.store(to as u8, Ordering::SeqCst);
     }
 
     /// Changes where later shots are saved.

@@ -258,6 +258,8 @@ export interface AppSettings {
   presets: Preset[];
   /** Whether the connect screen looks for cameras over Bluetooth. */
   bluetooth: boolean;
+  /** Whether new pictures and movies are copied to this computer; off, they stay on the card. */
+  saveToComputer: boolean;
 }
 
 /** What a Sony camera's Bluetooth advertisement says. */

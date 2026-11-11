@@ -19,9 +19,41 @@ const settings: AppSettings = {
   webcamId: null,
   presets: [],
   bluetooth: true,
+  saveToComputer: true,
 };
 
 describe('Save to', () => {
+  test('a switch turns copying pictures to this computer off and on', () => {
+    const camera = { shots_to_computer: true } as unknown as CameraState;
+    const store = createStore({ ...initialState(), screen: 'main' as const, settings, camera });
+    const saveSettings = vi.fn((next: AppSettings) => {
+      store.set({ settings: next });
+      return Promise.resolve();
+    });
+    const section = saveToSection(store, { ...createActions(store), saveSettings });
+    const sw = () => section.el.querySelector<HTMLElement>('[role="switch"]')!;
+    const note = () => section.el.querySelector<HTMLElement>('.save-note')!;
+    expect(sw().getAttribute('aria-label')).toBe('Copy to this computer');
+    expect(sw().getAttribute('aria-checked')).toBe('true');
+    expect(note().hidden).toBe(true);
+
+    sw().click();
+    expect(saveSettings).toHaveBeenLastCalledWith({ ...settings, saveToComputer: false });
+    expect(sw().getAttribute('aria-checked')).toBe('false');
+    expect(note().hidden).toBe(false);
+    expect(note().textContent).toBe('Pictures and videos stay on the camera\'s card.');
+    // Off on purpose: the camera keeping them is not a problem to report.
+    store.set({ camera: { ...camera, shots_to_computer: false } });
+    expect(section.el.querySelector<HTMLElement>('.save-error')!.hidden).toBe(true);
+
+    sw().click();
+    expect(saveSettings).toHaveBeenLastCalledWith({ ...settings, saveToComputer: true });
+    expect(note().hidden).toBe(true);
+    // On, and the camera still on its card alone: now it is worth saying.
+    expect(section.el.querySelector<HTMLElement>('.save-error')!.textContent).toContain('PC+Camera');
+    section.destroy();
+  });
+
   test('says when the camera keeps pictures on its card only', () => {
     const camera = { shots_to_computer: false } as unknown as CameraState;
     const store = createStore({ ...initialState(), screen: 'main' as const, settings, camera });

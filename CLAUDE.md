@@ -56,7 +56,7 @@ Then run `scripts/check-mac-bundle.sh ~/Downloads/Rimix-0.1.0/Rimix.app`:
 it must print three `ok` lines. A bundle that fails it cannot reach any
 camera (see "The 10:00 connect failure").
 
-## State of the code (main = merge of real-values)
+## State of the code (main = merge of save-switch)
 
 All four spec phases are built and merged. Everything was developed against
 the simulator; only three real-camera sessions have happened, all on
@@ -281,6 +281,16 @@ What it showed, and what was fixed on branch `real-values` (merged):
   unfolds into tabs and a list (pictogram, Sony's name, dial cap). The
   pictograms are symbols `m-*` in `index.html`.
 - Chips need short forms: `Choice.short` and `drive_short` / `wb_short`.
+
+- **A switch for copying** (branch `save-switch`, merged; Roy: "there is
+  no toggle to stop it from saving and turning it on saves new
+  pictures"). Setting `saveToComputer` (default on), shown as "Copy to
+  this computer" at the top of the Save to panel. `Camera::set_receiving`
+  changes it while connected: the capture, movie and delivery loops always
+  run and look at `Receive` (Leave for the CLI's `auto_receive: false`,
+  Here, CardOnly). Off writes 0xD222 back to 0x10 so the camera does not
+  hold shots for a computer that will not fetch; flipping the switch
+  restarts the six tries of the delivery loop.
 
 Seen in the report and not used yet: 0xD278 is an HTTP live view stream
 URL on the camera (`http://192.168.122.1:60152/liveviewstream?...`),

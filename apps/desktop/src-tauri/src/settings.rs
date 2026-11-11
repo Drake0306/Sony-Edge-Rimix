@@ -147,6 +147,9 @@ pub struct AppSettings {
     pub sftp: SftpSettings,
     /// Whether the connect screen looks for cameras over Bluetooth.
     pub bluetooth: bool,
+    /// Whether new pictures and movies are copied to this computer. Off,
+    /// they stay on the camera's card and the camera is told so.
+    pub save_to_computer: bool,
 }
 
 impl Default for AppSettings {
@@ -163,6 +166,7 @@ impl Default for AppSettings {
             presets: Vec::new(),
             sftp: SftpSettings::default(),
             bluetooth: true,
+            save_to_computer: true,
         }
     }
 }
@@ -566,6 +570,19 @@ mod tests {
         assert_eq!(s.sftp.port, 2222);
         assert_eq!(s.sftp.user, "rimix");
         assert_eq!(s.sftp.password, "");
+    }
+
+    #[test]
+    fn copying_to_this_computer_is_on_by_default_and_round_trips() {
+        assert!(AppSettings::default().save_to_computer);
+        // A file from before the switch existed keeps copying.
+        let s: AppSettings = serde_json::from_str(r#"{"layout":"Ring"}"#).unwrap();
+        assert!(s.save_to_computer);
+        let s: AppSettings = serde_json::from_str(r#"{"saveToComputer":false}"#).unwrap();
+        assert!(!s.save_to_computer);
+        assert!(serde_json::to_string(&s)
+            .unwrap()
+            .contains(r#""saveToComputer":false"#));
     }
 
     #[test]

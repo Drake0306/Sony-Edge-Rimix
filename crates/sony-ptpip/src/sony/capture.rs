@@ -39,17 +39,34 @@ const HOST_SIZE_ORIGINAL: u64 = 1;
 /// already gets them, or the camera offers no setting that keeps the card
 /// copy too (the card copy is never given up for this).
 pub fn host_delivery_target(dest: &PropertyDesc) -> Option<PtpValue> {
+    delivery_target(dest, true)
+}
+
+/// The save destination to write for pictures to go to the computer as
+/// well as the card (`to_computer`), or to the card alone, or `None` when
+/// nothing should change: it is so already, or the camera lists no such
+/// value. Either way the card copy is kept.
+pub fn delivery_target(dest: &PropertyDesc, to_computer: bool) -> Option<PtpValue> {
     let current = dest.current.as_u64()?;
-    if current & DEST_COMPUTER != 0 {
+    if (current & DEST_COMPUTER != 0) == to_computer && current & DEST_CARD != 0 {
+        return None;
+    }
+    // "Computer only" already reaches the computer; it is left as it is.
+    if to_computer && current & DEST_COMPUTER != 0 {
         return None;
     }
     let Form::Enum { settable, .. } = &dest.form else {
         return None;
     };
+    let wanted = if to_computer {
+        DEST_COMPUTER | DEST_CARD
+    } else {
+        DEST_CARD
+    };
     let both = DEST_COMPUTER | DEST_CARD;
     settable
         .iter()
-        .find(|v| v.as_u64().is_some_and(|v| v & both == both))
+        .find(|v| v.as_u64().is_some_and(|v| v & both == wanted))
         .cloned()
 }
 
@@ -66,12 +83,24 @@ pub async fn ensure_host_delivery(
     props: &[PropertyDesc],
     quirks: &Quirks,
 ) -> Result<bool, Error> {
+    ensure_delivery(conn, props, quirks, true).await
+}
+
+/// [`ensure_host_delivery`] in either direction: with `to_computer` false
+/// the camera is put back to saving on its card alone, so it does not
+/// hold pictures for a computer that will not fetch them.
+pub async fn ensure_delivery(
+    conn: &mut PtpIpConnection,
+    props: &[PropertyDesc],
+    quirks: &Quirks,
+    to_computer: bool,
+) -> Result<bool, Error> {
     let find = |code| props.iter().find(|p: &&PropertyDesc| p.code == code);
     let mut wanted: Vec<(&PropertyDesc, PtpValue, &str)> = Vec::new();
     match find(PROP_STILL_DESTINATION) {
-        Some(dest) => match host_delivery_target(dest) {
+        Some(dest) => match delivery_target(dest, to_computer) {
             Some(to) => wanted.push((dest, to, "still image save destination")),
-            None if dest.current.as_u64().is_some_and(|v| v & DEST_COMPUTER == 0) => {
+            None if to_computer && dest.current.as_u64().is_some_and(|v| v & DEST_COMPUTER == 0) => {
                 tracing::warn!(
                     current = ?dest.current,
                     "the camera saves pictures to its card only and offers no setting that also sends them here; set Still Img. Save Dest. to PC+Camera on the camera"
@@ -83,7 +112,7 @@ pub async fn ensure_host_delivery(
             "the camera does not report its save destination (0xD222); pictures arrive only if it is set to send them"
         ),
     }
-    if let Some(size) = find(PROP_IMAGE_SIZE_TO_HOST) {
+    if let (true, Some(size)) = (to_computer, find(PROP_IMAGE_SIZE_TO_HOST)) {
         let original = PtpValue::U8(HOST_SIZE_ORIGINAL as u8);
         if size
             .current
@@ -104,7 +133,7 @@ pub async fn ensure_host_delivery(
             Ok(()) => {
                 // The camera answering OK is not yet the change: the real
                 // ZV-E10 said OK and reported the old value afterwards.
-                tracing::info!(from = ?desc.current, to = ?to, "asked the camera to change its {what} so pictures are copied to this computer");
+                tracing::info!(from = ?desc.current, to = ?to, "asked the camera to change its {what}");
                 written = true;
             }
             Err(e) if matches!(e, Error::Disconnected) || conn.is_disconnected() => return Err(e),
@@ -432,6 +461,25 @@ mod tests {
         // Already reaching the computer: nothing to change.
         assert_eq!(host_delivery_target(&dest(0x0011, &all)), None);
         assert_eq!(host_delivery_target(&dest(0x0001, &all)), None);
+    }
+
+    #[test]
+    fn switching_off_goes_back_to_the_card_alone() {
+        let all = [0x0001, 0x0010, 0x0011];
+        assert_eq!(
+            delivery_target(&dest(0x0011, &all), false),
+            Some(PtpValue::U16(0x0010))
+        );
+        assert_eq!(
+            delivery_target(&dest(0x0001, &all), false),
+            Some(PtpValue::U16(0x0010))
+        );
+        // Already the card alone, or no such choice: nothing to change.
+        assert_eq!(delivery_target(&dest(0x0010, &all), false), None);
+        assert_eq!(
+            delivery_target(&dest(0x0011, &[0x0001, 0x0011]), false),
+            None
+        );
     }
 
     #[test]

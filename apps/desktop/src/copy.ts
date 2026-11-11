@@ -165,3 +165,6 @@ export const MOVIES_STAY_ON_CARD =
 /** The Save to panel's line while the camera keeps new pictures on its card only. */
 export const SHOTS_STAY_ON_CARD =
   'The camera is keeping pictures on its card only. On the camera, set Still Img. Save Dest. to PC+Camera.';
+/** The Save to panel's switch, and its line while it is off. */
+export const COPY_TO_COMPUTER = 'Copy to this computer';
+export const STAYS_ON_CARD = "Pictures and videos stay on the camera's card.";

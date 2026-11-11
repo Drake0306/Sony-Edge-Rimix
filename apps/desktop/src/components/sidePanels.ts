@@ -3,7 +3,7 @@
 
 import { sameAddress } from '../address';
 import type { Actions } from '../actions';
-import { SHOTS_STAY_ON_CARD } from '../copy';
+import { COPY_TO_COMPUTER, SHOTS_STAY_ON_CARD, STAYS_ON_CARD } from '../copy';
 import { button, el, icon } from '../dom';
 import type { AppSettings, DestinationMode, RecentCamera } from '../ipc';
 import { watch, type AppState, type AppStore, type SaveError } from '../state';
@@ -67,6 +67,10 @@ export function saveToSection(store: AppStore, actions: Actions): { el: HTMLElem
   path.append(pathText, choose);
   const failure = el('div', 'save-error');
   failure.setAttribute('role', 'alert');
+  // The switch that stops and starts copying, with a quiet line while it is off.
+  const copying = group('list');
+  const note = el('p', 'save-note', STAYS_ON_CARD);
+  const isOn = () => store.get().settings?.saveToComputer ?? true;
   const modes = group('radiogroup', 'Destination');
   const save = (patch: Partial<AppSettings>) => {
     const s = store.get().settings;
@@ -76,13 +80,20 @@ export function saveToSection(store: AppStore, actions: Actions): { el: HTMLElem
     const folder = await actions.pickFolder();
     if (folder) save({ destinationBase: folder });
   });
-  // A failed save wins; else the camera keeping its shots to itself is said.
+  // A failed save wins; else, while copying is wanted, the camera keeping
+  // its shots to itself is said. With the switch off that is as intended.
   const showFailure = () => {
     const { saveError, camera } = store.get();
-    const text = saveError ? saveErrorText(saveError) : camera?.shots_to_computer === false ? SHOTS_STAY_ON_CARD : '';
+    const kept = isOn() && camera?.shots_to_computer === false;
+    const text = saveError ? saveErrorText(saveError) : kept ? SHOTS_STAY_ON_CARD : '';
     failure.hidden = text === '';
     failure.textContent = text;
   };
+  const offSwitch = watch(store, (s) => s.settings?.saveToComputer ?? true, (on) => {
+    copying.replaceChildren(switchRow(COPY_TO_COMPUTER, on, () => save({ saveToComputer: !isOn() })));
+    note.hidden = on;
+    showFailure();
+  });
   const offError = watch(store, (s) => s.saveError, showFailure);
   const offCamera = watch(store, (s) => s.camera?.shots_to_computer, showFailure);
   const offSettings = watch(store, (s) => s.settings, (s) => {
@@ -103,9 +114,10 @@ export function saveToSection(store: AppStore, actions: Actions): { el: HTMLElem
   const destroy = () => {
     offError();
     offCamera();
+    offSwitch();
     offSettings();
   };
-  return { el: sect('Save to', path, failure, modes), destroy };
+  return { el: sect('Save to', copying, note, path, failure, modes), destroy };
 }
 
 /** A settings row with an on/off switch; without `toggle` it is a placeholder. */

@@ -48,6 +48,7 @@ describe('startApp', () => {
         webcamId: null,
         presets: [],
         bluetooth: true,
+        saveToComputer: true,
       },
     });
 
