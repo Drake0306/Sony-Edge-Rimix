@@ -41,8 +41,8 @@ use crate::card::{self, CardObject, PartialDownload, CARD_CHUNK};
 use crate::error::Error;
 use crate::liveview::{self, LiveViewFrame};
 use crate::ptp::codes::{
-    CTRL_AF_AREA_POSITION, OP_GET_DEVICE_INFO, PROP_EXPOSURE_PROGRAM, PROP_FOCUS_AREA,
-    PROP_FOCUS_MODE, PROP_F_NUMBER, PROP_ISO, PROP_SHUTTER_SPEED,
+    CTRL_AF_AREA_POSITION, CTRL_ZOOM, OP_GET_DEVICE_INFO, PROP_EXPOSURE_PROGRAM, PROP_FOCUS_AREA,
+    PROP_FOCUS_MODE, PROP_F_NUMBER, PROP_ISO, PROP_SHUTTER_SPEED, PROP_ZOOM_ENABLED,
 };
 use crate::ptp::{parse_device_info, PtpValue};
 use crate::sony::property::{read_all_props, Enabled, Form, PropertyDesc};
@@ -847,6 +847,26 @@ impl Camera {
         let mut guard = self.inner.conn.lock().await;
         let conn = guard.as_mut().ok_or(Error::Disconnected)?;
         control::focus(conn).await
+    }
+
+    /// Zooms the lens while it is held: `direction` above 0 towards tele,
+    /// below 0 towards wide, 0 to stop (Sony's Zoom Operation, 0xD2DD).
+    /// Only a lens the camera can drive is zoomed (Zoom Operation Enable
+    /// Status, 0xD25B, is 1); a stop is always sent, so a zoom that was
+    /// started is never left running.
+    pub async fn zoom(&self, direction: i8) -> Result<(), Error> {
+        let enabled = lock(&self.inner.snapshot)
+            .prop(PROP_ZOOM_ENABLED)
+            .and_then(|p| p.current.as_u64())
+            == Some(1);
+        if direction != 0 && !enabled {
+            return Err(Error::Unsupported(
+                "the camera cannot zoom this lens; turn its zoom ring",
+            ));
+        }
+        let mut guard = self.inner.conn.lock().await;
+        let conn = guard.as_mut().ok_or(Error::Disconnected)?;
+        control::control(conn, CTRL_ZOOM, &PtpValue::I8(direction.signum())).await
     }
 
     /// Starts or stops movie recording.

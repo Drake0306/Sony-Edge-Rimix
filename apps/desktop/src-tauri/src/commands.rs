@@ -13,6 +13,8 @@ use crate::webcam::{FrameSource, Quality, WebcamStatus};
 /// The Tauri event that carries each `CameraEvent` (except `Frame`) as JSON,
 /// tagged with its camera: `{"camera_id": "...", "event": ...}`.
 pub const CAMERA_EVENT: &str = "camera-event";
+/// How far an import from the files screen has come.
+pub const FILES_PROGRESS: &str = "files-progress";
 
 #[tauri::command]
 pub async fn discover(timeout_ms: u64) -> Result<Vec<DiscoveredCamera>, String> {
@@ -153,6 +155,64 @@ pub async fn toggle_record(
     camera_id: Option<CameraId>,
 ) -> Result<(), String> {
     state::toggle_record(&state, camera_id).await
+}
+
+/// Opens the files of a camera in Send to Smartphone at `host`, or at the
+/// camera's usual place on its own network.
+#[tauri::command]
+pub async fn files_open(
+    state: State<'_, AppState>,
+    host: Option<String>,
+) -> Result<state::FilesInfo, String> {
+    state.cancellable(state::files_open(&state, host)).await
+}
+
+#[tauri::command]
+pub async fn files_list(
+    state: State<'_, AppState>,
+    folder: Option<String>,
+) -> Result<Vec<sony_ptpip::sendto::Entry>, String> {
+    state::files_list(&state, folder).await
+}
+
+/// A thumbnail or preview as a raw body (an ArrayBuffer in the webview).
+#[tauri::command]
+pub async fn files_picture(state: State<'_, AppState>, link: String) -> Result<Response, String> {
+    Ok(Response::new(state::files_picture(&state, link).await?))
+}
+
+/// Imports one file; progress arrives as `files-progress` events.
+#[tauri::command]
+pub async fn files_import(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    link: String,
+    name: String,
+) -> Result<String, String> {
+    state::files_import(&state, id, link, name, |progress| {
+        if let Err(e) = app.emit(FILES_PROGRESS, progress) {
+            tracing::warn!(error = %e, "cannot send import progress to the window");
+        }
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn files_close(state: State<'_, AppState>) -> Result<(), String> {
+    state::files_close(&state).await;
+    Ok(())
+}
+
+/// Zooms the lens while held: `direction` 1 towards tele, -1 towards wide,
+/// 0 to stop.
+#[tauri::command]
+pub async fn zoom(
+    state: State<'_, AppState>,
+    camera_id: Option<CameraId>,
+    direction: i8,
+) -> Result<(), String> {
+    state::zoom(&state, camera_id, direction).await
 }
 
 /// Every file on the camera's cards.

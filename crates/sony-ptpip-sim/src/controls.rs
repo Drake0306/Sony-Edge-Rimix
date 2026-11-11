@@ -72,6 +72,12 @@ impl Controls {
                 [_, _, _, _] => Ok(Outcome::Unchanged),
                 _ => Err(RC_INVALID_PARAMETER),
             },
+            // Zoom while held: one signed byte, towards tele, wide or stop.
+            // Each press moves the zoom scale a step, within its range.
+            CTRL_ZOOM => match data {
+                [direction] => Ok(zoom(props, *direction as i8)),
+                _ => Err(RC_INVALID_PARAMETER),
+            },
             _ => match data {
                 [direction] => step(props, code, *direction as i8),
                 _ => Err(RC_INVALID_PARAMETER),
@@ -222,6 +228,21 @@ fn step(props: &mut PropStore, code: u16, direction: i8) -> Result<Outcome, u16>
     };
     let value = settable[next].clone();
     Ok(changed(props, code, Some(value)))
+}
+
+/// One press of the zoom: the scale moves a step towards tele or wide and
+/// stays inside its range; a stop, or a camera with no zoom, changes nothing.
+fn zoom(props: &mut PropStore, direction: i8) -> Outcome {
+    let Some(scale) = props.get(PROP_ZOOM_SCALE) else {
+        return Outcome::Unchanged;
+    };
+    let Form::Range { min, max, step } = &scale.form else {
+        return Outcome::Unchanged;
+    };
+    let number = |v: &PtpValue| v.as_u64().unwrap_or(0) as i64;
+    let next = number(&scale.current) + i64::from(direction.signum()) * number(step);
+    let next = next.clamp(number(min), number(max)) as u32;
+    changed(props, PROP_ZOOM_SCALE, Some(PtpValue::U32(next)))
 }
 
 /// Sets `code` to `value` and reports whether it changed.

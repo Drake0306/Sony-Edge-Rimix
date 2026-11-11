@@ -223,8 +223,11 @@ function cameras(store: AppStore, actions: Actions): { el: HTMLElement; destroy:
       b.addEventListener('click', () => void actions.switchCamera(id));
       rows.push(r);
     }
-    // The active camera's card, while it is connected.
-    if (camera?.connected) rows.push(actionRow('Browse card', () => store.set({ cardOpen: true })));
+    // The active camera's card, while it is connected, on the bodies whose
+    // remote session can list it. The others (the ZV-E10's generation: Sony's
+    // reference gives them no storage commands) show their files in Send to
+    // Smartphone, which is Browse files on the connect screen.
+    if (camera?.connected && camera.generation !== '3') rows.push(actionRow('Browse card', () => store.set({ cardOpen: true })));
     if (ids.length > 1) rows.push(actionRow('Shoot all', () => void actions.shootAll()));
     for (const rc of recent) {
       if (camera && rc === current) continue;

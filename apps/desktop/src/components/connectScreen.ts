@@ -22,6 +22,7 @@ import {
   PAIRING_OPEN,
   WEBCAM_OFF,
   webcamErrorMessage,
+  FILES_HOW,
   PURPOSE_LABEL,
   PURPOSES,
 } from '../copy';
@@ -164,11 +165,14 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     purpose.append(b);
     return { value, b };
   });
+  // Browsing files is another mode of the camera: what to do there first.
+  const purposeHow = el('p', 'purpose-how', FILES_HOW);
   headline.append(
     back,
     el('h1', '', 'Connect a camera'),
     el('p', '', 'Say what it is for, then pick whichever of the three ways in is nearest to hand.'),
     purpose,
+    purposeHow,
     message,
     confirm,
   );
@@ -322,6 +326,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       b.classList.toggle('on', value === openAs);
       b.setAttribute('aria-checked', String(value === openAs));
     }
+    purposeHow.hidden = openAs !== 'Files';
   });
 
   // Every Connect button, Use this text and the recent rows wait while a connect runs.

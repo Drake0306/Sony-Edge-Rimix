@@ -133,6 +133,46 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
             },
         });
     }
+    if let Some(enabled) = config.zoom {
+        let list = |values: &[u8]| Form::Enum {
+            settable: values.iter().copied().map(PtpValue::U8).collect(),
+            reportable: vec![],
+        };
+        let zoom = |code, datatype, writable, current: PtpValue, form| PropertyDesc {
+            code,
+            datatype,
+            writable,
+            enabled: Enabled::On,
+            default: current.clone(),
+            current,
+            form,
+        };
+        props.push(zoom(
+            PROP_ZOOM_ENABLED,
+            0x0002,
+            false,
+            PtpValue::U8(u8::from(enabled)),
+            list(&[0, 1]),
+        ));
+        props.push(zoom(
+            PROP_ZOOM_SCALE,
+            0x0006,
+            true,
+            PtpValue::U32(1000),
+            Form::Range {
+                min: PtpValue::U32(1000),
+                max: PtpValue::U32(8000),
+                step: PtpValue::U32(200),
+            },
+        ));
+        props.push(zoom(
+            PROP_ZOOM_SETTING,
+            0x0002,
+            true,
+            PtpValue::U8(1),
+            list(&[1, 3, 4]),
+        ));
+    }
     let bind_addr = config
         .bind_addr
         .unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], 0)));

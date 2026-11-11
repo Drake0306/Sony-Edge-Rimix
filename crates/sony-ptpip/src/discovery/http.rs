@@ -104,6 +104,130 @@ async fn get_inner(url: &Url) -> Result<String, Error> {
     String::from_utf8(body).map_err(|_| Error::Protocol(format!("GET {url}: body is not UTF-8")))
 }
 
+/// A response whose body has not been read yet.
+pub(crate) struct Reply {
+    pub status: u16,
+    /// The Content-Length, when the server gave one.
+    pub length: Option<u64>,
+    pub body: BufReader<TcpStream>,
+}
+
+/// Sends one request and reads the response's status and headers; the body
+/// is left to the caller, to stream or to cap. `Connection: close` is asked
+/// for, so a body with no length ends with the connection. `timeout` covers
+/// connecting and the headers only.
+pub(crate) async fn send(
+    method: &str,
+    url: &Url,
+    headers: &[(&str, &str)],
+    body: &[u8],
+    timeout: Duration,
+) -> Result<Reply, Error> {
+    tokio::time::timeout(timeout, send_inner(method, url, headers, body))
+        .await
+        .map_err(|_| Error::Timeout)?
+}
+
+async fn send_inner(
+    method: &str,
+    url: &Url,
+    headers: &[(&str, &str)],
+    body: &[u8],
+) -> Result<Reply, Error> {
+    if url.scheme() != "http" {
+        return Err(Error::Unsupported("only http:// is supported"));
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| Error::Protocol(format!("{url} has no host")))?;
+    let port = url.port_or_known_default().unwrap_or(80);
+    let mut stream = TcpStream::connect((host.trim_matches(['[', ']']), port)).await?;
+    let path = &url[url::Position::BeforePath..url::Position::AfterQuery];
+    let mut request =
+        format!("{method} {path} HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n");
+    for (name, value) in headers {
+        request.push_str(&format!("{name}: {value}\r\n"));
+    }
+    if !body.is_empty() || method != "GET" {
+        request.push_str(&format!("Content-Length: {}\r\n", body.len()));
+    }
+    request.push_str("\r\n");
+    stream.write_all(request.as_bytes()).await?;
+    stream.write_all(body).await?;
+
+    let mut reader = BufReader::new(stream);
+    let mut header_budget = MAX_HEADER_BYTES;
+    let line = read_line_capped(&mut reader, &mut header_budget)
+        .await?
+        .ok_or_else(|| Error::Protocol(format!("{method} {url}: no response")))?;
+    let status = line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse::<u16>().ok())
+        .ok_or_else(|| Error::Protocol(format!("{method} {url} answered {line:?}")))?;
+    let mut length = None;
+    let mut seen = 0;
+    loop {
+        let Some(header) = read_line_capped(&mut reader, &mut header_budget).await? else {
+            return Err(Error::Protocol(format!(
+                "{method} {url}: headers cut short"
+            )));
+        };
+        if header.is_empty() {
+            break;
+        }
+        seen += 1;
+        if seen > MAX_HEADERS {
+            return Err(Error::Protocol(format!(
+                "{method} {url}: more than {MAX_HEADERS} headers"
+            )));
+        }
+        let Some((name, value)) = header.split_once(':') else {
+            continue;
+        };
+        let value = value.trim();
+        if name.eq_ignore_ascii_case("content-length") {
+            length = Some(value.parse::<u64>().map_err(|_| {
+                Error::Protocol(format!("{method} {url}: bad Content-Length {value:?}"))
+            })?);
+        } else if name.eq_ignore_ascii_case("transfer-encoding")
+            && !value.eq_ignore_ascii_case("identity")
+        {
+            return Err(Error::Unsupported("chunked HTTP bodies"));
+        }
+    }
+    Ok(Reply {
+        status,
+        length,
+        body: reader,
+    })
+}
+
+impl Reply {
+    /// The whole body, refused beyond `max` bytes.
+    pub(crate) async fn bytes(mut self, max: u64) -> Result<Vec<u8>, Error> {
+        let too_big = || Error::Protocol(format!("HTTP body over {max} bytes"));
+        let mut body = Vec::new();
+        match self.length {
+            Some(len) if len > max => return Err(too_big()),
+            Some(len) => {
+                body.resize(len as usize, 0);
+                self.body.read_exact(&mut body).await?;
+            }
+            None => {
+                (&mut self.body)
+                    .take(max + 1)
+                    .read_to_end(&mut body)
+                    .await?;
+                if body.len() as u64 > max {
+                    return Err(too_big());
+                }
+            }
+        }
+        Ok(body)
+    }
+}
+
 /// Reads one CRLF- or LF-terminated line without its terminator, charging
 /// its length to `budget`. `None` means the stream ended before any byte.
 /// A line over `MAX_LINE` or over the remaining budget is an error.

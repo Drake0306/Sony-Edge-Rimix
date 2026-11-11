@@ -91,6 +91,8 @@ pub struct AppState {
     /// Counts the times a connect in progress was cancelled; the steps of a
     /// connect (join, find, connect) each stop when it moves.
     pub connect_cancel: tokio::sync::watch::Sender<u64>,
+    /// The camera whose files are being browsed (Send to Smartphone), if any.
+    pub files: tokio::sync::Mutex<Option<Arc<sony_ptpip::sendto::SendTo>>>,
 }
 
 /// Locks a std mutex, carrying on if a panicking holder poisoned it.
@@ -120,6 +122,7 @@ impl AppState {
             ble: crate::ble::BleService::default(),
             webcam: crate::webcam::WebcamService::default(),
             connect_cancel: tokio::sync::watch::channel(0).0,
+            files: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -860,6 +863,141 @@ pub async fn focus_at(
             format!("The camera did not take the focus point (answered {code:#06x})")
         }
         Error::Unsupported(why) => format!("Cannot focus on a point: {why}"),
+        other => other.to_string(),
+    })
+}
+
+/// What the files screen is told about the camera it browses.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct FilesInfo {
+    pub model: String,
+    /// `PushRoot` (the pictures chosen on the camera) or `PhotoRoot` (all).
+    pub root: String,
+    pub address: String,
+}
+
+/// How far an import has come, for the files screen.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct FilesProgress {
+    pub id: String,
+    pub received: u64,
+    pub total: Option<u64>,
+}
+
+/// What the files screen says when no camera answers.
+pub const NO_SEND_TO: &str = "NO_SEND_TO";
+
+/// Where a camera in Send to Smartphone is looked for: `RIMIX_FILES_ADDR`
+/// when set (development), else the host given (its PTP port, if any, is
+/// not the one), else the network's router, which on the camera's own
+/// Wi-Fi is the camera, else Sony's usual address.
+async fn files_address(host: Option<&str>) -> Result<SocketAddr, String> {
+    if let Ok(addr) = std::env::var("RIMIX_FILES_ADDR") {
+        return addr
+            .parse()
+            .map_err(|e| format!("RIMIX_FILES_ADDR is not an address: {e}"));
+    }
+    let port = sony_ptpip::sendto::DEFAULT_PORT;
+    if let Some(host) = host.map(str::trim).filter(|h| !h.is_empty()) {
+        let host = host.rsplit_once(':').map_or(host, |(h, _)| h);
+        let ip: IpAddr = host
+            .parse()
+            .map_err(|_| format!("{host} is not an address"))?;
+        return Ok(SocketAddr::new(ip, port));
+    }
+    let ip = sony_ptpip::discovery::gateway()
+        .await
+        .unwrap_or(IpAddr::V4(Ipv4Addr::new(192, 168, 122, 1)));
+    Ok(SocketAddr::new(ip, port))
+}
+
+/// Opens the files of a camera in Send to Smartphone. No remote shooting
+/// session is made: this is the camera's other mode.
+pub async fn files_open(state: &AppState, host: Option<String>) -> Result<FilesInfo, String> {
+    let addr = files_address(host.as_deref()).await?;
+    let camera = sony_ptpip::sendto::SendTo::open(addr).await.map_err(|e| {
+        tracing::warn!(%addr, error = %e, "no camera in Send to Smartphone answered");
+        NO_SEND_TO.to_string()
+    })?;
+    let info = FilesInfo {
+        model: camera.model.clone(),
+        root: camera.root.clone(),
+        address: addr.to_string(),
+    };
+    if let Some(old) = state.files.lock().await.replace(Arc::new(camera)) {
+        old.close().await;
+    }
+    Ok(info)
+}
+
+async fn files_camera(state: &AppState) -> Result<Arc<sony_ptpip::sendto::SendTo>, String> {
+    let open = state.files.lock().await.clone();
+    open.ok_or_else(|| "No camera's files are open".to_string())
+}
+
+/// The folders and files inside `folder` (the top for `None`).
+pub async fn files_list(
+    state: &AppState,
+    folder: Option<String>,
+) -> Result<Vec<sony_ptpip::sendto::Entry>, String> {
+    let camera = files_camera(state).await?;
+    camera
+        .list(folder.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// A thumbnail or preview the camera gave a link to.
+pub async fn files_picture(state: &AppState, link: String) -> Result<Vec<u8>, String> {
+    let camera = files_camera(state).await?;
+    camera.picture(&link).await.map_err(|e| e.to_string())
+}
+
+/// Imports one file into the destination folder; `progress` hears how far
+/// it is, at most ten times a second. Returns where it was saved.
+pub async fn files_import(
+    state: &AppState,
+    id: String,
+    link: String,
+    name: String,
+    mut progress: impl FnMut(FilesProgress),
+) -> Result<String, String> {
+    let camera = files_camera(state).await?;
+    let destination = lock(&state.settings).destination();
+    let dir = destination
+        .ensure_writable(chrono::Local::now().date_naive())
+        .map_err(|e| format!("Cannot save to {}: {e}", destination.base.display()))?;
+    let mut last = std::time::Instant::now() - Duration::from_secs(1);
+    let (path, _) = camera
+        .download(&link, &dir, &name, |received, total| {
+            let done = total == Some(received);
+            if done || last.elapsed() >= Duration::from_millis(100) {
+                last = std::time::Instant::now();
+                progress(FilesProgress {
+                    id: id.clone(),
+                    received,
+                    total,
+                });
+            }
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
+}
+
+/// Ends the browsing: the camera is told the transfer is over, leaves Send
+/// to Smartphone and closes its network.
+pub async fn files_close(state: &AppState) {
+    if let Some(camera) = state.files.lock().await.take() {
+        camera.close().await;
+    }
+}
+
+/// Zooms while held: above 0 towards tele, below towards wide, 0 stops.
+pub async fn zoom(state: &AppState, id: Option<CameraId>, direction: i8) -> Result<(), String> {
+    let camera = state.camera(id.as_ref()).await?;
+    camera.zoom(direction).await.map_err(|e| match e {
+        Error::Unsupported(why) => format!("Cannot zoom: {why}"),
         other => other.to_string(),
     })
 }
@@ -1751,6 +1889,81 @@ mod tests {
         save_settings(&state, s).await.unwrap();
         sending(true).await;
         stop(sim, &state).await;
+    }
+
+    /// Browse files: the camera's other mode, with no remote session.
+    #[tokio::test]
+    async fn a_cameras_files_are_opened_listed_looked_at_and_imported_into_the_folder() {
+        let _env = CAMERA_ADDR.lock().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let sim = sony_ptpip_sim::sendto::spawn_sendto(Default::default()).await;
+        let state = app_state(tmp.path());
+        // Nothing open yet.
+        assert!(files_list(&state, None).await.is_err());
+        std::env::set_var("RIMIX_FILES_ADDR", sim.addr.to_string());
+        let info = files_open(&state, None).await;
+        std::env::remove_var("RIMIX_FILES_ADDR");
+        let info = info.unwrap();
+        assert_eq!(
+            (info.model.as_str(), info.root.as_str()),
+            ("ZV-E10", "PushRoot")
+        );
+        // No camera is connected for remote shooting.
+        assert!(list_cameras(&state).await.is_empty());
+
+        let top = files_list(&state, None).await.unwrap();
+        let files = files_list(&state, Some(top[0].id.clone())).await.unwrap();
+        let jpeg = &files[0];
+        let thumb = files_picture(&state, jpeg.thumb.clone().unwrap())
+            .await
+            .unwrap();
+        assert_eq!(&thumb[..2], &[0xFF, 0xD8]);
+
+        let mut heard = Vec::new();
+        let saved = files_import(
+            &state,
+            jpeg.id.clone(),
+            jpeg.file.clone().unwrap(),
+            jpeg.title.clone(),
+            |p| heard.push(p),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            saved,
+            tmp.path()
+                .join("shots")
+                .join("DSC00412.JPG")
+                .display()
+                .to_string()
+        );
+        let last = heard.last().expect("progress was reported");
+        assert_eq!(last.id, jpeg.id);
+        assert_eq!(Some(last.received), last.total);
+
+        files_close(&state).await;
+        assert!(files_list(&state, None).await.is_err());
+        assert!(sim
+            .log
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .contains("X_TransferEnd"));
+    }
+
+    #[tokio::test]
+    async fn with_no_camera_in_send_to_smartphone_the_answer_names_that() {
+        let _env = CAMERA_ADDR.lock().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let state = app_state(tmp.path());
+        let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = free.local_addr().unwrap();
+        drop(free);
+        std::env::set_var("RIMIX_FILES_ADDR", addr.to_string());
+        let answer = files_open(&state, None).await;
+        std::env::remove_var("RIMIX_FILES_ADDR");
+        assert_eq!(answer.unwrap_err(), NO_SEND_TO);
     }
 
     #[test]

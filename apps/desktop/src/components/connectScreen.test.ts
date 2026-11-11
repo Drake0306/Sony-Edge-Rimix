@@ -59,6 +59,17 @@ describe('what the camera is for', () => {
     expect(choices().map((b) => b.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false']);
   });
 
+  test('browsing files says what to do on the camera first, and only then', () => {
+    setup();
+    const how = root.querySelector<HTMLElement>('.purpose-how')!;
+    expect(how.hidden).toBe(true);
+    choices()[2].click();
+    expect(how.hidden).toBe(false);
+    expect(how.textContent).toContain('Send to Smartphone');
+    choices()[0].click();
+    expect(how.hidden).toBe(true);
+  });
+
   test('the choice is saved, and shown as chosen the next time', () => {
     setup();
     choices()[2].click();

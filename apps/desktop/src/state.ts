@@ -11,6 +11,8 @@ import type {
   CardObject,
   DiscoveredCamera,
   FeedStatus,
+  FileEntry,
+  FilesInfo,
   Found,
   SftpStatus,
 } from './ipc';
@@ -86,7 +88,10 @@ export interface SaveError {
 }
 
 export interface AppState {
-  screen: 'connect' | 'main';
+  /** The connect screen, remote shooting, or the files of a camera in Send to Smartphone. */
+  screen: 'connect' | 'main' | 'files';
+  /** The camera whose files are open, with the folder shown; null on the other screens. */
+  files: FilesState | null;
   /** The active camera's state: always `cameras[activeId]` once it is known. */
   camera: CameraState | null;
   /** Every connected camera by id, in the order they were connected. */
@@ -199,6 +204,7 @@ export const initialState = (): AppState => ({
   interval: null,
   card: emptyCard(),
   cardOpen: false,
+  files: null,
   sftp: null,
   webcam: true,
   feed: null,
@@ -220,6 +226,22 @@ export const defaultSettings = (destinationBase = ''): AppSettings => ({
   copyFeature: false,
   openAs: 'Remote',
 });
+
+/** The files screen: where it is in the camera's folders and what is being imported. */
+export interface FilesState {
+  info: FilesInfo;
+  /** The folders entered, the top first; `id` null is the top. */
+  path: { id: string | null; title: string }[];
+  items: FileEntry[];
+  loading: boolean;
+  error: string | null;
+  /** Imports under way, done (where each was saved) and failed, by file id. */
+  progress: Record<string, { received: number; total: number | null }>;
+  saved: Record<string, string>;
+  failed: Record<string, string>;
+  /** The file opened large, by id. */
+  viewing: string | null;
+}
 
 /** Whether copying after each shot is shown: its panel and the last captures. */
 export const copyShown = (s: AppState): boolean => s.settings?.copyFeature ?? false;

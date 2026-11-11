@@ -13,6 +13,7 @@ mod card;
 mod controls;
 mod frames;
 mod props;
+pub mod sendto;
 mod server;
 mod ssdp;
 mod ssh;
@@ -151,6 +152,12 @@ pub struct SimConfig {
     /// (`[1, 2, 0x103]`).
     #[serde(default)]
     pub focus_areas: Vec<u16>,
+    /// Give the camera Sony's zoom properties, which the fixtures leave
+    /// out: whether the lens can be zoomed from the computer (0xD25B), with
+    /// the zoom scale (0xD25C) and the zoom setting (0xD25F: optical only,
+    /// Clear Image Zoom, digital zoom, as the ZV-E10 lists them).
+    #[serde(default)]
+    pub zoom: Option<bool>,
     /// List the remote touch control (0xD2E4) among the camera's controls,
     /// as the ZV-E10 does.
     #[serde(default)]
@@ -196,6 +203,7 @@ impl Default for SimConfig {
             host_image_size: None,
             focus_area: None,
             focus_areas: Vec::new(),
+            zoom: None,
             remote_touch: false,
         }
     }

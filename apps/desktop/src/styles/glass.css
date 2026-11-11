@@ -93,6 +93,16 @@ svg{display:block}
 /* The badge: the letter a mode has on a mode dial, or a value's short form. */
 .cap{flex:none;display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:10px;font-size:11px;font-weight:700;line-height:1;color:var(--ink);box-shadow:inset 0 0 0 1.25px var(--ink-3);font-variant-numeric:tabular-nums}
 .cap.wide{padding:0 6px;font-size:9.5px;letter-spacing:.03em}
+/* Hold to zoom: W and T, as on a zoom rocker. */
+.r .zoombtn{flex:none;width:28px;height:22px;margin-left:4px;border-radius:7px;font-size:11px;font-weight:700;background:var(--well-2);color:var(--ink)}
+.r .zoombtn:hover:not(:disabled){background:var(--hov-2)}
+.r .zoombtn.held{background:var(--sel);color:var(--sel-ink)}
+.r .zoombtn:disabled{opacity:.4}
+/* Why a list cannot be chosen from, and the press that changes it. */
+.pick .blocked{display:flex;align-items:center;gap:8px;margin:6px 2px 2px;font-size:11px;line-height:1.35;color:var(--ink-2)}
+.pick .blocked[hidden]{display:none}
+.pick .blocked span{flex:1;min-width:0}
+.pick .blocked .pathbtn{flex:none;height:22px;padding:0 9px;border-radius:7px;font-size:11px;font-weight:500;background:var(--well-2);color:var(--ink)}
 /* Auto, beside what the camera can choose by itself: outlined while you set it, filled while the camera does. */
 .r .autobtn{flex:none;height:20px;margin:0 6px 0 4px;padding:0 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.03em;color:var(--ink-2);box-shadow:inset 0 0 0 1.25px var(--ink-3)}
 .r .autobtn:hover:not(:disabled){background:var(--hov-2)}

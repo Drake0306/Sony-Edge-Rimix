@@ -56,7 +56,7 @@ Then run `scripts/check-mac-bundle.sh ~/Downloads/Rimix-0.1.0/Rimix.app`:
 it must print three `ok` lines. A bundle that fails it cannot reach any
 camera (see "The 10:00 connect failure").
 
-## State of the code (main = merge of purpose-and-auto)
+## State of the code (main = merge of files-and-zoom)
 
 All four spec phases are built and merged. Everything was developed against
 the simulator; only three real-camera sessions have happened, all on
@@ -495,6 +495,109 @@ What it showed, and what was fixed on branch `real-values` (merged):
   - Fixed on the way: a change to a movie mode read as "took a picture"
     (shots left falls to 0); the check now takes drops of 1 to 12 only.
 
+- **Session 10 (11:09Z) and branch `files-and-zoom` (merged).** Report:
+  `docs/camera-reports/zv-e10-fw2.01-session10.json`. Roy: the three
+  purpose buttons look wrong on hover, the settings on the right cannot be
+  scrolled, "Browse files" did nothing, and he wants stabilisation and zoom.
+  Working on the camera in that session (from the log and report): the
+  Auto buttons (ISO Auto 0xFFFFFF and mode M to A were written and taken),
+  the Focus area row (Wide to Zone and back). Tap to focus was not tried.
+  - *Browse files did nothing* because it opened the PTP card browser,
+    and this body has no storage commands at all (see "What Sony's own
+    reference says"). The log has not one card line. REBUILT on Send to
+    Smartphone: `crates/sony-ptpip/src/sendto.rs` (`SendTo::open`, `list`,
+    `picture`, `download`, `close`), a pretend camera in
+    `sony-ptpip-sim/src/sendto.rs`, commands `files_open`, `files_list`,
+    `files_picture`, `files_import`, `files_close` (event
+    `files-progress`), dev override `RIMIX_FILES_ADDR`. With "Browse files"
+    chosen, a connect joins the Wi-Fi and calls `files_open` (the router's
+    address, port 64321): NO PTP session, no live view; the store's screen
+    is `files` and `components/filesScreen.ts` shows folders, thumbnails,
+    a large preview and Import. "Done" sends X_TransferEnd (the camera
+    leaves the mode and its Wi-Fi). NOTHING OF THIS HAS MET A REAL CAMERA.
+    What to look for in the log: `Send to Smartphone opened ... root=`,
+    `listed a folder of the camera`, `imported a file from the camera`,
+    or `no camera in Send to Smartphone answered` with the error. Unknown
+    on the ZV-E10: the port and description path (64321, DmsDescPush.xml
+    are what other bodies use), whether RAW and movies are offered, and
+    whether its network name and password are the same in this mode.
+  - "Browse card" in the Cameras panel is hidden on generation 3 bodies.
+    The PTP card code and the movie copy stay for bodies that have the
+    storage commands; none has been tried.
+  - *Zoom* (Lens section of the settings popover, only when the camera
+    reports 0xD25B): W and T buttons that zoom while held
+    (`Camera::zoom`, 0xD2DD with 1, -1, then 0 on release; refused unless
+    0xD25B is 1), the zoom scale beside them, and a Zoom setting list
+    (0xD25F). In RAW the camera marks that list display only; the panel
+    says why (Sony's Help Guide: no zoom but the lens's own in RAW or
+    RAW & JPEG) and offers "Switch to JPEG". The session-10 report shows
+    0xD25B = 1 with Roy's power zoom lens, scale 1000, setting 1 of
+    [1, 3, 4]. Untested on the camera.
+  - *Stabilisation:* not possible on this body, per Sony's table. Rimix
+    shows a SteadyShot row on bodies that report 0xD0D9 / 0xD0DA (1 off,
+    2 on; movie: 1 off, 2 standard, 3 active, 4 hybrid).
+  - Fixed: the hover tint of the purpose buttons (a tint over the glass,
+    not instead of it), and the App settings popover now scrolls (it had
+    no height limit and had outgrown a laptop screen).
+
+## What Sony's own reference says (found 2026-11-11, session 10)
+
+READ THIS BEFORE GUESSING AT A CODE. Sony's "Camera Control PTP 3
+Reference" (and the PTP 2 one) is transcribed page by page in
+`github.com/olkham/pysonycam` under `docs/sdk/` (750 pages; it is Sony's
+copyright, so it is not copied here: download the repo tarball and grep
+it). Every operation, property, control and event has a compatibility
+table with a ZV-E10 column. For the ZV-E10 (which does both PTP 2 and 3;
+Rimix sends InitiatorVersion 0x012C, PTP 3):
+
+- Operations supported: 0x1001 to 0x1003, GetObjectInfo 0x1008, GetObject
+  0x1009, GetPartialObject 0x101B, 0x9201, 0x9202, 0x9205, 0x9207, 0x9209.
+  NOT supported: GetStorageIDs, GetObjectHandles, GetThumb,
+  SetContentsTransferMode 0x9212, GetContentInfoList. So THE CARD CANNOT
+  BE LISTED OVER PTP ON THIS BODY, in any mode (libgphoto2 agrees: its
+  "ZV-E10 (Control)" has no file listing, files are "ZV-E10 (MTP mode)"
+  over USB). The card browser and the movie copy built on those
+  operations can never have worked on it.
+- NOT supported: SteadyShot (0xD0D9, movie 0xD0DA), Face/Eye and subject
+  recognition (0xD060, 0xD157, 0xD158, 0xD1B8), Remote Touch Operation
+  0xD2E4 (the body lists the control and refuses it; its enable status
+  0xD284 read 0), Zoom Type Status, Zoom Speed Range.
+- Supported zoom: Zoom Operation Enable Status 0xD25B (1 = enabled), Zoom
+  Scale 0xD25C (x 0.001; min, max and step vary), Zoom Bar Information
+  0xD25D (bits 31-24 boxes in all, 23-16 the box in use, 15-0 the place
+  in it), Zoom Setting 0xD25F (1 optical only, 2 smart, 3 Clear Image
+  Zoom, 4 digital zoom), and the control Zoom Operation 0xD2DD (INT8: 1
+  tele, -1 wide, 0 stop; only while 0xD25B is 1). The ZVZoom project
+  confirms 0xD2DD on a ZV-1.
+- AF Area Position 0xD2DC: "x in the upper two bytes, y in the lower;
+  X 0 to 639, Y 0 to 479". As Rimix sends it.
+- Names for codes the notes above call by libgphoto2's: 0xD215 is
+  "Shooting File Info" (over 0x8000: fetch 0xFFFFC001 until it is 0),
+  0xD214 "Predicted Maximum File Size", 0xD283 "Function of Touch
+  Operation", 0xD267 "Live View Area (x, y)". Event 0xC206 is
+  "Captured" (libgphoto2), 0xC20C "FTP display name list changed".
+
+**Files over Wi-Fi are a different camera mode and a different protocol:
+"Send to Smartphone"** (Menu, Network, Send to Smartphone Func., Send to
+Smartphone; on the ZV-E10 the pictures are chosen on the camera: This
+Image, All with this date, Multiple Images). The camera then runs a UPnP
+media server at `http://192.168.122.1:64321` on its own Wi-Fi (same
+network name and password). Reference: `schorschii/ImagingEdge4Linux`
+(`imaging-edge.py`, read in full), agreeing with `WWNNL/SonyCameraTransfer`
+and `okru1/sony-photo-transfer`:
+`GET /DmsDescPush.xml`; SOAP to `/upnp/control/XPushList`
+(`urn:schemas-sony-com:service:XPushList:1`) `X_TransferStart`, then
+`/upnp/control/ContentDirectory` `Browse` of `PushRoot` (what was chosen
+on the camera) or, failing that, `PhotoRoot` (everything, on bodies that
+have "Select on Smartphone"), `BrowseDirectChildren`, paged; the Result is
+DIDL-Lite XML inside the XML; each item has several `res` links, told
+apart by `protocolInfo` (`_TN` thumbnail, `_SM`, `_LRG` previews) and the
+original with `size` and `resolution`; then `X_TransferEnd` with
+`<ErrCode>0</ErrCode>`, after which the camera leaves the mode and closes
+its Wi-Fi. On older bodies a RAW is offered only as JPEG previews (HTTP
+406 for the original); the ZV-E10 has a "RAW+J Trans. Trgt." menu, so it
+may send RAW: not yet seen. NOT TESTED ON THE ZV-E10 by anyone listed.
+
 Seen in the report and not used yet: 0xD278 is an HTTP live view stream
 URL on the camera (`http://192.168.122.1:60152/liveviewstream?...`),
 possibly a faster live view than the PTP frames; 0xD26A (1 or 2,
@@ -503,15 +606,16 @@ still a stepper.
 
 ## Next real-camera session
 
-Roy opens the new build and tries: a tap on the live view in P or M
-(read `focus point ... how=` and `the camera's frames after a focus
-point`: compare asked_x/asked_y with the frame's centre), the Auto
-buttons on Shutter, Aperture and ISO, Intelligent Auto on a close subject
-(`the camera's shooting mode` lines), and "Browse files" on the connect
-screen (does the card list? `card` errors in the log say). Read
-`logs/camera-ZV-E10.json` first: it is the settled table now. Copying
-after each shot is off and hidden; do not spend a session on it again
-without a new lead.
+Roy tries, most important first: (1) Browse files: on the camera, play
+back a picture, Menu, Network, Send to Smartphone Func., Send to
+Smartphone, choose pictures; in Rimix choose Browse files and connect
+with the name and password the camera shows. Read the log for the
+`Send to Smartphone` lines above; if nothing answered, find out from the
+camera's own screen and `nc -z 192.168.122.1 64321` whether the port is
+right. (2) Zoom: hold W and T in Settings, Lens. (3) A tap on the live
+view in P or M (`focus point ... how=`, `the camera's frames after a
+focus point`). (4) Intelligent Auto on a close subject (`the camera's
+shooting mode` lines).
 
 If the connect screen says macOS is keeping Rimix off the local network,
 do the Local Network toggle above: it would mean the signing fix is not

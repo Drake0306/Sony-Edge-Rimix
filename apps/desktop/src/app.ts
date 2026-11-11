@@ -8,6 +8,7 @@ import * as appSettings from './components/appSettings';
 import * as cardBrowser from './components/cardBrowser';
 import * as connectScreen from './components/connectScreen';
 import * as dock from './components/dock';
+import * as filesScreen from './components/filesScreen';
 import * as filmstrip from './components/filmstrip';
 import * as liveview from './components/liveview';
 import * as ring from './components/ring';
@@ -17,7 +18,7 @@ import * as webcamMode from './components/webcamMode';
 import { MOVIES_STAY_ON_CARD } from './copy';
 import { el, isTyping } from './dom';
 import { tick } from './interval';
-import { devFlags, getSettings, getState, listCameras, onCameraEvent, type CameraEvent, type CameraState } from './ipc';
+import { devFlags, getSettings, getState, listCameras, onCameraEvent, onFilesProgress, type CameraEvent, type CameraState } from './ipc';
 import {
   applyEvent,
   cameraBusy,
@@ -64,6 +65,9 @@ const MAIN: Mount[] = [
 ];
 // App settings here too, so the webcam and Wi-Fi join can be set before the first connection.
 const CONNECT: Mount[] = [connectScreen.mount, appSettings.mount];
+// The files of a camera in Send to Smartphone: no live view, no controls.
+// Its own bar has the one setting that matters here, where imports go.
+const FILES: Mount[] = [filesScreen.mount];
 
 function toaster(host: HTMLElement): (message: string) => void {
   return (message) => {
@@ -189,8 +193,8 @@ export async function startApp(root: HTMLElement): Promise<void> {
     if (name === 'main' && store.get().keepCameras) store.set({ keepCameras: false });
     unmount.forEach((u) => u());
     screen.className = `screen ${name}`;
-    screen.setAttribute('aria-label', name === 'main' ? 'Main screen' : 'Connect screen');
-    unmount = (name === 'main' ? MAIN : CONNECT).map((m) => m(screen, store, actions));
+    screen.setAttribute('aria-label', name === 'main' ? 'Main screen' : name === 'files' ? 'Files on the camera' : 'Connect screen');
+    unmount = (name === 'main' ? MAIN : name === 'files' ? FILES : CONNECT).map((m) => m(screen, store, actions));
   });
 
   toastConnecting(store, toast);
@@ -204,6 +208,11 @@ export async function startApp(root: HTMLElement): Promise<void> {
   document.addEventListener('keydown', (e) => handleShortcut(e, store, actions));
 
   await onCameraEvent((cameraId, event) => routeCameraEvent(store, cameraId, event, toast));
+  // How far an import from the files screen has come.
+  await onFilesProgress(({ id, received, total }) => {
+    const files = store.get().files;
+    if (files && id in files.progress) store.set({ files: { ...files, progress: { ...files.progress, [id]: { received, total } } } });
+  });
 
   if (settingsError) toast(`Cannot load settings: ${String(settingsError)}`);
   try {

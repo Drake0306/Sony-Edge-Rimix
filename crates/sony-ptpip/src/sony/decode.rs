@@ -75,6 +75,42 @@ pub fn label_for(code: u16, value: &PtpValue) -> Option<Labeled> {
             let (label, short) = focus_area_names(u16v()?);
             Some(Labeled { label, short })
         }
+        PROP_ZOOM_SETTING => {
+            let (name, short) = match value.as_u64()? {
+                1 => ("Optical zoom only", "Optical"),
+                2 => ("Smart zoom only", "Smart"),
+                3 => ("Clear Image Zoom", "Clear Image"),
+                4 => ("Digital zoom", "Digital"),
+                other => return Some(Labeled::same(unknown(other as u16))),
+            };
+            Some(Labeled {
+                label: name.to_string(),
+                short: short.to_string(),
+            })
+        }
+        // Thousandths: 1000 is the lens's own widest, 1200 is 1.2 times in.
+        PROP_ZOOM_SCALE => {
+            let scale = value.as_u64()? as f64 / 1000.0;
+            Some(Labeled::same(format!("\u{d7}{scale:.1}")))
+        }
+        PROP_STEADYSHOT => {
+            let name = match value.as_u64()? {
+                1 => "Off",
+                2 => "On",
+                other => return Some(Labeled::same(unknown(other as u16))),
+            };
+            Some(Labeled::same(name.to_string()))
+        }
+        PROP_STEADYSHOT_MOVIE => {
+            let name = match value.as_u64()? {
+                1 => "Off",
+                2 => "Standard",
+                3 => "Active",
+                4 => "Hybrid",
+                other => return Some(Labeled::same(unknown(other as u16))),
+            };
+            Some(Labeled::same(name.to_string()))
+        }
         PROP_FILE_FORMAT => {
             let name = match value.as_u64()? {
                 1 => "RAW",
@@ -813,6 +849,40 @@ mod tests {
                 drive_short(raw)
             );
         }
+    }
+
+    /// The values are Sony's, from its Camera Control PTP 3 Reference.
+    #[test]
+    fn zoom_and_steadyshot_have_names() {
+        let named = |code, raw: u8| {
+            let l = label_for(code, &PtpValue::U8(raw)).unwrap();
+            (l.label, l.short)
+        };
+        let both = |a: &str, b: &str| (a.to_string(), b.to_string());
+        // What the ZV-E10 lists: 1, 3 and 4.
+        assert_eq!(
+            named(PROP_ZOOM_SETTING, 1),
+            both("Optical zoom only", "Optical")
+        );
+        assert_eq!(
+            named(PROP_ZOOM_SETTING, 3),
+            both("Clear Image Zoom", "Clear Image")
+        );
+        assert_eq!(named(PROP_ZOOM_SETTING, 4), both("Digital zoom", "Digital"));
+        assert_eq!(named(PROP_ZOOM_SETTING, 2).0, "Smart zoom only");
+        let scale = |raw: u32| {
+            label_for(PROP_ZOOM_SCALE, &PtpValue::U32(raw))
+                .unwrap()
+                .label
+        };
+        assert_eq!(scale(1000), "\u{d7}1.0");
+        assert_eq!(scale(1200), "\u{d7}1.2");
+        assert_eq!(scale(8000), "\u{d7}8.0");
+        assert_eq!(named(PROP_STEADYSHOT, 1).0, "Off");
+        assert_eq!(named(PROP_STEADYSHOT, 2).0, "On");
+        assert_eq!(named(PROP_STEADYSHOT_MOVIE, 2).0, "Standard");
+        assert_eq!(named(PROP_STEADYSHOT_MOVIE, 3).0, "Active");
+        assert_eq!(named(PROP_STEADYSHOT_MOVIE, 4).0, "Hybrid");
     }
 
     #[test]

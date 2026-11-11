@@ -14,6 +14,12 @@ export const PROP = {
   format: 0x5004,
   colourTemp: 0xd20f,
   focusArea: 0xd22c,
+  /** Whether the camera can zoom the lens (1); the Zoom row stands on it. */
+  zoom: 0xd25b,
+  zoomScale: 0xd25c,
+  zoomSetting: 0xd25f,
+  steadyShot: 0xd0d9,
+  steadyShotMovie: 0xd0da,
 } as const;
 
 /** The nine chips in dock order; a tenth, Picture profile, has no code yet. */
@@ -34,6 +40,10 @@ export const SETTING_NAMES: Record<number, string> = {
   [PROP.format]: 'Format',
   [PROP.colourTemp]: 'Colour temp',
   [PROP.focusArea]: 'Focus area',
+  [PROP.zoom]: 'Zoom',
+  [PROP.zoomSetting]: 'Zoom setting',
+  [PROP.steadyShot]: 'SteadyShot',
+  [PROP.steadyShotMovie]: 'SteadyShot (movie)',
 };
 
 /** White balance raw values meaning "use the colour temperature" (as the Rust side's `WB_COLOUR_TEMP`). */
