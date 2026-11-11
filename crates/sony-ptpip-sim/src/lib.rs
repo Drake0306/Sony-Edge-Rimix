@@ -96,6 +96,18 @@ pub struct SimConfig {
     /// response.
     #[serde(default = "default_true")]
     pub sdio_connect_data: bool,
+    /// Never answer 0x9209 (SDIO_GetAllExtDevicePropInfo) sent with any
+    /// parameter: the request is read and then nothing more comes until the
+    /// connection drops. `false` answers parameter 0 with every property and
+    /// 1 with the properties changed since the last such read, as the
+    /// simulator did before. 0x9209 with no parameters (the form libgphoto2
+    /// uses) is always answered with every property.
+    #[serde(default = "default_true")]
+    pub props_param_hangs: bool,
+    /// Never answer 0x9251 (SDIO_GetExtDeviceProp), as a body that does not
+    /// implement it may do. `false` answers it with the one property.
+    #[serde(default = "default_true")]
+    pub single_prop_read_hangs: bool,
 }
 
 fn default_true() -> bool {
@@ -127,6 +139,8 @@ impl Default for SimConfig {
             card_info_fails_for: None,
             drop_during_card_download_at: None,
             sdio_connect_data: true,
+            props_param_hangs: true,
+            single_prop_read_hangs: true,
         }
     }
 }

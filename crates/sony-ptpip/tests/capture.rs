@@ -7,7 +7,7 @@ use sony_ptpip::error::Error;
 use sony_ptpip::ptp::codes::{
     EV_SONY_DEVICE_PROP_CHANGED, HANDLE_CAPTURED_STILL, OP_GET_OBJECT, PROP_CAPTURED_READY,
 };
-use sony_ptpip::sony::sdio_connect;
+use sony_ptpip::sony::{read_all_props, sdio_connect};
 use sony_ptpip::{shoot, ConnectOptions, PtpIpConnection};
 use sony_ptpip_sim::{spawn, SimCommand, SimConfig, SimHandle};
 
@@ -102,13 +102,18 @@ fn unwritable_destination_is_io_error() {
     }
 }
 
+/// Shots waiting, from the whole property table as the camera facade reads it.
+async fn ready(conn: &mut PtpIpConnection) -> u16 {
+    captured_ready(&read_all_props(conn).await.unwrap()).unwrap()
+}
+
 #[tokio::test]
 async fn receives_shot_into_folder() {
     let tmp = tempfile::tempdir().unwrap();
     let (sim, mut conn) = start_with(SimConfig::default()).await;
-    assert_eq!(captured_ready(&mut conn).await.unwrap(), 0);
+    assert_eq!(ready(&mut conn).await, 0);
     shoot(&mut conn, false).await.unwrap();
-    assert_eq!(captured_ready(&mut conn).await.unwrap(), 1);
+    assert_eq!(ready(&mut conn).await, 1);
 
     let mut events = conn.events();
     let mut progress = Vec::new();
@@ -130,7 +135,7 @@ async fn receives_shot_into_folder() {
     let &(done, total) = progress.last().unwrap();
     assert_eq!((done, total), (got.bytes, got.bytes));
     assert_eq!(names(tmp.path()), vec!["DSC00001.JPG"]);
-    assert_eq!(captured_ready(&mut conn).await.unwrap(), 0);
+    assert_eq!(ready(&mut conn).await, 0);
     tokio::time::timeout(Duration::from_secs(1), async {
         loop {
             let ev = events.recv().await.unwrap();
@@ -236,7 +241,7 @@ async fn write_failure_after_download_keeps_the_shot_in_the_recovery_folder() {
     assert_eq!(left.len(), 1000);
     assert!(left.iter().all(|n| !n.ends_with(".part")), "{left:?}");
     // The camera counts the shot as delivered.
-    assert_eq!(captured_ready(&mut conn).await.unwrap(), 0);
+    assert_eq!(ready(&mut conn).await, 0);
     stop(sim, conn).await;
 }
 

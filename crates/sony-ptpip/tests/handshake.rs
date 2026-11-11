@@ -106,7 +106,7 @@ async fn handshake_with(sdio_connect_data: bool) {
     assert_eq!(info.protocol_version, 0x012C);
     // The stream is still aligned: the next transaction succeeds.
     let (blob, _) = conn
-        .command_data_in(OP_SDIO_GET_ALL_EXT_DEVICE_PROP_INFO, &[0])
+        .command_data_in(OP_SDIO_GET_ALL_EXT_DEVICE_PROP_INFO, &[])
         .await
         .unwrap();
     assert!(!blob.is_empty());

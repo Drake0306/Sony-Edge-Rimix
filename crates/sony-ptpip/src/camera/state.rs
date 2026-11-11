@@ -29,14 +29,26 @@ impl Snapshot {
         self.props.iter().find(|p| p.code == code)
     }
 
-    /// Replaces each changed property, adding any not seen before.
-    pub fn merge(&mut self, changed: Vec<PropertyDesc>) {
-        for desc in changed {
+    /// Merges a property table read from the camera: replaces each property
+    /// that differs (see [`differs`]), adds any not seen before and keeps
+    /// any the read left out. Returns true if anything changed.
+    pub fn merge(&mut self, read: Vec<PropertyDesc>) -> bool {
+        let mut changed = false;
+        for desc in read {
             match self.props.iter_mut().find(|p| p.code == desc.code) {
-                Some(slot) => *slot = desc,
-                None => self.props.push(desc),
+                Some(slot) => {
+                    if differs(slot, &desc) {
+                        *slot = desc;
+                        changed = true;
+                    }
+                }
+                None => {
+                    self.props.push(desc);
+                    changed = true;
+                }
             }
         }
+        changed
     }
 
     pub fn to_state(&self) -> CameraState {
@@ -58,6 +70,15 @@ impl Snapshot {
             last_shot_at: self.last_shot_at,
         }
     }
+}
+
+/// True when `new` would show differently from `old`: another current
+/// value, enabled state, writability or set of allowed values.
+fn differs(old: &PropertyDesc, new: &PropertyDesc) -> bool {
+    old.current != new.current
+        || old.enabled != new.enabled
+        || old.writable != new.writable
+        || old.form != new.form
 }
 
 fn summary(desc: &PropertyDesc, colour_temp: Option<u16>) -> PropertySummary {
@@ -210,6 +231,27 @@ mod tests {
         assert_eq!(step_target(&d, -7).unwrap(), PtpValue::U16(1));
         assert_eq!(step_target(&d, 7).unwrap(), PtpValue::U16(3));
         assert_eq!(step_target(&d, 0).unwrap(), PtpValue::U16(2));
+    }
+
+    #[test]
+    fn merge_reports_only_real_changes() {
+        let mut snap = Snapshot::default();
+        assert!(snap.merge(vec![range(5200)]));
+        assert!(!snap.merge(vec![range(5200)]));
+        assert!(!snap.merge(Vec::new()));
+        assert!(snap.merge(vec![range(5300)]));
+        assert_eq!(snap.props[0].current, PtpValue::U16(5300));
+        let mut off = range(5300);
+        off.enabled = Enabled::Off;
+        assert!(snap.merge(vec![off.clone()]));
+        off.writable = false;
+        assert!(snap.merge(vec![off.clone()]));
+        off.form = Form::None;
+        assert!(snap.merge(vec![off]));
+        let mut other = range(5300);
+        other.code = 0x500E;
+        assert!(snap.merge(vec![other]));
+        assert_eq!(snap.props.len(), 2);
     }
 
     #[test]

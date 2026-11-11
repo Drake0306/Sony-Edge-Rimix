@@ -587,3 +587,114 @@ async fn a7_iv_reports_generation_four() {
     assert_eq!(state.generation, "4");
     stop(sim, camera).await;
 }
+
+/// Every operation line the simulator logged.
+fn sim_log(sim: &SimHandle) -> Vec<String> {
+    sim.log.lock().unwrap().clone()
+}
+
+/// The simulator's defaults mirror the ZV-E10, which never answers 0x9209
+/// with a parameter or 0x9251. Polling must use neither, so a session stays
+/// up: no drop and no reconnect for 8 s, live view running, a shot received
+/// through the property table, and a settings change reflected.
+#[tokio::test]
+async fn session_stays_up_against_a_camera_that_ignores_parameter_reads() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (sim, camera) = start(SimConfig::default(), tmp.path()).await;
+    let mut rx = camera.subscribe();
+    let mut frames = 0u32;
+    let mut saved = None;
+    let mut iso_seen = false;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+    let mut shot = false;
+    let mut iso_set = false;
+    while tokio::time::Instant::now() < deadline {
+        let Ok(ev) = timeout(Duration::from_millis(200), rx.recv()).await else {
+            continue;
+        };
+        match ev {
+            Ok(CameraEvent::Disconnected { reason }) => panic!("session dropped: {reason}"),
+            Ok(CameraEvent::Reconnecting { attempt }) => panic!("reconnect attempt {attempt}"),
+            Ok(CameraEvent::Frame) => frames += 1,
+            Ok(CameraEvent::CaptureSaved(r)) => saved = Some(r),
+            Ok(CameraEvent::StateChanged(s)) if short_of(&s, PROP_ISO) == "1600" => iso_seen = true,
+            Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+            Err(e) => panic!("event channel failed: {e}"),
+        }
+        if !shot && frames >= 5 {
+            shot = true;
+            camera.shoot().await.unwrap();
+        }
+        if !iso_set && saved.is_some() {
+            iso_set = true;
+            camera.set(PROP_ISO, PtpValue::U32(1600)).await.unwrap();
+        }
+    }
+    let state = camera.state();
+    assert!(state.connected);
+    assert!(frames > 0);
+    assert!(state.live_view_fps > 0.0, "fps {}", state.live_view_fps);
+    let saved = saved.expect("the shot was received");
+    assert_eq!(saved.filename, "DSC00001.JPG");
+    assert!(iso_seen, "StateChanged with ISO 1600");
+    assert_eq!(short_of(&state, PROP_ISO), "1600");
+    let log = sim_log(&sim);
+    assert!(!log.iter().any(|l| l.ends_with(" unanswered")), "{log:?}");
+    assert!(!log.iter().any(|l| l.starts_with("op 0x9251 ")), "{log:?}");
+    // The table was polled, not read once.
+    assert!(log.iter().filter(|l| l.starts_with("op 0x9209 ")).count() > 10);
+    stop(sim, camera).await;
+}
+
+/// StateChanged is emitted when a property changed, not on every poll.
+#[tokio::test]
+async fn state_changed_only_when_a_property_changes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (sim, camera) = start(SimConfig::default(), tmp.path()).await;
+    let mut rx = camera.subscribe();
+    let quiet = timeout(Duration::from_millis(1200), async {
+        loop {
+            if let Ok(CameraEvent::StateChanged(_)) = rx.recv().await {
+                return;
+            }
+        }
+    })
+    .await;
+    assert!(quiet.is_err(), "StateChanged with nothing changed");
+    sim.events
+        .send(SimCommand::SetProperty {
+            code: PROP_ISO,
+            value: PtpValue::U32(3200),
+        })
+        .await
+        .unwrap();
+    wait_for(&mut rx, "StateChanged with ISO 3200", |ev| match ev {
+        CameraEvent::StateChanged(s) if short_of(s, PROP_ISO) == "3200" => Some(()),
+        _ => None,
+    })
+    .await;
+    stop(sim, camera).await;
+}
+
+/// With the simulator's old behaviour (parameter reads and 0x9251
+/// answered), connecting, a shot and a settings change still work.
+#[tokio::test]
+async fn old_simulator_behaviour_still_works() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sim_config = SimConfig {
+        props_param_hangs: false,
+        single_prop_read_hangs: false,
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(sim_config, tmp.path()).await;
+    let mut rx = camera.subscribe();
+    camera.shoot().await.unwrap();
+    wait_for(&mut rx, "CaptureSaved", |ev| match ev {
+        CameraEvent::CaptureSaved(_) => Some(()),
+        _ => None,
+    })
+    .await;
+    camera.set(PROP_ISO, PtpValue::U32(1600)).await.unwrap();
+    assert_eq!(short_of(&camera.state(), PROP_ISO), "1600");
+    stop(sim, camera).await;
+}

@@ -4,8 +4,7 @@ use sony_ptpip::error::Error;
 use sony_ptpip::ptp::codes::*;
 use sony_ptpip::ptp::PtpValue;
 use sony_ptpip::sony::{
-    control, focus, read_changed_props, read_property, sdio_connect, set_value, shoot,
-    toggle_record,
+    control, focus, read_all_props, sdio_connect, set_value, shoot, toggle_record, PropertyDesc,
 };
 use sony_ptpip::{quirks_for, ConnectOptions, PtpEvent, PtpIpConnection, Quirks, WriteMode};
 use sony_ptpip_sim::{spawn, SimCommand, SimConfig, SimHandle};
@@ -25,6 +24,15 @@ async fn start_with(config: SimConfig) -> (SimHandle, PtpIpConnection) {
 
 async fn start() -> (SimHandle, PtpIpConnection) {
     start_with(SimConfig::default()).await
+}
+
+/// Reads one property out of the whole table, as the camera facade does.
+async fn read_prop(conn: &mut PtpIpConnection, code: u16) -> Result<PropertyDesc, Error> {
+    read_all_props(conn)
+        .await?
+        .into_iter()
+        .find(|p| p.code == code)
+        .ok_or_else(|| Error::Protocol(format!("no property {code:#06x}")))
 }
 
 async fn stop(sim: SimHandle, conn: PtpIpConnection) {
@@ -75,14 +83,9 @@ fn zv_e10_and_unknown_models_write_directly() {
 async fn shoot_enqueues_one_capture() {
     let (sim, mut conn) = start().await;
     let mut events = conn.events();
-    read_changed_props(&mut conn).await.unwrap();
     shoot(&mut conn, true).await.unwrap();
     wait_prop_changed(&mut events, PROP_CAPTURED_READY).await;
-    let changed = read_changed_props(&mut conn).await.unwrap();
-    let ready = changed
-        .iter()
-        .find(|p| p.code == PROP_CAPTURED_READY)
-        .expect("0xD215 changed");
+    let ready = read_prop(&mut conn, PROP_CAPTURED_READY).await.unwrap();
     assert_eq!(ready.current, PtpValue::U16(0x8001));
     stop(sim, conn).await;
 }
@@ -91,7 +94,7 @@ async fn shoot_enqueues_one_capture() {
 async fn shoot_without_af_enqueues_one_capture() {
     let (sim, mut conn) = start().await;
     shoot(&mut conn, false).await.unwrap();
-    let ready = read_property(&mut conn, PROP_CAPTURED_READY).await.unwrap();
+    let ready = read_prop(&mut conn, PROP_CAPTURED_READY).await.unwrap();
     assert_eq!(ready.current, PtpValue::U16(0x8001));
     assert_eq!(count_ops(&sim, OP_SDIO_CONTROL_DEVICE), 2);
     stop(sim, conn).await;
@@ -100,31 +103,19 @@ async fn shoot_without_af_enqueues_one_capture() {
 #[tokio::test]
 async fn toggle_record_flips_state() {
     let (sim, mut conn) = start().await;
-    let state = |p: sony_ptpip::sony::PropertyDesc| p.current;
+    let state = |p: PropertyDesc| p.current;
     assert_eq!(
-        state(
-            read_property(&mut conn, PROP_MOVIE_REC_STATE)
-                .await
-                .unwrap()
-        ),
+        state(read_prop(&mut conn, PROP_MOVIE_REC_STATE).await.unwrap()),
         PtpValue::U8(0)
     );
     toggle_record(&mut conn).await.unwrap();
     assert_eq!(
-        state(
-            read_property(&mut conn, PROP_MOVIE_REC_STATE)
-                .await
-                .unwrap()
-        ),
+        state(read_prop(&mut conn, PROP_MOVIE_REC_STATE).await.unwrap()),
         PtpValue::U8(1)
     );
     toggle_record(&mut conn).await.unwrap();
     assert_eq!(
-        state(
-            read_property(&mut conn, PROP_MOVIE_REC_STATE)
-                .await
-                .unwrap()
-        ),
+        state(read_prop(&mut conn, PROP_MOVIE_REC_STATE).await.unwrap()),
         PtpValue::U8(0)
     );
     stop(sim, conn).await;
@@ -139,7 +130,7 @@ async fn focus_sets_focus_found() {
         .await
         .unwrap();
     wait_prop_changed(&mut events, PROP_FOCUS_FOUND).await;
-    let found = read_property(&mut conn, PROP_FOCUS_FOUND).await.unwrap();
+    let found = read_prop(&mut conn, PROP_FOCUS_FOUND).await.unwrap();
     assert_eq!(found.current, PtpValue::U8(1));
     control(&mut conn, CTRL_SHUTTER_HALF, &PtpValue::U16(1))
         .await
@@ -150,7 +141,7 @@ async fn focus_sets_focus_found() {
     focus(&mut conn).await.unwrap();
     wait_prop_changed(&mut events, PROP_FOCUS_FOUND).await;
     wait_prop_changed(&mut events, PROP_FOCUS_FOUND).await;
-    let found = read_property(&mut conn, PROP_FOCUS_FOUND).await.unwrap();
+    let found = read_prop(&mut conn, PROP_FOCUS_FOUND).await.unwrap();
     assert_eq!(found.current, PtpValue::U8(0));
     stop(sim, conn).await;
 }
@@ -158,11 +149,11 @@ async fn focus_sets_focus_found() {
 #[tokio::test]
 async fn direct_set_value_changes_iso() {
     let (sim, mut conn) = start().await;
-    let iso = read_property(&mut conn, PROP_ISO).await.unwrap();
+    let iso = read_prop(&mut conn, PROP_ISO).await.unwrap();
     set_value(&mut conn, &iso, &PtpValue::U32(1600), &quirks_for("ZV-E10"))
         .await
         .unwrap();
-    let iso = read_property(&mut conn, PROP_ISO).await.unwrap();
+    let iso = read_prop(&mut conn, PROP_ISO).await.unwrap();
     assert_eq!(iso.current, PtpValue::U32(1600));
     assert_eq!(count_ops(&sim, OP_SDIO_CONTROL_DEVICE), 0);
     stop(sim, conn).await;
@@ -175,12 +166,12 @@ async fn step_set_value_reaches_target_when_direct_writes_are_rejected() {
         ..SimConfig::default()
     })
     .await;
-    let iso = read_property(&mut conn, PROP_ISO).await.unwrap();
+    let iso = read_prop(&mut conn, PROP_ISO).await.unwrap();
     assert_eq!(iso.current, PtpValue::U32(800));
     set_value(&mut conn, &iso, &PtpValue::U32(1600), &quirks_for("ZV-E10"))
         .await
         .unwrap();
-    let iso = read_property(&mut conn, PROP_ISO).await.unwrap();
+    let iso = read_prop(&mut conn, PROP_ISO).await.unwrap();
     assert_eq!(iso.current, PtpValue::U32(1600));
     assert_eq!(count_ops(&sim, OP_SDIO_SET_EXT_DEVICE_PROP_VALUE), 1);
     // 800 → 1000 → 1250 → 1600 in the settable list.
@@ -191,7 +182,7 @@ async fn step_set_value_reaches_target_when_direct_writes_are_rejected() {
 #[tokio::test]
 async fn step_mode_steps_down_without_trying_a_direct_write() {
     let (sim, mut conn) = start().await;
-    let iso = read_property(&mut conn, PROP_ISO).await.unwrap();
+    let iso = read_prop(&mut conn, PROP_ISO).await.unwrap();
     let quirks = Quirks {
         write_mode: WriteMode::Step,
         ..quirks_for("ZV-E10")
@@ -199,7 +190,7 @@ async fn step_mode_steps_down_without_trying_a_direct_write() {
     set_value(&mut conn, &iso, &PtpValue::U32(500), &quirks)
         .await
         .unwrap();
-    let iso = read_property(&mut conn, PROP_ISO).await.unwrap();
+    let iso = read_prop(&mut conn, PROP_ISO).await.unwrap();
     assert_eq!(iso.current, PtpValue::U32(500));
     assert_eq!(count_ops(&sim, OP_SDIO_SET_EXT_DEVICE_PROP_VALUE), 0);
     assert_eq!(count_ops(&sim, OP_SDIO_CONTROL_DEVICE), 2);
@@ -209,7 +200,7 @@ async fn step_mode_steps_down_without_trying_a_direct_write() {
 #[tokio::test]
 async fn set_value_rejects_target_not_in_list() {
     let (sim, mut conn) = start().await;
-    let iso = read_property(&mut conn, PROP_ISO).await.unwrap();
+    let iso = read_prop(&mut conn, PROP_ISO).await.unwrap();
     let err = set_value(&mut conn, &iso, &PtpValue::U32(1234), &quirks_for("ZV-E10"))
         .await
         .unwrap_err();
@@ -226,7 +217,7 @@ async fn range_property_does_not_fall_back_to_steps() {
         ..SimConfig::default()
     })
     .await;
-    let kelvin = read_property(&mut conn, COLOR_TEMP).await.unwrap();
+    let kelvin = read_prop(&mut conn, COLOR_TEMP).await.unwrap();
     let err = set_value(
         &mut conn,
         &kelvin,

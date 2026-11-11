@@ -28,8 +28,9 @@ pub mod liveview {
     };
 }
 
-/// Receiving new shots: `capture::captured_ready` to see how many wait, then
-/// `capture::receive_one` for each.
+/// Receiving new shots: `capture::captured_ready` on a property table from
+/// `sony::read_all_props` to see how many wait, then `capture::receive_one`
+/// for each.
 pub mod capture {
     pub use crate::sony::capture::{
         captured_ready, default_recovery_dir, receive_one, Destination, DestinationMode, Received,

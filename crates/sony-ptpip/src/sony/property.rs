@@ -161,6 +161,7 @@ fn parse_entry(buf: &[u8], pos: &mut usize) -> Result<PropertyDesc, Error> {
 }
 
 /// Parses the 0x9209 data phase: a u64 count followed by that many entries.
+/// (libgphoto2 reads the same eight bytes as a u32 count and a u32 zero.)
 ///
 /// An entry with a datatype that cannot be decoded has no knowable width, so
 /// parsing stops there and the entries before it are returned.
@@ -240,23 +241,25 @@ pub fn encode_all_props(props: &[PropertyDesc]) -> Vec<u8> {
     out
 }
 
-/// Reads every property the camera exposes (0x9209 mode 0).
+/// Reads every property the camera exposes (0x9209 with no parameters).
+///
+/// This is the form libgphoto2 uses (`ptp_sony_getalldevicepropdesc` in
+/// `camlibs/ptp2/ptp.c`), and it polls it the same way: the whole table on
+/// every read, with the caller working out what changed. Some bodies never
+/// answer 0x9209 sent with a parameter (the "changed only" mode 1), which
+/// shows as a command timeout and a dropped session.
 pub async fn read_all_props(conn: &mut PtpIpConnection) -> Result<Vec<PropertyDesc>, Error> {
     let (data, _) = conn
-        .command_data_in(OP_SDIO_GET_ALL_EXT_DEVICE_PROP_INFO, &[0])
-        .await?;
-    parse_all_props(&data)
-}
-
-/// Reads the properties changed since the previous call (0x9209 mode 1).
-pub async fn read_changed_props(conn: &mut PtpIpConnection) -> Result<Vec<PropertyDesc>, Error> {
-    let (data, _) = conn
-        .command_data_in(OP_SDIO_GET_ALL_EXT_DEVICE_PROP_INFO, &[1])
+        .command_data_in(OP_SDIO_GET_ALL_EXT_DEVICE_PROP_INFO, &[])
         .await?;
     parse_all_props(&data)
 }
 
 /// Reads one property (0x9251).
+///
+/// Not used during a session: some bodies do not answer 0x9251 (libgphoto2
+/// never sends it), so the camera facade reads properties with
+/// [`read_all_props`] only. Kept for one-off reads such as the CLI's.
 pub async fn read_property(conn: &mut PtpIpConnection, code: u16) -> Result<PropertyDesc, Error> {
     let (data, _) = conn
         .command_data_in(OP_SDIO_GET_EXT_DEVICE_PROP, &[code as u32])
