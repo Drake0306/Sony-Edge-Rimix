@@ -36,11 +36,11 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
-use crate::capture::{Destination, Received};
+use crate::capture::{self, Destination, Received};
 use crate::card::{self, CardObject, PartialDownload, CARD_CHUNK};
 use crate::error::Error;
 use crate::liveview::{self, LiveViewFrame};
-use crate::ptp::codes::{OP_GET_DEVICE_INFO, PROP_FOCUS_MODE};
+use crate::ptp::codes::{OP_GET_DEVICE_INFO, PROP_FOCUS_MODE, PROP_ISO};
 use crate::ptp::{parse_device_info, PtpValue};
 use crate::sony::property::{read_all_props, Enabled, PropertyDesc};
 use crate::sony::{control, sdio_connect};
@@ -132,6 +132,10 @@ pub struct CameraState {
     /// When the last picture was taken from Rimix or received, in
     /// milliseconds since the Unix epoch.
     pub last_shot_at: Option<u64>,
+    /// Whether the camera hands new pictures to the computer: `false` while
+    /// its save destination is the card only, `None` when it does not say.
+    #[serde(default)]
+    pub shots_to_computer: Option<bool>,
 }
 
 /// One property, ready to show.
@@ -204,6 +208,12 @@ pub enum CameraEvent {
         handle: u32,
         filename: String,
         error: String,
+    },
+    /// A movie was recorded but the camera will not let its card be read
+    /// in this session, so the clip stays on the card. Sent once per
+    /// session, with the camera's refusal as `reason`.
+    MovieTransferUnavailable {
+        reason: String,
     },
 }
 
@@ -320,6 +330,71 @@ impl Inner {
         session.events
     }
 
+    /// Every file on the camera's cards: see [`Camera::card_list`].
+    async fn card_list(&self) -> Result<Vec<CardObject>, Error> {
+        let storages = {
+            let mut guard = self.conn.lock().await;
+            card::list_storages(guard.as_mut().ok_or(Error::Disconnected)?).await?
+        };
+        let mut out = Vec::new();
+        for storage in storages {
+            let mut walk = card::CardWalk::new(storage);
+            while !walk.done() {
+                tokio::task::yield_now().await;
+                let mut guard = self.conn.lock().await;
+                walk.step(guard.as_mut().ok_or(Error::Disconnected)?)
+                    .await?;
+            }
+            out.extend(walk.into_files());
+        }
+        Ok(out)
+    }
+
+    /// Downloads the card file `obj` into the destination folder a chunk at
+    /// a time, resuming a partial file. Progress goes out as
+    /// [`CameraEvent::CardDownloadProgress`], or as
+    /// [`CameraEvent::CaptureProgress`] when `as_capture` (a file Rimix
+    /// fetches by itself, shown like a shot arriving).
+    async fn card_fetch(&self, obj: &CardObject, as_capture: bool) -> Result<Received, Error> {
+        let dest = lock(&self.destination).clone();
+        let dir = dest.ensure_writable(chrono::Local::now().date_naive())?;
+        let mut dl = PartialDownload::begin(obj, &dir)?;
+        while !dl.done() {
+            {
+                let mut guard = self.conn.lock().await;
+                let conn = guard.as_mut().ok_or(Error::Disconnected)?;
+                dl.next_chunk(conn, CARD_CHUNK).await?;
+            }
+            let (filename, received, total) = (obj.filename.clone(), dl.received(), dl.total());
+            self.emit(if as_capture {
+                CameraEvent::CaptureProgress {
+                    filename,
+                    received,
+                    total,
+                }
+            } else {
+                CameraEvent::CardDownloadProgress {
+                    handle: obj.handle,
+                    filename,
+                    received,
+                    total,
+                }
+            });
+            tokio::task::yield_now().await;
+        }
+        let path = dl.finish()?;
+        let filename = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        Ok(Received {
+            path,
+            bytes: obj.bytes,
+            filename,
+            camera_filename: obj.filename.clone(),
+        })
+    }
+
     /// Drops the connection and tells subscribers.
     async fn lose_connection(&self, reason: String) {
         self.conn.lock().await.take();
@@ -358,7 +433,13 @@ async fn connect_once(inner: &Inner) -> Result<Session, Error> {
     let (data, _) = conn.command_data_in(OP_GET_DEVICE_INFO, &[]).await?;
     let info = parse_device_info(&data)?;
     sdio_connect(&mut conn).await?;
-    let props = read_all_props(&mut conn).await?;
+    let mut props = read_all_props(&mut conn).await?;
+    // A camera saving to its card only never offers a shot to the computer.
+    if inner.auto_receive
+        && capture::ensure_host_delivery(&mut conn, &props, &quirks_for(&info.model)).await?
+    {
+        props = read_all_props(&mut conn).await?;
+    }
     // Live view never fails the connection: a camera that refuses the check
     // (live view still starting, busy, or off) is polled anyway, and
     // `next_frame` waits quietly until frames come. Only a transport failure
@@ -462,7 +543,11 @@ impl Camera {
     pub async fn step(&self, code: u16, delta: i32) -> Result<(), Error> {
         let desc = lock(&self.inner.snapshot).prop(code).cloned();
         let desc = desc.ok_or(Error::Unsupported("the camera has no such property"))?;
-        let target = state::step_target(&desc, delta)?;
+        let target = if code == PROP_ISO {
+            state::iso_step_target(&desc, delta)?
+        } else {
+            state::step_target(&desc, delta)?
+        };
         if target == desc.current {
             return Ok(());
         }
@@ -501,22 +586,7 @@ impl Camera {
     /// card's folders. The connection
     /// is held for one PTP operation at a time, so live view keeps going.
     pub async fn card_list(&self) -> Result<Vec<CardObject>, Error> {
-        let storages = {
-            let mut guard = self.inner.conn.lock().await;
-            card::list_storages(guard.as_mut().ok_or(Error::Disconnected)?).await?
-        };
-        let mut out = Vec::new();
-        for storage in storages {
-            let mut walk = card::CardWalk::new(storage);
-            while !walk.done() {
-                tokio::task::yield_now().await;
-                let mut guard = self.inner.conn.lock().await;
-                walk.step(guard.as_mut().ok_or(Error::Disconnected)?)
-                    .await?;
-            }
-            out.extend(walk.into_files());
-        }
-        Ok(out)
+        self.inner.card_list().await
     }
 
     /// Downloads the card file `handle` into the destination folder,
@@ -536,7 +606,7 @@ impl Camera {
         .await;
         let obj =
             looked_up.map_err(|e| self.card_failed(handle, format!("object {handle:#x}"), e))?;
-        match self.card_fetch(&obj).await {
+        match self.inner.card_fetch(&obj, false).await {
             Ok(saved) => {
                 let path = saved.path.clone();
                 self.inner.emit(CameraEvent::CaptureSaved(saved));
@@ -544,38 +614,6 @@ impl Camera {
             }
             Err(e) => Err(self.card_failed(handle, obj.filename, e)),
         }
-    }
-
-    /// The chunk loop of [`Camera::card_download`].
-    async fn card_fetch(&self, obj: &CardObject) -> Result<Received, Error> {
-        let dest = lock(&self.inner.destination).clone();
-        let dir = dest.ensure_writable(chrono::Local::now().date_naive())?;
-        let mut dl = PartialDownload::begin(obj, &dir)?;
-        while !dl.done() {
-            {
-                let mut guard = self.inner.conn.lock().await;
-                let conn = guard.as_mut().ok_or(Error::Disconnected)?;
-                dl.next_chunk(conn, CARD_CHUNK).await?;
-            }
-            self.inner.emit(CameraEvent::CardDownloadProgress {
-                handle: obj.handle,
-                filename: obj.filename.clone(),
-                received: dl.received(),
-                total: dl.total(),
-            });
-            tokio::task::yield_now().await;
-        }
-        let path = dl.finish()?;
-        let filename = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        Ok(Received {
-            path,
-            bytes: obj.bytes,
-            filename,
-            camera_filename: obj.filename.clone(),
-        })
     }
 
     /// Emits [`CameraEvent::CardDownloadFailed`] for a card download;

@@ -11,9 +11,12 @@ use serde::{Deserialize, Serialize};
 use crate::error::Error;
 use crate::ptp::codes::{
     HANDLE_CAPTURED_STILL, OP_GET_OBJECT, OP_GET_OBJECT_INFO, PROP_CAPTURED_READY,
+    PROP_IMAGE_SIZE_TO_HOST, PROP_STILL_DESTINATION,
 };
-use crate::ptp::parse_object_info;
-use crate::sony::property::PropertyDesc;
+use crate::ptp::{parse_object_info, PtpValue};
+use crate::quirks::Quirks;
+use crate::sony::control::set_value;
+use crate::sony::property::{Enabled, Form, PropertyDesc};
 use crate::PtpIpConnection;
 
 /// Longest silence from the camera while a shot downloads; the download as
@@ -23,6 +26,91 @@ pub const TRANSFER_IDLE: Duration = Duration::from_secs(10);
 const MAX_SUFFIX: u32 = 999;
 /// Bit 15 of 0xD215: shots are waiting; the low bits count them.
 const READY_FLAG: u16 = 0x8000;
+
+/// Bit of 0xD222 (still image save destination) for the computer.
+pub const DEST_COMPUTER: u64 = 0x0001;
+/// Bit of 0xD222 for the camera's card.
+const DEST_CARD: u64 = 0x0010;
+/// 0xD268 (size of image sent to the computer): the original file.
+const HOST_SIZE_ORIGINAL: u64 = 1;
+
+/// The save destination to write so new pictures reach the computer as
+/// well as the card, or `None` when nothing should change: the computer
+/// already gets them, or the camera offers no setting that keeps the card
+/// copy too (the card copy is never given up for this).
+pub fn host_delivery_target(dest: &PropertyDesc) -> Option<PtpValue> {
+    let current = dest.current.as_u64()?;
+    if current & DEST_COMPUTER != 0 {
+        return None;
+    }
+    let Form::Enum { settable, .. } = &dest.form else {
+        return None;
+    };
+    let both = DEST_COMPUTER | DEST_CARD;
+    settable
+        .iter()
+        .find(|v| v.as_u64().is_some_and(|v| v & both == both))
+        .cloned()
+}
+
+/// Makes the camera hand new pictures to the computer, in full size, when
+/// it is set to keep them on its card only (as the ZV-E10 arrives): sets
+/// the save destination (0xD222) to computer and card, and the size sent
+/// to the computer (0xD268) to the original. Returns whether anything was
+/// written, so the caller can read the properties again.
+///
+/// A camera that refuses is left as it is, with a warning: the session is
+/// still good for everything else. Only a lost connection is an error.
+pub async fn ensure_host_delivery(
+    conn: &mut PtpIpConnection,
+    props: &[PropertyDesc],
+    quirks: &Quirks,
+) -> Result<bool, Error> {
+    let find = |code| props.iter().find(|p: &&PropertyDesc| p.code == code);
+    let mut wanted: Vec<(&PropertyDesc, PtpValue, &str)> = Vec::new();
+    match find(PROP_STILL_DESTINATION) {
+        Some(dest) => match host_delivery_target(dest) {
+            Some(to) => wanted.push((dest, to, "still image save destination")),
+            None if dest.current.as_u64().is_some_and(|v| v & DEST_COMPUTER == 0) => {
+                tracing::warn!(
+                    current = ?dest.current,
+                    "the camera saves pictures to its card only and offers no setting that also sends them here; set Still Img. Save Dest. to PC+Camera on the camera"
+                );
+            }
+            None => {}
+        },
+        None => tracing::info!(
+            "the camera does not report its save destination (0xD222); pictures arrive only if it is set to send them"
+        ),
+    }
+    if let Some(size) = find(PROP_IMAGE_SIZE_TO_HOST) {
+        let original = PtpValue::U8(HOST_SIZE_ORIGINAL as u8);
+        if size
+            .current
+            .as_u64()
+            .is_some_and(|v| v != HOST_SIZE_ORIGINAL)
+            && size.accepts(&original)
+        {
+            wanted.push((size, original, "size of pictures sent to the computer"));
+        }
+    }
+    let mut written = false;
+    for (desc, to, what) in wanted {
+        if !desc.writable || desc.enabled != Enabled::On {
+            tracing::warn!(code = %format_args!("{:#06x}", desc.code), "the camera will not let the {what} be changed now");
+            continue;
+        }
+        match set_value(conn, desc, &to, quirks).await {
+            Ok(()) => {
+                tracing::info!(from = ?desc.current, to = ?to, "changed the camera's {what} so pictures are copied to this computer");
+                written = true;
+            }
+            Err(e) if matches!(e, Error::Disconnected) || conn.is_disconnected() => return Err(e),
+            Err(e) => tracing::warn!(error = %e, "the camera refused to change the {what}"),
+        }
+    }
+    Ok(written)
+}
 
 /// How the destination folder is laid out.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -316,6 +404,40 @@ pub(crate) fn free_name(dir: &Path, name: &str) -> std::io::Result<(PathBuf, Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn dest(current: u16, settable: &[u16]) -> PropertyDesc {
+        PropertyDesc {
+            code: crate::ptp::codes::PROP_STILL_DESTINATION,
+            datatype: 0x0004,
+            writable: true,
+            enabled: crate::sony::property::Enabled::On,
+            default: PtpValue::U16(current),
+            current: PtpValue::U16(current),
+            form: crate::sony::property::Form::Enum {
+                settable: settable.iter().copied().map(PtpValue::U16).collect(),
+                reportable: vec![],
+            },
+        }
+    }
+
+    #[test]
+    fn card_only_becomes_computer_and_card() {
+        let all = [0x0001, 0x0010, 0x0011];
+        assert_eq!(
+            host_delivery_target(&dest(0x0010, &all)),
+            Some(PtpValue::U16(0x0011))
+        );
+        // Already reaching the computer: nothing to change.
+        assert_eq!(host_delivery_target(&dest(0x0011, &all)), None);
+        assert_eq!(host_delivery_target(&dest(0x0001, &all)), None);
+    }
+
+    #[test]
+    fn the_card_copy_is_never_given_up_to_reach_the_computer() {
+        // Only "computer only" on offer: switching would stop the card copy.
+        assert_eq!(host_delivery_target(&dest(0x0010, &[0x0001, 0x0010])), None);
+        assert_eq!(host_delivery_target(&dest(0x0010, &[0x0010])), None);
+    }
 
     #[test]
     fn free_name_suffixes_before_the_extension() {

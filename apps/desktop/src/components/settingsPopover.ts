@@ -5,7 +5,7 @@
 import type { Actions } from '../actions';
 import { button, el, icon, isTyping } from '../dom';
 import type { CameraState, PropertySummary } from '../ipc';
-import { findProp, isColourTemp, isUsable, PROP, sameRaw, SETTING_NAMES, shortText } from '../props';
+import { findProp, isColourTemp, isoStops, isUsable, nearestIso, PROP, sameRaw, SETTING_NAMES, shortText } from '../props';
 import { watch, type AppStore } from '../state';
 
 const PENDING_MS = 400;
@@ -85,6 +85,8 @@ export function createSettingsPopover(
   let activeCode: number | null = null;
   let layoutKey = '';
   const rows = new Map<number, HTMLElement>();
+  /** The typing row under ISO; it shares ISO's property but is not its row. */
+  let isoCustom: HTMLElement | null = null;
   const pending = new Map<number, number>();
 
   function markPending(code: number): void {
@@ -143,6 +145,41 @@ export function createSettingsPopover(
     return row;
   }
 
+  /**
+   * The row under ISO for typing a value. A camera takes only its own
+   * stops, so the range is shown and what is typed goes to the nearest one.
+   */
+  function customIsoRow(): HTMLElement {
+    const row = el('div', 'r custom');
+    row.setAttribute('role', 'listitem');
+    row.dataset.code = String(PROP.iso);
+    const input = el('input');
+    input.type = 'number';
+    input.inputMode = 'numeric';
+    input.placeholder = 'Type a value';
+    input.setAttribute('aria-label', 'Custom ISO');
+    const range = el('span', 'range');
+    const apply = () => {
+      const prop = findProp(store.get().camera, PROP.iso);
+      const nearest = nearestIso(prop, Number(input.value));
+      if (!nearest || !isUsable(prop)) return;
+      const typed = Number(input.value);
+      actions.setProperty(PROP.iso, nearest.raw);
+      markPending(PROP.iso);
+      input.value = String(nearest.value);
+      row.dataset.note = nearest.value === typed ? '' : `Nearest the camera has: ${nearest.value}`;
+      updateRow(row, prop);
+    };
+    input.addEventListener('keydown', (e) => {
+      // The arrow keys belong to the box while it is typed in.
+      e.stopPropagation();
+      if (e.key === 'Enter') apply();
+    });
+    input.addEventListener('change', apply);
+    row.append(el('span', 'k dim', 'Custom'), input, range);
+    return row;
+  }
+
   function updateRow(row: HTMLElement, prop: PropertySummary | undefined): void {
     const usable = isUsable(prop);
     row.classList.toggle('off', !usable);
@@ -150,6 +187,16 @@ export function createSettingsPopover(
     row.querySelectorAll('button').forEach((b) => (b.disabled = !usable));
     const v = row.querySelector('.v');
     if (v) v.textContent = shortText(prop);
+    const custom = row.querySelector<HTMLInputElement>('input');
+    if (custom) {
+      const stops = isoStops(prop);
+      const [min, max] = [stops[0], stops[stops.length - 1]];
+      custom.disabled = !usable || stops.length === 0;
+      custom.min = stops.length ? String(min) : '';
+      custom.max = stops.length ? String(max) : '';
+      const range = row.querySelector('.range')!;
+      range.textContent = row.dataset.note || (stops.length ? `${min} to ${max}` : '');
+    }
     row.querySelectorAll<HTMLButtonElement>('.mini button').forEach((b, i) => {
       const on = !!prop && !!prop.choices[i] && sameRaw(prop.choices[i].raw, prop.raw);
       b.classList.toggle('on', on);
@@ -180,6 +227,10 @@ export function createSettingsPopover(
             const row = buildRow(code, findProp(camera, code), g.chevrons);
             rows.set(code, row);
             group.append(row);
+            if (code === PROP.iso) {
+              isoCustom = customIsoRow();
+              group.append(isoCustom);
+            }
           }
           sect.append(h, group);
           return sect;
@@ -187,6 +238,7 @@ export function createSettingsPopover(
       );
     }
     for (const [code, row] of rows) updateRow(row, findProp(camera, code));
+    if (isoCustom) updateRow(isoCustom, findProp(camera, PROP.iso));
   }
 
   const unwatch = watch(store, (s) => s.camera, (camera) => render(camera));

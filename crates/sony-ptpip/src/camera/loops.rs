@@ -1,6 +1,7 @@
 //! The supervisor and the three loops it runs while connected. Each loop
 //! returns only when the connection is gone, with the reason as text.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -11,10 +12,12 @@ use tokio::time::{interval, sleep, MissedTickBehavior};
 
 use super::{connect_once, lock, CameraEvent, Inner, RecentShot};
 use crate::capture::{captured_ready, receive_one, Destination};
+use crate::card::CardKind;
 use crate::error::Error;
 use crate::liveview::next_frame;
 use crate::ptp::codes::{
     EV_SONY_DEVICE_PROP_CHANGED, HANDLE_CAPTURED_STILL, OP_GET_OBJECT_INFO, PROP_CAPTURED_READY,
+    PROP_MOVIE_REC_STATE,
 };
 use crate::ptp::parse_object_info;
 use crate::ptp::PtpValue;
@@ -42,6 +45,10 @@ pub(super) fn live_view_wait(consecutive_failures: u32) -> Duration {
 const FPS_WINDOW: Duration = Duration::from_secs(1);
 /// How often the capture loop looks for waiting shots in the snapshot.
 const CAPTURE_POLL: Duration = Duration::from_millis(250);
+/// How often the movie loop looks whether a recording started or stopped.
+const MOVIE_POLL: Duration = Duration::from_millis(500);
+/// Wait after a recording stops before the card is listed.
+const MOVIE_SETTLE: Duration = Duration::from_millis(1500);
 /// Pause after a failed delivery, so a full disk does not fail four times a second.
 const CAPTURE_RETRY: Duration = Duration::from_secs(2);
 /// How many saved shots are remembered for spotting a repeated delivery.
@@ -120,6 +127,7 @@ async fn run_session(inner: &Arc<Inner>, events: broadcast::Receiver<PtpEvent>) 
     loops.spawn(live_view_loop(inner.clone()));
     if inner.auto_receive {
         loops.spawn(capture_loop(inner.clone()));
+        loops.spawn(movie_loop(inner.clone()));
     }
     let reason = match loops.join_next().await {
         Some(Ok(reason)) => reason,
@@ -280,6 +288,92 @@ async fn capture_loop(inner: Arc<Inner>) -> String {
             }
             drop(guard);
             tokio::task::yield_now().await;
+        }
+    }
+}
+
+/// Copies each movie to the computer once its recording stops.
+///
+/// A movie is written to the card, never offered like a still, so the
+/// card is listed when a recording starts and again when it stops, and the
+/// movie files that appeared in between are downloaded, with the events of
+/// a shot arriving. Files already on the card are never fetched.
+///
+/// Many bodies keep the card to themselves while they are remote
+/// controlled. The first refusal is reported once with
+/// [`CameraEvent::MovieTransferUnavailable`] and nothing more is tried in
+/// this session; the clips stay on the card.
+async fn movie_loop(inner: Arc<Inner>) -> String {
+    let recording = || {
+        lock(&inner.snapshot)
+            .prop(PROP_MOVIE_REC_STATE)
+            .and_then(|p| p.current.as_u64())
+            .is_some_and(|v| v != 0)
+    };
+    let mut tick = interval(MOVIE_POLL);
+    tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    let mut was_recording = recording();
+    // The handles on the card when the recording started.
+    let mut before: Option<HashSet<u32>> = None;
+    let mut unavailable = false;
+    loop {
+        tick.tick().await;
+        let now_recording = recording();
+        if unavailable || now_recording == was_recording {
+            was_recording = now_recording;
+            continue;
+        }
+        was_recording = now_recording;
+        if !now_recording {
+            // The camera finishes the file a moment after it stops.
+            sleep(MOVIE_SETTLE).await;
+        }
+        let files = match inner.card_list().await {
+            Ok(files) => files,
+            Err(Error::Disconnected) => return Error::Disconnected.to_string(),
+            Err(e) => {
+                tracing::warn!(error = %e, "the camera will not let its card be read in this session; movies stay on the card");
+                inner.emit(CameraEvent::MovieTransferUnavailable {
+                    reason: e.to_string(),
+                });
+                unavailable = true;
+                continue;
+            }
+        };
+        if now_recording {
+            before = Some(files.iter().map(|f| f.handle).collect());
+            continue;
+        }
+        // Without a listing from before the recording, nothing can be
+        // called new, and old clips are not to be copied.
+        let Some(old) = before.take() else {
+            tracing::info!(
+                "a recording stopped that Rimix did not see start; its clip stays on the card"
+            );
+            continue;
+        };
+        for clip in files
+            .iter()
+            .filter(|f| f.kind == CardKind::Video && !old.contains(&f.handle))
+        {
+            tracing::info!(file = %clip.filename, bytes = clip.bytes, "copying the new movie from the card");
+            inner.emit(CameraEvent::CaptureStarted {
+                filename: clip.filename.clone(),
+            });
+            match inner.card_fetch(clip, true).await {
+                Ok(saved) => {
+                    inner.emit(CameraEvent::CaptureSaved(saved));
+                    inner.emit_state();
+                }
+                Err(Error::Disconnected) => return Error::Disconnected.to_string(),
+                Err(e) => {
+                    tracing::warn!(file = %clip.filename, error = %e, "copying a movie from the card failed");
+                    inner.emit(CameraEvent::CaptureFailed {
+                        filename: clip.filename.clone(),
+                        error: e.to_string(),
+                    });
+                }
+            }
         }
     }
 }

@@ -3,6 +3,7 @@
 
 import { sameAddress } from '../address';
 import type { Actions } from '../actions';
+import { SHOTS_STAY_ON_CARD } from '../copy';
 import { button, el, icon } from '../dom';
 import type { AppSettings, DestinationMode, RecentCamera } from '../ipc';
 import { watch, type AppState, type AppStore, type SaveError } from '../state';
@@ -75,10 +76,15 @@ export function saveToSection(store: AppStore, actions: Actions): { el: HTMLElem
     const folder = await actions.pickFolder();
     if (folder) save({ destinationBase: folder });
   });
-  const offError = watch(store, (s) => s.saveError, (e) => {
-    failure.hidden = e === null;
-    failure.textContent = e ? saveErrorText(e) : '';
-  });
+  // A failed save wins; else the camera keeping its shots to itself is said.
+  const showFailure = () => {
+    const { saveError, camera } = store.get();
+    const text = saveError ? saveErrorText(saveError) : camera?.shots_to_computer === false ? SHOTS_STAY_ON_CARD : '';
+    failure.hidden = text === '';
+    failure.textContent = text;
+  };
+  const offError = watch(store, (s) => s.saveError, showFailure);
+  const offCamera = watch(store, (s) => s.camera?.shots_to_computer, showFailure);
   const offSettings = watch(store, (s) => s.settings, (s) => {
     pathText.textContent = s ? destinationText(s) : '';
     pathText.title = s?.destinationBase ?? '';
@@ -96,6 +102,7 @@ export function saveToSection(store: AppStore, actions: Actions): { el: HTMLElem
   });
   const destroy = () => {
     offError();
+    offCamera();
     offSettings();
   };
   return { el: sect('Save to', path, failure, modes), destroy };
@@ -216,14 +223,28 @@ function cameras(store: AppStore, actions: Actions): { el: HTMLElement; destroy:
   return { el: sect('Cameras', g), destroy };
 }
 
+/**
+ * The switch that sends the camera's picture to other apps instead of the
+ * screen: a group of its own under the Cameras list.
+ */
+function webcam(store: AppStore, actions: Actions): { el: HTMLElement; destroy: () => void } {
+  const g = group('list', 'Webcam');
+  g.classList.add('below');
+  const destroy = watch(store, (s) => !!s.feed?.enabled, (on) => {
+    g.replaceChildren(switchRow('Use as a webcam', on, () => void actions.setWebcamMode(!on)));
+  });
+  return { el: g, destroy };
+}
+
 export function mount(root: HTMLElement, store: AppStore, actions: Actions): () => void {
   const col = el('aside', 'leftcol');
   col.setAttribute('aria-label', 'Tools and destination');
-  const parts = [scopes(store, actions), cameras(store, actions), saveToSection(store, actions)];
+  const parts = [scopes(store, actions), cameras(store, actions), webcam(store, actions), saveToSection(store, actions)];
   const tools = el('div', 'panel glass quiet');
+  parts[1].el.append(parts[2].el);
   tools.append(parts[0].el, parts[1].el);
   const dest = el('div', 'panel glass quiet');
-  dest.append(parts[2].el);
+  dest.append(parts[3].el);
   col.append(tools, dest);
   root.append(col);
   return () => {

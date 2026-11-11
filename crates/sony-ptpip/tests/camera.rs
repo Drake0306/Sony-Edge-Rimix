@@ -2,7 +2,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use sony_ptpip::capture::{Destination, DestinationMode};
-use sony_ptpip::ptp::codes::{PROP_ISO, PROP_SHUTTER_SPEED};
+use sony_ptpip::ptp::codes::{
+    PROP_IMAGE_SIZE_TO_HOST, PROP_ISO, PROP_SHUTTER_SPEED, PROP_STILL_DESTINATION,
+};
 use sony_ptpip::ptp::PtpValue;
 use sony_ptpip::{load_or_create_guid, Camera, CameraConfig, CameraEvent, CameraState};
 use sony_ptpip_sim::{spawn, SimCommand, SimConfig, SimHandle};
@@ -696,5 +698,170 @@ async fn old_simulator_behaviour_still_works() {
     .await;
     camera.set(PROP_ISO, PtpValue::U32(1600)).await.unwrap();
     assert_eq!(short_of(&camera.state(), PROP_ISO), "1600");
+    stop(sim, camera).await;
+}
+
+fn raw(state: &CameraState, code: u16) -> PtpValue {
+    state
+        .properties
+        .iter()
+        .find(|p| p.code == code)
+        .unwrap_or_else(|| panic!("no property {code:#06x}"))
+        .raw
+        .clone()
+}
+
+/// The real ZV-E10 arrived set to save on its card only, and no shot ever
+/// reached the computer.
+#[tokio::test]
+async fn a_camera_saving_to_its_card_only_is_switched_to_send_shots_here_too() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sim_config = SimConfig {
+        still_destination: Some(0x0010),
+        host_image_size: Some(2),
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(sim_config, tmp.path()).await;
+    let state = camera.state();
+    // Computer and card: the card copy stays.
+    assert_eq!(raw(&state, PROP_STILL_DESTINATION), PtpValue::U16(0x0011));
+    // The original file, not the small copy.
+    assert_eq!(raw(&state, PROP_IMAGE_SIZE_TO_HOST), PtpValue::U8(1));
+    assert_eq!(state.shots_to_computer, Some(true));
+    let mut rx = camera.subscribe();
+    camera.shoot().await.unwrap();
+    let saved = wait_for(&mut rx, "CaptureSaved", |ev| match ev {
+        CameraEvent::CaptureSaved(r) => Some(r.clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(saved.path, tmp.path().join("DSC00001.JPG"));
+    stop(sim, camera).await;
+}
+
+#[tokio::test]
+async fn the_cameras_save_setting_is_left_alone_when_shots_are_not_received() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sim = spawn(SimConfig {
+        still_destination: Some(0x0010),
+        ..SimConfig::default()
+    })
+    .await;
+    let camera = Camera::connect(CameraConfig {
+        auto_receive: false,
+        ..config(&sim, tmp.path())
+    })
+    .await
+    .unwrap();
+    let state = camera.state();
+    assert_eq!(raw(&state, PROP_STILL_DESTINATION), PtpValue::U16(0x0010));
+    assert_eq!(state.shots_to_computer, Some(false));
+    stop(sim, camera).await;
+}
+
+#[tokio::test]
+async fn stepping_iso_moves_about_fifty_and_lands_on_a_real_stop() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (sim, camera) = start(SimConfig::default(), tmp.path()).await;
+    camera.set(PROP_ISO, PtpValue::U32(100)).await.unwrap();
+    let mut seen = Vec::new();
+    for _ in 0..4 {
+        camera.step(PROP_ISO, 1).await.unwrap();
+        seen.push(raw(&camera.state(), PROP_ISO));
+    }
+    // 100 +50 is 150: the nearest stop is 160, then 200, 250, 320.
+    assert_eq!(seen, [160, 200, 250, 320].map(PtpValue::U32));
+    camera.step(PROP_ISO, -1).await.unwrap();
+    assert_eq!(raw(&camera.state(), PROP_ISO), PtpValue::U32(250));
+    stop(sim, camera).await;
+}
+
+/// Recording, then stopping, with a short pause so the camera notices both.
+async fn record_a_clip(camera: &Camera, rx: &mut broadcast::Receiver<CameraEvent>) {
+    camera.toggle_record().await.unwrap();
+    wait_for(rx, "recording", |ev| match ev {
+        CameraEvent::StateChanged(s) if s.recording => Some(()),
+        _ => None,
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    camera.toggle_record().await.unwrap();
+    wait_for(rx, "recording stopped", |ev| match ev {
+        CameraEvent::StateChanged(s) if !s.recording => Some(()),
+        _ => None,
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_finished_recording_is_copied_from_the_card() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (sim, camera) = start(SimConfig::default(), tmp.path()).await;
+    let mut rx = camera.subscribe();
+    record_a_clip(&camera, &mut rx).await;
+    let started = wait_for(&mut rx, "CaptureStarted", |ev| match ev {
+        CameraEvent::CaptureStarted { filename } => Some(filename.clone()),
+        _ => None,
+    })
+    .await;
+    // Only the new clip: C0001.MP4 was on the card before.
+    assert_eq!(started, "C0002.MP4");
+    let mut progressed = false;
+    let saved = timeout(Duration::from_secs(20), async {
+        loop {
+            match rx.recv().await {
+                Ok(CameraEvent::CaptureProgress {
+                    filename,
+                    received,
+                    total,
+                }) if filename == "C0002.MP4" && received > 0 && received <= total => {
+                    progressed = true;
+                }
+                Ok(CameraEvent::CaptureSaved(r)) => return r,
+                Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(e) => panic!("event channel failed: {e}"),
+            }
+        }
+    })
+    .await
+    .expect("the clip is saved");
+    assert!(progressed, "progress is reported while the clip arrives");
+    assert_eq!(saved.path, tmp.path().join("C0002.MP4"));
+    assert_eq!(std::fs::metadata(&saved.path).unwrap().len(), 3 << 20);
+    // The files that were already on the card are not fetched.
+    assert!(!tmp.path().join("C0001.MP4").exists());
+    assert!(!tmp.path().join("DSC00010.ARW").exists());
+    stop(sim, camera).await;
+}
+
+#[tokio::test]
+async fn a_camera_that_keeps_its_card_to_itself_is_reported_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sim_config = SimConfig {
+        card_denied: true,
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(sim_config, tmp.path()).await;
+    let mut rx = camera.subscribe();
+    // A second listener, since the helper reads past the news while it waits.
+    let mut news = camera.subscribe();
+    record_a_clip(&camera, &mut rx).await;
+    let reason = wait_for(&mut news, "MovieTransferUnavailable", |ev| match ev {
+        CameraEvent::MovieTransferUnavailable { reason } => Some(reason.clone()),
+        _ => None,
+    })
+    .await;
+    assert!(!reason.is_empty());
+    // The session carries on, and a second clip does not repeat the news.
+    record_a_clip(&camera, &mut rx).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    let mut again = 0;
+    while let Ok(ev) = news.try_recv() {
+        if matches!(ev, CameraEvent::MovieTransferUnavailable { .. }) {
+            again += 1;
+        }
+    }
+    assert_eq!(again, 0);
+    assert!(camera.state().connected);
     stop(sim, camera).await;
 }

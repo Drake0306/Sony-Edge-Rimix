@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use sony_ptpip::error::Error;
 use sony_ptpip::ptp::codes::*;
-use sony_ptpip::ptp::{encode_device_info, DeviceInfo};
+use sony_ptpip::ptp::{encode_device_info, DeviceInfo, PtpValue};
 use sony_ptpip::ptpip::{read_frame, Packet};
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -72,6 +72,9 @@ struct Shared {
     live_view_infos: AtomicU32,
     /// 0x9207 controls received so far.
     controls_seen: AtomicU32,
+    /// The files on the card: `config.card`, plus a clip for every movie
+    /// recording stopped since.
+    card: Mutex<Vec<card::SimCardFile>>,
     /// Bytes of card data sent so far.
     card_sent: AtomicU64,
     /// Set once `drop_during_card_download_at` has dropped the link.
@@ -83,7 +86,22 @@ struct Shared {
 ///
 /// Panics if the property fixture cannot be loaded.
 pub async fn spawn(config: SimConfig) -> SimHandle {
-    let props = load_fixture(&config.fixture).expect("load simulator property fixture");
+    let mut props = load_fixture(&config.fixture).expect("load simulator property fixture");
+    let overrides = [
+        (
+            PROP_STILL_DESTINATION,
+            config.still_destination.map(PtpValue::U16),
+        ),
+        (
+            PROP_IMAGE_SIZE_TO_HOST,
+            config.host_image_size.map(PtpValue::U8),
+        ),
+    ];
+    for (code, value) in overrides {
+        if let (Some(value), Some(prop)) = (value, props.iter_mut().find(|p| p.code == code)) {
+            prop.current = value;
+        }
+    }
     let bind_addr = config
         .bind_addr
         .unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], 0)));
@@ -94,6 +112,7 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
     let log: Log = Arc::default();
     let controls = Controls::new(config.files_per_shot);
     let shared = Arc::new(Shared {
+        card: Mutex::new(config.card.clone()),
         config,
         log: log.clone(),
         next_conn: AtomicU32::new(1),
@@ -514,9 +533,10 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
 
     let mut changed_prop = None;
     let mut resp_params = Vec::new();
+    let card_now = shared.card.lock().unwrap().clone();
     let card_file = params
         .first()
-        .and_then(|&h| card::file(&shared.config.card, h).map(|f| (h, f)));
+        .and_then(|&h| card::file(&card_now, h).map(|f| (h, f)));
     let code = match op {
         OP_OPEN_SESSION | OP_CLOSE_SESSION => RC_OK,
         OP_GET_DEVICE_INFO => {
@@ -529,13 +549,14 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
             send_data_in(ctx.w, tid, &encode_device_info(&info)).await?;
             RC_OK
         }
+        OP_GET_STORAGE_IDS if shared.config.card_denied => RC_ACCESS_DENIED,
         OP_GET_STORAGE_IDS => {
             send_data_in(ctx.w, tid, &card::storage_ids()).await?;
             RC_OK
         }
         OP_GET_OBJECT_HANDLES => match params.first() {
             Some(&card::STORAGE_ID) | Some(&0xFFFF_FFFF) => {
-                let card = &shared.config.card;
+                let card = &card_now;
                 let parent = params.get(2).copied().unwrap_or(card::ANY_PARENT);
                 line.push_str(&format!(" parent={parent:#x}"));
                 match card::children(card, parent) {
@@ -566,9 +587,9 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
         OP_GET_OBJECT_INFO
             if params
                 .first()
-                .is_some_and(|&h| card::folder(&shared.config.card, h).is_some()) =>
+                .is_some_and(|&h| card::folder(&card_now, h).is_some()) =>
         {
-            let path = card::folder(&shared.config.card, params[0]).expect("checked");
+            let path = card::folder(&card_now, params[0]).expect("checked");
             send_data_in(ctx.w, tid, &card::folder_info(&path)).await?;
             RC_OK
         }
@@ -822,7 +843,21 @@ async fn captured_still<W: AsyncWriteExt + Unpin>(
 fn apply_control(shared: &Shared, code: u16, data: &[u8]) -> Result<Option<u16>, u16> {
     let mut controls = shared.controls.lock().unwrap();
     let mut props = shared.props.lock().unwrap();
-    match controls.apply(&mut props, code, data)? {
+    let recording = |props: &PropStore| {
+        props
+            .get(PROP_MOVIE_REC_STATE)
+            .and_then(|p| p.current.as_u64())
+            .is_some_and(|v| v != 0)
+    };
+    let was_recording = recording(&props);
+    let outcome = controls.apply(&mut props, code, data)?;
+    if was_recording && !recording(&props) {
+        // The clip just recorded lands on the card.
+        let mut card = shared.card.lock().unwrap();
+        let clips = card.iter().filter(|f| f.format == FMT_MP4).count();
+        card.push(card::new_clip(clips as u32 + 1));
+    }
+    match outcome {
         Outcome::Unchanged => Ok(None),
         Outcome::Changed(prop) => Ok(Some(prop)),
         Outcome::StartFocus => {

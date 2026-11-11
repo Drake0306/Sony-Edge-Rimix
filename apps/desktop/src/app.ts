@@ -13,6 +13,8 @@ import * as liveview from './components/liveview';
 import * as ring from './components/ring';
 import * as sidePanels from './components/sidePanels';
 import * as topbar from './components/topbar';
+import * as webcamMode from './components/webcamMode';
+import { MOVIES_STAY_ON_CARD } from './copy';
 import { el, isTyping } from './dom';
 import { tick } from './interval';
 import { devFlags, getSettings, getState, listCameras, onCameraEvent, type CameraEvent, type CameraState } from './ipc';
@@ -52,6 +54,7 @@ export const controls: Mount = (root, store, actions) => {
 // Escape handler runs first; the card browser's runs before the controls'.
 const MAIN: Mount[] = [
   liveview.mount,
+  webcamMode.mount,
   topbar.mount,
   appSettings.mount,
   sidePanels.mount,
@@ -78,6 +81,7 @@ function toaster(host: HTMLElement): (message: string) => void {
 export function eventToast(event: CameraEvent): string | null {
   if (typeof event !== 'object') return null;
   if ('CaptureSkipped' in event) return `Skipped a repeat of ${event.CaptureSkipped.filename}`;
+  if ('MovieTransferUnavailable' in event) return MOVIES_STAY_ON_CARD;
   return null;
 }
 

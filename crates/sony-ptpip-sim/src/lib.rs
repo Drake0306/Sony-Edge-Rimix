@@ -108,6 +108,21 @@ pub struct SimConfig {
     /// implement it may do. `false` answers it with the one property.
     #[serde(default = "default_true")]
     pub single_prop_read_hangs: bool,
+    /// Start with this still image save destination (0xD222) instead of the
+    /// fixture's: 0x0001 computer only, 0x0010 card only, 0x0011 both.
+    /// While it leaves out the computer, a shutter release offers no shot
+    /// (0xD215 stays 0), as a body set to "Camera Only" behaves.
+    #[serde(default)]
+    pub still_destination: Option<u16>,
+    /// Refuse every look at the card (GetStorageIDs answers AccessDenied),
+    /// as a body that keeps its card to itself while it is remote
+    /// controlled does.
+    #[serde(default)]
+    pub card_denied: bool,
+    /// Start with this size of image sent to the computer (0xD268) instead
+    /// of the fixture's: 1 original, 2 a small 2M copy.
+    #[serde(default)]
+    pub host_image_size: Option<u8>,
 }
 
 fn default_true() -> bool {
@@ -141,6 +156,9 @@ impl Default for SimConfig {
             sdio_connect_data: true,
             props_param_hangs: true,
             single_prop_read_hangs: true,
+            still_destination: None,
+            card_denied: false,
+            host_image_size: None,
         }
     }
 }

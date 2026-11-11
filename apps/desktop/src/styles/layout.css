@@ -60,6 +60,13 @@
 .thumb .n{display:flex;justify-content:space-between;align-items:center;padding:4px 7px 5px;font-size:10.5px;font-weight:600;color:var(--ink);background:var(--thumb-n)}
 .thumb .n span{font-weight:500;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .thumb .n.busy{flex-direction:column;align-items:flex-start;gap:1px;padding-bottom:6px}
+.film .total{margin:0 0 8px;padding:7px 8px 8px;border-radius:10px;background:var(--well-2);box-shadow:inset 0 0 0 .5px var(--group-ring)}
+.film .total[hidden]{display:none}
+.film .total .line{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:11px;line-height:1.3;color:var(--ink)}
+.film .total .what{min-width:0;font-weight:600;overflow-wrap:anywhere}
+.film .total .pct{flex:none;font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.film .total .bar{height:4px;margin-top:6px;border-radius:2px;background:var(--hair);overflow:hidden}
+.film .total .bar i{display:block;height:100%;border-radius:2px;background:var(--ink);transition:width .2s}
 .thumb .pb{position:absolute;left:0;right:0;top:calc(56.25% - 3px);height:3px;background:var(--progress-track)}
 .thumb .pb i{display:block;width:64%;height:100%;background:var(--progress-fill)}
 .thumb:hover{box-shadow:0 0 0 1.5px var(--thumb-hov)}
@@ -75,8 +82,8 @@
 .chip:hover{background:var(--chip-hov)}
 .chip.open{background:var(--chip-open);box-shadow:var(--chip-open-shadow)}
 .chip.open small{color:var(--ink-2)}
-.dockrow{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:0 4px}
-.dockrow > *{flex:1 1 0;min-width:0}
+.dockrow{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:20px;padding:0 4px}
+.dockrow > *{min-width:0}
 .segc{display:inline-flex;background:var(--well);border-radius:12px;padding:3px;gap:2px;box-shadow:inset 0 0 0 .5px var(--group-ring);flex:none}
 .segc button{height:28px;min-width:34px;padding:0 10px;border-radius:9px;font-size:12px;font-weight:500;white-space:nowrap}
 .segc button:hover{background:var(--hov)}
@@ -85,9 +92,9 @@
 .segc button.on small{color:var(--sel-ink-2)}
 .segc button small{font-weight:600;color:var(--ink-3);margin-right:6px;font-size:11px}
 .segc button:not(.on) small{margin:0;font-size:12px;color:var(--ink)}
-.dockrow .left{display:flex;justify-content:flex-start}
-.dockrow .right{display:flex;justify-content:flex-end;color:var(--ink-2);font-size:11.5px;white-space:nowrap;font-variant-numeric:tabular-nums}
-.actions{display:flex;align-items:flex-end;justify-content:center;gap:18px;flex:none!important}
+.dockrow .left{display:flex;justify-content:flex-start;overflow:hidden}
+.dockrow .right{display:block;text-align:right;color:var(--ink-2);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.actions{display:flex;align-items:flex-end;justify-content:center;gap:18px}
 .act{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;font-weight:600;color:var(--ink-2);border-radius:12px;padding:0 4px}
 .act .c{width:40px;height:40px;border-radius:50%;background:var(--ctl);box-shadow:var(--spec),0 0 0 .5px var(--ctl-ring);display:grid;place-items:center;transition:background .12s,transform .12s}
 .act:hover .c{background:var(--ctl-hov)}
@@ -321,18 +328,25 @@ body{overflow:hidden}
 .toast{padding:9px 16px;font-size:12.5px;max-width:560px;text-align:center}
 
 /* presets: slots C1 to C4, the save or rename form and the options menu */
-.presets{display:flex;flex:none}
-.presets .pslot{display:inline-flex;align-items:center}
+.presets{display:flex;flex:0 1 auto;min-width:0;max-width:100%}
+.presets .segc{flex:0 1 auto;min-width:0;max-width:100%}
+.presets .pslot{display:inline-flex;align-items:center;flex:0 1 auto;min-width:0}
+.presets .segc button[role="radio"]{display:inline-flex;align-items:center;flex:0 1 auto;min-width:34px;overflow:hidden}
+.presets .segc button[role="radio"] small{flex:none}
+/* Four names do not fit beside the actions: only the preset in use shows
+   its name; the others show their slot and name themselves on hover. */
+.presets .segc button[role="radio"]:not(.on) .pname{display:none}
+.presets .segc button[role="radio"]:not(.on) small{margin-right:0}
 .presets .segc button[role="radio"] small{margin-right:6px;font-size:11px;color:var(--ink-3)}
 .presets .segc button[role="radio"].on small{color:var(--sel-ink-2)}
 .presets .segc button.empty{color:var(--ink-3)}
-.presets .pname{display:inline-block;max-width:100px;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+.presets .pname{display:block;flex:0 1 auto;min-width:0;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .presets .segc button:disabled{opacity:.45;cursor:default}
 .presets .segc button:disabled:hover{background:none}
 .presets .segc button.on:disabled:hover{background:var(--sel)}
 .presets .segc button.busy{animation:preset-busy 1.1s ease-in-out infinite alternate;cursor:progress}
 @keyframes preset-busy{from{opacity:1}to{opacity:.5}}
-.presets .segc .more{min-width:0;width:18px;padding:0;margin-left:-2px;color:var(--ink-3);font-weight:600;letter-spacing:-.02em}
+.presets .segc .more{flex:none;min-width:0;width:18px;padding:0;margin-left:-2px;color:var(--ink-3);font-weight:600;letter-spacing:-.02em}
 .presets .segc .more:hover{color:var(--ink);background:var(--hov)}
 .presets .segc .more[aria-expanded="true"]{color:var(--ink);background:var(--hov)}
 .preset-form,.preset-menu{position:absolute;z-index:40;border-radius:16px}
@@ -420,3 +434,28 @@ body{overflow:hidden}
   .card-row{grid-template-columns:22px minmax(0,1fr) 56px 120px}
   .card-row .date{display:none}
 }
+
+/* ---------- webcam mode ---------- */
+.screen.webcam-on .scene .frame,.screen.webcam-on .waiting,.screen.webcam-on .thirds,.screen.webcam-on .overlay,
+.screen.webcam-on .focuslbl,.screen.webcam-on .falsecolour,.screen.webcam-on .hist,.screen.webcam-on .wave,.screen.webcam-on .level{display:none}
+.feedpanel{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);width:min(440px,calc(100% - 620px));min-width:340px;max-height:calc(100% - 290px);overflow:auto;padding:20px 22px 18px;border-radius:22px;z-index:5}
+.feedpanel[hidden]{display:none}
+/* Beside the ring there is no dock below, and less room to the right. */
+html[data-layout="ring"] .feedpanel{left:calc((100% - 432px + 278px) / 2);top:50%;max-height:calc(100% - 96px);width:min(440px,calc(100% - 432px - 278px - 32px))}
+@media (max-width:1240px){html[data-layout="ring"] .feedpanel{left:calc((100% - 362px + 264px) / 2);width:min(440px,calc(100% - 362px - 264px - 24px))}}
+.group.below{margin-top:8px}
+.feedpanel h2{margin:0 0 6px;font-size:18px;font-weight:650;line-height:1.25;text-wrap:balance}
+.feedpanel h3{margin:16px 0 6px;font-size:11px;font-weight:600;color:var(--ink-2)}
+.feedpanel .lead{margin:0;font-size:12.5px;line-height:1.45;color:var(--ink-2)}
+.feedpanel .watch{display:inline-flex;align-items:center;gap:7px;margin:12px 0 0;font-size:12.5px;font-weight:600}
+.feedpanel .watch::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--rec);box-shadow:var(--rec-glow)}
+.feedpanel .quality{display:flex;width:100%}
+.feedpanel .quality button{flex:1 1 0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;height:40px;padding:0 6px}
+.feedpanel .quality button b{font-size:12.5px;font-weight:600}
+.feedpanel .quality button small{margin:0;font-size:10.5px;font-weight:500;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.feedpanel .quality button.on small{color:var(--sel-ink-2)}
+.feedpanel .addr{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 11px;border-radius:12px;background:var(--group-bg);box-shadow:0 0 0 .5px var(--group-ring)}
+.feedpanel .addr code{flex:1;min-width:0;font:600 12.5px ui-monospace,"SF Mono",Menlo,monospace;overflow-wrap:anywhere;user-select:all}
+.feedpanel .steps{margin:0;padding-left:18px;font-size:12.5px;line-height:1.5;color:var(--ink)}
+.feedpanel .steps li + li{margin-top:3px}
+.feedpanel .stop{display:block;width:100%;height:32px;margin-top:16px;font-size:12.5px}

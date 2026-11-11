@@ -34,8 +34,10 @@ export const SETTING_NAMES: Record<number, string> = {
   [PROP.colourTemp]: 'Colour temp',
 };
 
-/** White balance raw value meaning "use the colour temperature". */
-const WB_COLOUR_TEMP = 0x8007;
+/** White balance raw values meaning "use the colour temperature" (as the Rust side's `WB_COLOUR_TEMP`). */
+const WB_COLOUR_TEMP = [0x8012, 0x8007];
+/** The ISO raw value meaning Auto; larger values carry noise reduction flags. */
+const ISO_AUTO = 0xffffff;
 
 export const findProp = (camera: CameraState | null, code: number): PropertySummary | undefined =>
   camera?.properties.find((p) => p.code === code);
@@ -44,7 +46,7 @@ export const sameRaw = (a: PtpValue, b: PtpValue): boolean => JSON.stringify(a) 
 
 export function isColourTemp(camera: CameraState | null): boolean {
   const wb = findProp(camera, PROP.whiteBalance);
-  return !!wb && 'U16' in wb.raw && wb.raw.U16 === WB_COLOUR_TEMP && !!findProp(camera, PROP.colourTemp);
+  return !!wb && 'U16' in wb.raw && WB_COLOUR_TEMP.includes(wb.raw.U16) && !!findProp(camera, PROP.colourTemp);
 }
 
 /** A property's `short`, with K added to a bare colour temperature. */
@@ -63,3 +65,27 @@ export function chipValue(camera: CameraState | null, code: number): string {
 
 export const isUsable = (p: PropertySummary | undefined): boolean =>
   !!p && p.writable && p.enabled === 'On';
+
+const u32Of = (raw: PtpValue): number | null => ('U32' in raw ? raw.U32 : null);
+
+/**
+ * The ISO values the camera can be set to, lowest first: its own stops
+ * (100, 125, 160, ...), without Auto and the noise reduction variants.
+ */
+export function isoStops(iso: PropertySummary | undefined): number[] {
+  const stops = (iso?.choices ?? [])
+    .map((c) => u32Of(c.raw))
+    .filter((n): n is number => n !== null && n < ISO_AUTO);
+  return [...new Set(stops)].sort((a, b) => a - b);
+}
+
+/**
+ * The stop nearest a typed ISO (halfway goes up), since a camera takes only
+ * its own stops; null when there are none or `typed` is not a positive number.
+ */
+export function nearestIso(iso: PropertySummary | undefined, typed: number): { value: number; raw: PtpValue } | null {
+  const stops = isoStops(iso);
+  if (stops.length === 0 || !Number.isFinite(typed) || typed <= 0) return null;
+  const value = stops.reduce((best, s) => (Math.abs(s - typed) <= Math.abs(best - typed) ? s : best));
+  return { value, raw: { U32: value } };
+}

@@ -158,3 +158,10 @@ export function bleFailedText(err: string): string {
   const detail = bare.replace(/\.+$/, '');
   return `Rimix could not read the Wi-Fi details over Bluetooth (${detail}). Scan the QR code or type the name and password instead.`;
 }
+
+/** The toast when a movie cannot be copied because the camera keeps its card to itself. */
+export const MOVIES_STAY_ON_CARD =
+  'Videos stay on the card: this camera does not let its card be read while Rimix controls it.';
+/** The Save to panel's line while the camera keeps new pictures on its card only. */
+export const SHOTS_STAY_ON_CARD =
+  'The camera is keeping pictures on its card only. On the camera, set Still Img. Save Dest. to PC+Camera.';

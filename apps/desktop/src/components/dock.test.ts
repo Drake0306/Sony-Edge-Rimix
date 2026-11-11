@@ -150,6 +150,37 @@ describe('dock', () => {
     expect(steps()).toHaveLength(0);
   });
 
+  test('the ISO row takes a typed value, shows the range and sets the nearest stop', () => {
+    const { root } = setup();
+    root.querySelectorAll<HTMLButtonElement>('.chip')[3].click();
+    const pop = root.querySelector<HTMLElement>('.pop')!;
+    const input = pop.querySelector<HTMLInputElement>('.r.custom input')!;
+    const range = pop.querySelector('.r.custom .range')!;
+    expect(input.getAttribute('aria-label')).toBe('Custom ISO');
+    expect(range.textContent).toBe('400 to 1600');
+    expect([input.min, input.max]).toEqual(['400', '1600']);
+    input.value = '1300';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(invoke).toHaveBeenCalledWith('set_property', { code: 0xd21e, raw: { U32: 1600 } });
+    // What the camera was sent, since it was not what was typed.
+    expect(input.value).toBe('1600');
+    expect(range.textContent).toBe('Nearest the camera has: 1600');
+    // A value the camera has is set as typed, and the range comes back.
+    input.value = '400';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(invoke).toHaveBeenCalledWith('set_property', { code: 0xd21e, raw: { U32: 400 } });
+    expect(range.textContent).toBe('400 to 1600');
+  });
+
+  test('typing in the ISO box does not step the setting with the arrow keys', () => {
+    const { root } = setup();
+    root.querySelectorAll<HTMLButtonElement>('.chip')[3].click();
+    const input = root.querySelector<HTMLInputElement>('.r.custom input')!;
+    input.focus();
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    expect(invoke).not.toHaveBeenCalledWith('step_property', expect.anything());
+  });
+
   test('Escape closes the popover', () => {
     const { root } = setup();
     root.querySelectorAll<HTMLButtonElement>('.chip')[0].click();

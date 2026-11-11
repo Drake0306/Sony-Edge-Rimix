@@ -59,4 +59,27 @@ describe('filmstrip', () => {
     expect(labels()).toEqual(['Received']);
     unmount();
   });
+
+  test('files arriving are summed up in one progress bar at the top', () => {
+    const { root, store, unmount } = mountWith({
+      transfers: {
+        [`${A}/DSC00412.ARW`]: { received: 10_000_000, total: 25_000_000 },
+        [`${A}/C0007.MP4`]: { received: 20_000_000, total: 75_000_000 },
+      },
+    });
+    const total = root.querySelector<HTMLElement>('.film .total')!;
+    expect(total.hidden).toBe(false);
+    expect(total.querySelector('.what')!.textContent).toBe('Copying 2 files to this computer');
+    expect(total.querySelector('.pct')!.textContent).toBe('30%');
+    const bar = total.querySelector<HTMLElement>('[role="progressbar"]')!;
+    expect(bar.getAttribute('aria-valuenow')).toBe('30');
+    expect(bar.querySelector<HTMLElement>('i')!.style.width).toBe('30%');
+    // One file, named; a size not known yet counts as nothing so far.
+    store.set({ transfers: { [`${A}/C0007.MP4`]: { received: 0, total: 0 } } });
+    expect(total.querySelector('.what')!.textContent).toBe('Copying C0007.MP4 to this computer');
+    expect(total.querySelector('.pct')!.textContent).toBe('0%');
+    store.set({ transfers: {} });
+    expect(total.hidden).toBe(true);
+    unmount();
+  });
 });

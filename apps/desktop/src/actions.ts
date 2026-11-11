@@ -15,7 +15,7 @@ import {
   wifiErrorMessage,
 } from './copy';
 import { sameAddress } from './address';
-import type { AppSettings, Found, Preset, PtpValue, RecentCamera, SshLogin } from './ipc';
+import type { AppSettings, FeedQuality, FeedStatus, Found, Preset, PtpValue, RecentCamera, SshLogin } from './ipc';
 import { start, type IntervalPlan } from './interval';
 import { describeFailures, upsertPreset } from './presets';
 import type { WifiCredentials } from './qr/payload';
@@ -92,6 +92,11 @@ export interface Actions {
   setSftpEnabled(enabled: boolean): Promise<void>;
   /** Makes a new password for the camera to log in with, then reads the status again. */
   regenerateSftpPassword(): Promise<void>;
+  /** Reads the webcam feed's status into the store. */
+  refreshFeed(): Promise<void>;
+  /** Turns webcam mode on or off: the camera's picture goes to other apps instead of the screen. */
+  setWebcamMode(on: boolean): Promise<void>;
+  setWebcamQuality(quality: FeedQuality): Promise<void>;
   toast(message: string): void;
 }
 
@@ -185,6 +190,15 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
   async function sftpThen(p: Promise<unknown>): Promise<void> {
     await p.catch((e) => toast(message(e)));
     await refreshSftp();
+  }
+
+  /** Runs a webcam command and keeps the status it answers with. */
+  async function feedThen(p: Promise<FeedStatus>): Promise<void> {
+    try {
+      store.set({ feed: (await p) ?? null });
+    } catch (e) {
+      toast(message(e));
+    }
   }
 
   /** A connect in flight is never doubled, whichever way it was started. */
@@ -540,6 +554,9 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     refreshSftp,
     setSftpEnabled: (enabled) => sftpThen(ipc.sftpSetEnabled(enabled)),
     regenerateSftpPassword: () => sftpThen(ipc.sftpRegeneratePassword()),
+    refreshFeed: () => feedThen(ipc.webcamStatus()),
+    setWebcamMode: (on) => feedThen(ipc.webcamSet(on)),
+    setWebcamQuality: (quality) => feedThen(ipc.webcamSetQuality(quality)),
     toast,
   };
 }

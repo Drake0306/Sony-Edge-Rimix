@@ -145,11 +145,13 @@ This saves 30 live view frames as JPEG files.
 
 2. Open "Advanced: connect by address" on the connect screen, check the address says `192.168.122.1`, and press its Connect button. The Mac must still be on the camera's network.
 3. Check that live view shows.
-4. Press Shoot. Check a picture arrives in the filmstrip.
-5. Change ISO using the ISO chip in the dock.
-6. Press Record, wait a few seconds, press it again to stop. Check the camera has a new clip.
+4. Press Shoot. Check a picture arrives in the filmstrip (Last captures) with a progress bar while it copies, and that the file is in the Save to folder. If the camera shoots RAW, check the RAW file arrived too.
+5. Change ISO using the ISO chip in the dock: plus and minus, then type a value into Custom under it.
+6. Look at the Mode chip. Turn the camera's mode dial through its positions and check each shows a name, not "Unknown (0x....)".
+7. Press Record, wait a few seconds, press it again to stop. Check the camera has a new clip. Then watch Last captures: either the clip starts copying, or Rimix says "Videos stay on the card".
+8. Turn on "Use as a webcam" in the Cameras panel. If OBS is installed, add a Browser source with the address shown and check the picture appears there.
 
-**What to send back:** a screenshot of the app with live view, and for each of connect, live view, shoot, ISO and record, one word: worked, did not work, or odd (with a sentence on what you saw). Paste any error text the app showed.
+**What to send back:** a screenshot of the app with live view, and for each of connect, live view, shoot, picture on the computer, ISO, mode names, record, video copy and webcam, one word: worked, did not work, or odd (with a sentence on what you saw). Also send the file `camera-<model>.json` from the log folder: Rimix writes it on every connect, and it lists every setting the camera reported. Paste any error text the app showed.
 
 ## 8. If your camera uses Access Authentication
 

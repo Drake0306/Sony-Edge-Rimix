@@ -8,6 +8,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::settings::{AppSettings, PresetValue};
 use crate::state::{self, AppState, ApplyOutcome, CameraId, CameraSummary, SshLogin};
+use crate::webcam::{FrameSource, Quality, WebcamStatus};
 
 /// The Tauri event that carries each `CameraEvent` (except `Frame`) as JSON,
 /// tagged with its camera: `{"camera_id": "...", "event": ...}`.
@@ -345,4 +346,37 @@ pub fn start_sftp(app: &AppHandle) {
         crate::sftp::start_if_enabled(&state).await;
         crate::sftp::follow_the_day(&state).await;
     });
+}
+
+/// Turns webcam mode on or off: the active camera's live view served on
+/// this computer as a video feed (see [`crate::webcam`]).
+#[tauri::command]
+pub async fn webcam_set(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<WebcamStatus, String> {
+    if enabled {
+        let handle = app.clone();
+        let source: FrameSource =
+            std::sync::Arc::new(move || handle.state::<AppState>().latest_frame_now());
+        state.webcam.start(source).await?;
+    } else {
+        state.webcam.stop();
+    }
+    Ok(state.webcam.status())
+}
+
+#[tauri::command]
+pub async fn webcam_set_quality(
+    state: State<'_, AppState>,
+    quality: Quality,
+) -> Result<WebcamStatus, String> {
+    state.webcam.set_quality(quality);
+    Ok(state.webcam.status())
+}
+
+#[tauri::command]
+pub async fn webcam_status(state: State<'_, AppState>) -> Result<WebcamStatus, String> {
+    Ok(state.webcam.status())
 }

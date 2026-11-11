@@ -61,6 +61,10 @@ describe('event toasts', () => {
   test('a failed save is shown in Save to, not as a toast; a skipped repeat still toasts', () => {
     expect(eventToast({ CaptureFailed: { filename: 'DSC00001.JPG', error: 'Cannot save to /x: denied' } })).toBeNull();
     expect(eventToast({ CaptureSkipped: { filename: 'DSC00001.JPG' } })).toContain('DSC00001.JPG');
+    // A camera that keeps its card to itself: said once, in plain words.
+    expect(eventToast({ MovieTransferUnavailable: { reason: 'camera responded with code 0x200f' } })).toBe(
+      'Videos stay on the card: this camera does not let its card be read while Rimix controls it.',
+    );
   });
 });
 

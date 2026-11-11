@@ -86,6 +86,8 @@ pub struct AppState {
     pub sftp: crate::sftp::SftpService,
     /// Bluetooth: cameras heard nearby and their Wi-Fi details.
     pub ble: crate::ble::BleService,
+    /// Webcam mode: the live view served as a video feed on this computer.
+    pub webcam: crate::webcam::WebcamService,
 }
 
 /// Locks a std mutex, carrying on if a panicking holder poisoned it.
@@ -113,7 +115,17 @@ impl AppState {
             wifi: Wifi::from_env(Arc::new(SystemRunner)),
             sftp: crate::sftp::SftpService::default(),
             ble: crate::ble::BleService::default(),
+            webcam: crate::webcam::WebcamService::default(),
         }
+    }
+
+    /// The active camera's latest live view frame, without waiting: `None`
+    /// also when the camera list is in use this instant. The webcam feed
+    /// asks many times a second, so a missed turn costs nothing.
+    pub fn latest_frame_now(&self) -> Option<Arc<sony_ptpip::liveview::LiveViewFrame>> {
+        let id = lock(&self.active).clone()?;
+        let slots = self.cameras.try_lock().ok()?;
+        slots.iter().find(|s| s.id == id)?.camera.latest_frame()
     }
 
     /// The camera `id` names, or the active one for `None`.
@@ -493,6 +505,9 @@ pub(crate) async fn connect_via(
     })?;
     let events = camera.subscribe();
     let camera_state = camera.state();
+    if let Some(dir) = state.settings_path.parent() {
+        write_camera_report(&crate::logging::log_dir(dir), &camera_state);
+    }
     // Another connect to this camera may have finished while this one waited.
     let replaced = {
         let mut slots = state.cameras.lock().await;
@@ -521,6 +536,36 @@ pub(crate) async fn connect_via(
         tracing::warn!(error = %e, "cannot save settings after connecting");
     }
     Ok((id, camera_state, events))
+}
+
+/// Writes what the camera said about itself at connect to
+/// `camera-<model>.json` in the log folder: every property with its current
+/// value and the values it allows. It holds no password and nothing
+/// personal, and settles questions a log line cannot ("what does this body
+/// call that mode?"). Failing to write it only warns.
+pub fn write_camera_report(log_dir: &Path, camera: &CameraState) -> Option<PathBuf> {
+    let model: String = camera
+        .model
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let path = log_dir.join(format!("camera-{model}.json"));
+    let written = std::fs::create_dir_all(log_dir)
+        .and_then(|()| serde_json::to_vec_pretty(camera).map_err(std::io::Error::other))
+        .and_then(|json| std::fs::write(&path, json));
+    match written {
+        Ok(()) => Some(path),
+        Err(e) => {
+            tracing::warn!(path = %path.display(), error = %e, "cannot write the camera report");
+            None
+        }
+    }
 }
 
 /// Hands every event except `Frame` to `emit`, tagged with `camera_id`
@@ -1578,6 +1623,7 @@ mod tests {
             }],
             live_view_fps: 29.5,
             last_shot_at: None,
+            shots_to_computer: None,
         });
         let tagged = TaggedEvent {
             camera_id: &id,
@@ -1652,6 +1698,31 @@ mod tests {
             off.ble.scan(3).await.unwrap_err(),
             "Bluetooth unavailable: Bluetooth is off for this run"
         );
+    }
+
+    #[test]
+    fn the_camera_report_lists_every_property_under_a_safe_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let logs = dir.path().join("logs");
+        let camera = CameraState {
+            connected: true,
+            secured: false,
+            model: "ZV-E10/../x".into(),
+            firmware: "2.00".into(),
+            generation: "3".into(),
+            battery: Some(72),
+            recording: false,
+            focus_found: false,
+            properties: Vec::new(),
+            live_view_fps: 0.0,
+            last_shot_at: None,
+            shots_to_computer: Some(false),
+        };
+        let path = write_camera_report(&logs, &camera).unwrap();
+        // The model cannot name a path outside the log folder.
+        assert_eq!(path, logs.join("camera-ZV-E10____x.json"));
+        let read: CameraState = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(read, camera);
     }
 
     #[tokio::test]

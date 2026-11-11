@@ -303,5 +303,6 @@
   }
  ],
  "live_view_fps": 29.5,
- "last_shot_at": null
+ "last_shot_at": null,
+ "shots_to_computer": true
 }

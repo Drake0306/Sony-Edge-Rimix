@@ -2,8 +2,12 @@
 //! the value a step lands on.
 
 use super::{CameraState, Choice, PropertySummary};
+use crate::capture::DEST_COMPUTER;
 use crate::error::Error;
-use crate::ptp::codes::{PROP_BATTERY, PROP_FOCUS_FOUND, PROP_MOVIE_REC_STATE, PROP_WHITE_BALANCE};
+use crate::ptp::codes::{
+    PROP_BATTERY, PROP_FOCUS_FOUND, PROP_MOVIE_REC_STATE, PROP_STILL_DESTINATION,
+    PROP_WHITE_BALANCE,
+};
 use crate::ptp::PtpValue;
 use crate::quirks::quirks_for;
 use crate::sony::decode::{label_for, wb_label};
@@ -68,6 +72,7 @@ impl Snapshot {
             properties: self.props.iter().map(|p| summary(p, colour_temp)).collect(),
             live_view_fps: self.live_view_fps,
             last_shot_at: self.last_shot_at,
+            shots_to_computer: number(PROP_STILL_DESTINATION).map(|v| v & DEST_COMPUTER != 0),
         }
     }
 }
@@ -171,6 +176,59 @@ pub(super) fn step_target(desc: &PropertyDesc, delta: i32) -> Result<PtpValue, E
     }
 }
 
+/// How far one press of plus or minus moves the ISO.
+const ISO_STEP: i64 = 50;
+/// The ISO value meaning Auto.
+const ISO_AUTO: u64 = 0x00FF_FFFF;
+
+/// The ISO `delta` presses from the current one. A camera only takes the
+/// stops it lists (100, 125, 160, ...), so each press aims [`ISO_STEP`]
+/// away and lands on the listed stop nearest that, always moving at least
+/// one stop; where the stops are wider apart than the step, that is the
+/// next stop. Auto and the multi-frame noise reduction values are not
+/// stepped onto: up from Auto starts at the lowest stop, down stays put.
+pub(super) fn iso_step_target(desc: &PropertyDesc, delta: i32) -> Result<PtpValue, Error> {
+    let Form::Enum { settable, .. } = &desc.form else {
+        return step_target(desc, delta);
+    };
+    let mut stops: Vec<i64> = settable
+        .iter()
+        .filter_map(PtpValue::as_u64)
+        .filter(|&v| v < ISO_AUTO)
+        .map(|v| v as i64)
+        .collect();
+    stops.sort_unstable();
+    stops.dedup();
+    let Some(mut at) = desc.current.as_u64() else {
+        return Err(Error::Unsupported("ISO is not a number"));
+    };
+    if stops.is_empty() {
+        return step_target(desc, delta);
+    }
+    let up = delta > 0;
+    for _ in 0..delta.unsigned_abs() {
+        if at == ISO_AUTO {
+            if !up {
+                break;
+            }
+            at = stops[0] as u64;
+            continue;
+        }
+        // Only plain values are stepped from; a flagged one keeps its number.
+        let from = (at & ISO_AUTO) as i64;
+        let aim = if up { from + ISO_STEP } else { from - ISO_STEP };
+        let beyond = stops
+            .iter()
+            .copied()
+            .filter(|&s| if up { s > from } else { s < from });
+        let Some(next) = beyond.min_by_key(|&s| ((s - aim).abs(), (s - from).abs())) else {
+            break;
+        };
+        at = next as u64;
+    }
+    same_type(&desc.current, at as i64).ok_or(Error::Unsupported("ISO is not a number"))
+}
+
 /// `n` as a value of the same integer type as `template`.
 fn same_type(template: &PtpValue, n: i64) -> Option<PtpValue> {
     Some(match template {
@@ -189,6 +247,7 @@ fn same_type(template: &PtpValue, n: i64) -> Option<PtpValue> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ptp::codes::PROP_ISO;
     use crate::sony::property::Enabled;
 
     fn desc(current: PtpValue, form: Form) -> PropertyDesc {
@@ -264,5 +323,81 @@ mod tests {
             labels(0x5005, &PtpValue::U16(0x8007), Some(5600)).0,
             "5600K"
         );
+    }
+
+    fn iso(current: u32) -> PropertyDesc {
+        let stops = [
+            0x00FF_FFFF,
+            50,
+            64,
+            80,
+            100,
+            125,
+            160,
+            200,
+            250,
+            320,
+            400,
+            500,
+            640,
+            800,
+            1000,
+            1250,
+            1600,
+            3200,
+            0x1000_0320,
+        ];
+        PropertyDesc {
+            code: PROP_ISO,
+            ..desc(
+                PtpValue::U32(current),
+                Form::Enum {
+                    settable: stops.map(PtpValue::U32).to_vec(),
+                    reportable: vec![],
+                },
+            )
+        }
+    }
+
+    fn iso_after(current: u32, delta: i32) -> u64 {
+        iso_step_target(&iso(current), delta)
+            .unwrap()
+            .as_u64()
+            .unwrap()
+    }
+
+    #[test]
+    fn iso_steps_about_fifty_onto_a_real_stop() {
+        // 150 is nearer 160 than 125; 210 nearer 200; then 250, 320 (for 300).
+        assert_eq!(iso_after(100, 1), 160);
+        assert_eq!(iso_after(160, 1), 200);
+        assert_eq!(iso_after(200, 1), 250);
+        assert_eq!(iso_after(250, 1), 320);
+        assert_eq!(iso_after(320, -1), 250);
+        assert_eq!(iso_after(200, -1), 160);
+        assert_eq!(iso_after(160, -1), 100);
+        assert_eq!(iso_after(100, -1), 50);
+    }
+
+    #[test]
+    fn iso_always_moves_at_least_one_stop_where_stops_are_wider_than_fifty() {
+        assert_eq!(iso_after(400, 1), 500);
+        assert_eq!(iso_after(800, 1), 1000);
+        assert_eq!(iso_after(1600, 1), 3200);
+        assert_eq!(iso_after(3200, -1), 1600);
+        assert_eq!(iso_after(1000, -1), 800);
+    }
+
+    #[test]
+    fn iso_stops_at_the_ends_and_leaves_auto_and_noise_reduction_values_alone() {
+        assert_eq!(iso_after(3200, 1), 3200);
+        assert_eq!(iso_after(50, -1), 50);
+        // Several presses in one call.
+        assert_eq!(iso_after(100, 3), 250);
+        // From Auto, up starts at the lowest stop and down stays on Auto.
+        assert_eq!(iso_after(0x00FF_FFFF, 1), 50);
+        assert_eq!(iso_after(0x00FF_FFFF, -1), 0x00FF_FFFF);
+        // A value off the list (the camera in an odd state) still moves.
+        assert_eq!(iso_after(140, 1), 200);
     }
 }
