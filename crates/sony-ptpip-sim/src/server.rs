@@ -113,6 +113,8 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
     let addr = listener.local_addr().expect("listener address");
     let log: Log = Arc::default();
     let controls = Controls::new(config.files_per_shot);
+    let mut store = PropStore::new(props);
+    store.keep_lists_of(&config.unlisted);
     let shared = Arc::new(Shared {
         card: Mutex::new(config.card.clone()),
         config,
@@ -120,7 +122,7 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
         next_conn: AtomicU32::new(1),
         pending: Mutex::default(),
         current: Mutex::default(),
-        props: Mutex::new(PropStore::new(props)),
+        props: Mutex::new(store),
         controls: Mutex::new(controls),
         live_view: Mutex::default(),
         live_view_infos: AtomicU32::new(0),

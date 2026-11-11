@@ -1,7 +1,7 @@
 //! Building [`CameraState`] from the camera's property table, and working out
 //! the value a step lands on.
 
-use super::{CameraState, Choice, PropertySummary};
+use super::{CameraState, Choice, PropertySummary, ValueRange};
 use crate::capture::DEST_COMPUTER;
 use crate::error::Error;
 use crate::ptp::codes::{
@@ -180,6 +180,13 @@ fn summary(desc: &PropertyDesc, colour_temp: Option<u16>) -> PropertySummary {
             .collect(),
         Form::Range { .. } | Form::None => Vec::new(),
     };
+    let range = match &desc.form {
+        Form::Range { min, max, step } => match (min.as_i64(), max.as_i64(), step.as_i64()) {
+            (Some(min), Some(max), Some(step)) => Some(ValueRange { min, max, step }),
+            _ => None,
+        },
+        _ => None,
+    };
     PropertySummary {
         code: desc.code,
         label,
@@ -188,6 +195,7 @@ fn summary(desc: &PropertyDesc, colour_temp: Option<u16>) -> PropertySummary {
         writable: desc.writable,
         enabled: desc.enabled.clone(),
         choices,
+        range,
     }
 }
 
@@ -264,17 +272,14 @@ pub(super) fn step_target(desc: &PropertyDesc, delta: i32) -> Result<PtpValue, E
     }
 }
 
-/// How far one press of plus or minus moves the ISO.
-const ISO_STEP: i64 = 50;
 /// The ISO value meaning Auto.
 const ISO_AUTO: u64 = 0x00FF_FFFF;
 
-/// The ISO `delta` presses from the current one. A camera only takes the
-/// stops it lists (100, 125, 160, ...), so each press aims [`ISO_STEP`]
-/// away and lands on the listed stop nearest that, always moving at least
-/// one stop; where the stops are wider apart than the step, that is the
-/// next stop. Auto and the multi-frame noise reduction values are not
-/// stepped onto: up from Auto starts at the lowest stop, down stays put.
+/// The ISO `delta` presses from the current one: one of the camera's own
+/// stops per press (100, 125, 160, ...), in order of value. A camera takes
+/// no ISO between its stops, so this is the smallest change there is. Auto
+/// and the multi-frame noise reduction values are not stepped onto: up
+/// from Auto starts at the lowest stop, down stays put.
 pub(super) fn iso_step_target(desc: &PropertyDesc, delta: i32) -> Result<PtpValue, Error> {
     let Form::Enum { settable, .. } = &desc.form else {
         return step_target(desc, delta);
@@ -304,12 +309,12 @@ pub(super) fn iso_step_target(desc: &PropertyDesc, delta: i32) -> Result<PtpValu
         }
         // Only plain values are stepped from; a flagged one keeps its number.
         let from = (at & ISO_AUTO) as i64;
-        let aim = if up { from + ISO_STEP } else { from - ISO_STEP };
-        let beyond = stops
-            .iter()
-            .copied()
-            .filter(|&s| if up { s > from } else { s < from });
-        let Some(next) = beyond.min_by_key(|&s| ((s - aim).abs(), (s - from).abs())) else {
+        let next = if up {
+            stops.iter().copied().find(|&s| s > from)
+        } else {
+            stops.iter().copied().rev().find(|&s| s < from)
+        };
+        let Some(next) = next else {
             break;
         };
         at = next as u64;
@@ -455,25 +460,15 @@ mod tests {
     }
 
     #[test]
-    fn iso_steps_about_fifty_onto_a_real_stop() {
-        // 150 is nearer 160 than 125; 210 nearer 200; then 250, 320 (for 300).
-        assert_eq!(iso_after(100, 1), 160);
-        assert_eq!(iso_after(160, 1), 200);
-        assert_eq!(iso_after(200, 1), 250);
-        assert_eq!(iso_after(250, 1), 320);
-        assert_eq!(iso_after(320, -1), 250);
-        assert_eq!(iso_after(200, -1), 160);
-        assert_eq!(iso_after(160, -1), 100);
-        assert_eq!(iso_after(100, -1), 50);
-    }
-
-    #[test]
-    fn iso_always_moves_at_least_one_stop_where_stops_are_wider_than_fifty() {
-        assert_eq!(iso_after(400, 1), 500);
+    fn iso_steps_one_of_the_cameras_stops_at_a_time() {
+        // Nothing smaller exists on a camera, and none is skipped.
+        assert_eq!(iso_after(100, 1), 125);
+        assert_eq!(iso_after(125, 1), 160);
+        assert_eq!(iso_after(160, -1), 125);
+        assert_eq!(iso_after(100, -1), 80);
         assert_eq!(iso_after(800, 1), 1000);
         assert_eq!(iso_after(1600, 1), 3200);
         assert_eq!(iso_after(3200, -1), 1600);
-        assert_eq!(iso_after(1000, -1), 800);
     }
 
     #[test]
@@ -481,12 +476,13 @@ mod tests {
         assert_eq!(iso_after(3200, 1), 3200);
         assert_eq!(iso_after(50, -1), 50);
         // Several presses in one call.
-        assert_eq!(iso_after(100, 3), 250);
+        assert_eq!(iso_after(100, 3), 200);
         // From Auto, up starts at the lowest stop and down stays on Auto.
         assert_eq!(iso_after(0x00FF_FFFF, 1), 50);
         assert_eq!(iso_after(0x00FF_FFFF, -1), 0x00FF_FFFF);
         // A value off the list (the camera in an odd state) still moves.
-        assert_eq!(iso_after(140, 1), 200);
+        assert_eq!(iso_after(140, 1), 160);
+        assert_eq!(iso_after(140, -1), 125);
     }
 
     /// The real ZV-E10's mode list, shortened.

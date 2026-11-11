@@ -144,6 +144,8 @@ impl SetError {
 pub struct PropStore {
     props: BTreeMap<u16, PropertyDesc>,
     changed: BTreeSet<u16>,
+    /// Properties reported without their list of values.
+    unlisted: Vec<u16>,
 }
 
 impl PropStore {
@@ -151,7 +153,26 @@ impl PropStore {
         PropStore {
             props: props.into_iter().map(|p| (p.code, p)).collect(),
             changed: BTreeSet::new(),
+            unlisted: Vec::new(),
         }
+    }
+
+    /// Reports `codes` without their lists of values from now on.
+    pub fn keep_lists_of(&mut self, codes: &[u16]) {
+        self.unlisted = codes.to_vec();
+    }
+
+    pub fn is_unlisted(&self, code: u16) -> bool {
+        self.unlisted.contains(&code)
+    }
+
+    /// `prop` as the camera reports it: without its list when it is unlisted.
+    fn reported(&self, prop: &PropertyDesc) -> PropertyDesc {
+        let mut out = prop.clone();
+        if self.is_unlisted(prop.code) {
+            out.form = Form::None;
+        }
+        out
     }
 
     pub fn codes(&self) -> Vec<u16> {
@@ -164,14 +185,20 @@ impl PropStore {
 
     /// 0x9209 mode 0: every property.
     pub fn encode_all(&self) -> Vec<u8> {
-        encode_all_props(&self.props.values().cloned().collect::<Vec<_>>())
+        encode_all_props(
+            &self
+                .props
+                .values()
+                .map(|p| self.reported(p))
+                .collect::<Vec<_>>(),
+        )
     }
 
     /// 0x9209 mode 1: properties changed since the previous call.
     pub fn take_changed(&mut self) -> Vec<u8> {
         let changed: Vec<_> = std::mem::take(&mut self.changed)
             .into_iter()
-            .filter_map(|c| self.props.get(&c).cloned())
+            .filter_map(|c| self.props.get(&c).map(|p| self.reported(p)))
             .collect();
         encode_all_props(&changed)
     }
@@ -189,6 +216,10 @@ impl PropStore {
         let prop = self.props.get(&code).ok_or(SetError::Unknown)?;
         if !prop.writable {
             return Err(SetError::ReadOnly);
+        }
+        // A setting that lists no values is only ever stepped.
+        if self.is_unlisted(code) {
+            return Err(SetError::NotAllowed);
         }
         let mut pos = 0;
         let value =

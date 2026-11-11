@@ -64,7 +64,45 @@ pub fn label_for(code: u16, value: &PtpValue) -> Option<Labeled> {
                 short: exposure_program_label(raw),
             })
         }
-        PROP_FOCUS_MODE => Some(Labeled::same(focus_mode_label(u16v()?))),
+        PROP_FOCUS_MODE => {
+            let raw = u16v()?;
+            Some(Labeled {
+                label: focus_mode_name(raw),
+                short: focus_mode_label(raw),
+            })
+        }
+        PROP_FILE_FORMAT => {
+            let name = match value.as_u64()? {
+                1 => "RAW",
+                2 => "RAW+JPEG",
+                3 => "JPEG",
+                4 => "RAW+HEIF",
+                5 => "HEIF",
+                other => return Some(Labeled::same(unknown(other as u16))),
+            };
+            Some(Labeled::same(name.to_string()))
+        }
+        PROP_JPEG_QUALITY => {
+            let name = match value.as_u64()? {
+                1 => "Extra fine",
+                2 => "Fine",
+                3 => "Standard",
+                4 => "Light",
+                other => return Some(Labeled::same(unknown(other as u16))),
+            };
+            Some(Labeled::same(name.to_string()))
+        }
+        PROP_PC_SAVE_FORMAT => {
+            let name = match value.as_u64()? {
+                1 => "RAW and JPEG",
+                2 => "JPEG only",
+                3 => "RAW only",
+                4 => "RAW and HEIF",
+                5 => "HEIF only",
+                other => return Some(Labeled::same(unknown(other as u16))),
+            };
+            Some(Labeled::same(name.to_string()))
+        }
         PROP_STILL_CAPTURE_MODE => {
             let raw = low_word(value)?;
             Some(Labeled {
@@ -278,6 +316,20 @@ pub fn exposure_program_name(raw: u16) -> String {
         Some((_, name)) => name.to_string(),
         None => unknown(raw),
     }
+}
+
+/// The focus mode by Sony's name: "Continuous AF" where the chip says "AF-C".
+pub fn focus_mode_name(raw: u16) -> String {
+    match raw {
+        1 => "Manual Focus",
+        2 => "Single-shot AF",
+        0x8004 => "Continuous AF",
+        0x8005 => "Automatic AF",
+        0x8006 => "Direct Manual Focus",
+        0x8009 => "Preset Focus",
+        _ => return unknown(raw),
+    }
+    .to_string()
 }
 
 pub fn focus_mode_label(raw: u16) -> String {
@@ -729,6 +781,26 @@ mod tests {
                 drive_short(raw)
             );
         }
+    }
+
+    #[test]
+    fn the_file_format_newer_bodies_use_and_the_focus_names() {
+        let label = |code, v: u8| label_for(code, &PtpValue::U8(v)).unwrap().label;
+        assert_eq!(label(PROP_FILE_FORMAT, 1), "RAW");
+        assert_eq!(label(PROP_FILE_FORMAT, 2), "RAW+JPEG");
+        assert_eq!(label(PROP_FILE_FORMAT, 3), "JPEG");
+        assert_eq!(label(PROP_JPEG_QUALITY, 1), "Extra fine");
+        assert_eq!(label(PROP_PC_SAVE_FORMAT, 3), "RAW only");
+        let focus = label_for(PROP_FOCUS_MODE, &PtpValue::U16(0x8004)).unwrap();
+        assert_eq!(
+            (focus.label.as_str(), focus.short.as_str()),
+            ("Continuous AF", "AF-C")
+        );
+        let mf = label_for(PROP_FOCUS_MODE, &PtpValue::U16(1)).unwrap();
+        assert_eq!(
+            (mf.label.as_str(), mf.short.as_str()),
+            ("Manual Focus", "MF")
+        );
     }
 
     #[test]

@@ -120,6 +120,12 @@ pub struct SimConfig {
     /// its next report still said "card only".
     #[serde(default)]
     pub still_destination_ignores_writes: u32,
+    /// Properties reported without their list of values (form "none"), as
+    /// the real ZV-E10 reports shutter speed (0xD20D) and aperture
+    /// (0x5007). They still move one value at a time when stepped with
+    /// 0x9207, through the fixture's list, and refuse a direct write.
+    #[serde(default)]
+    pub unlisted: Vec<u16>,
     /// Describe a waiting picture tersely: no file name, and the dataset
     /// ends right after the (empty) name, without the date strings. Some
     /// bodies do this (libgphoto2 names such files `capt0000.arw` itself).
@@ -169,6 +175,7 @@ impl Default for SimConfig {
             single_prop_read_hangs: true,
             still_destination: None,
             still_destination_ignores_writes: 0,
+            unlisted: Vec::new(),
             terse_capture_info: false,
             card_denied: false,
             host_image_size: None,

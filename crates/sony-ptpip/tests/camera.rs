@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use sony_ptpip::capture::{Destination, DestinationMode};
 use sony_ptpip::ptp::codes::{
-    PROP_IMAGE_SIZE_TO_HOST, PROP_ISO, PROP_SHUTTER_SPEED, PROP_STILL_DESTINATION,
+    PROP_F_NUMBER, PROP_IMAGE_SIZE_TO_HOST, PROP_ISO, PROP_SHUTTER_SPEED, PROP_STILL_DESTINATION,
 };
 use sony_ptpip::ptp::PtpValue;
 use sony_ptpip::{load_or_create_guid, Camera, CameraConfig, CameraEvent, CameraState};
@@ -760,7 +760,7 @@ async fn the_cameras_save_setting_is_left_alone_when_shots_are_not_received() {
 }
 
 #[tokio::test]
-async fn stepping_iso_moves_about_fifty_and_lands_on_a_real_stop() {
+async fn stepping_iso_moves_one_of_the_cameras_own_stops() {
     let tmp = tempfile::tempdir().unwrap();
     let (sim, camera) = start(SimConfig::default(), tmp.path()).await;
     camera.set(PROP_ISO, PtpValue::U32(100)).await.unwrap();
@@ -769,10 +769,10 @@ async fn stepping_iso_moves_about_fifty_and_lands_on_a_real_stop() {
         camera.step(PROP_ISO, 1).await.unwrap();
         seen.push(raw(&camera.state(), PROP_ISO));
     }
-    // 100 +50 is 150: the nearest stop is 160, then 200, 250, 320.
-    assert_eq!(seen, [160, 200, 250, 320].map(PtpValue::U32));
+    // The smallest change a camera has: its next stop, none skipped.
+    assert_eq!(seen, [125, 160, 200, 250].map(PtpValue::U32));
     camera.step(PROP_ISO, -1).await.unwrap();
-    assert_eq!(raw(&camera.state(), PROP_ISO), PtpValue::U32(250));
+    assert_eq!(raw(&camera.state(), PROP_ISO), PtpValue::U32(200));
     stop(sim, camera).await;
 }
 
@@ -978,5 +978,78 @@ async fn a_picture_described_without_a_name_is_still_saved() {
     })
     .await;
     assert_ne!(second.path, saved.path);
+    stop(sim, camera).await;
+}
+
+/// The real ZV-E10 lists no values for shutter speed or aperture: they can
+/// only be nudged one step at a time. Before, plus and minus did nothing.
+#[tokio::test]
+async fn settings_the_camera_gives_no_list_for_are_nudged_a_step_at_a_time() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sim_config = SimConfig {
+        unlisted: vec![PROP_SHUTTER_SPEED, PROP_F_NUMBER],
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(sim_config, tmp.path()).await;
+    let state = camera.state();
+    let shutter = state
+        .properties
+        .iter()
+        .find(|p| p.code == PROP_SHUTTER_SPEED)
+        .unwrap();
+    assert!(shutter.choices.is_empty());
+    assert_eq!(shutter.short, "1/125");
+    camera.step(PROP_SHUTTER_SPEED, 1).await.unwrap();
+    assert_eq!(
+        raw(&camera.state(), PROP_SHUTTER_SPEED),
+        PtpValue::U32(65636)
+    );
+    camera.step(PROP_F_NUMBER, 2).await.unwrap();
+    assert_eq!(raw(&camera.state(), PROP_F_NUMBER), PtpValue::U16(500));
+    camera.step(PROP_F_NUMBER, -1).await.unwrap();
+    assert_eq!(raw(&camera.state(), PROP_F_NUMBER), PtpValue::U16(450));
+    stop(sim, camera).await;
+}
+
+#[tokio::test]
+async fn an_aperture_is_reached_by_nudging_and_stops_at_what_the_lens_allows() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sim_config = SimConfig {
+        unlisted: vec![PROP_F_NUMBER],
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(sim_config, tmp.path()).await;
+    // f/4 to f/8, four stops of a third up the lens's own values.
+    camera.set(PROP_F_NUMBER, PtpValue::U16(800)).await.unwrap();
+    assert_eq!(raw(&camera.state(), PROP_F_NUMBER), PtpValue::U16(800));
+    // Past the lens's smallest aperture: as far as it goes, and no error.
+    camera
+        .set(PROP_F_NUMBER, PtpValue::U16(2200))
+        .await
+        .unwrap();
+    assert_eq!(raw(&camera.state(), PROP_F_NUMBER), PtpValue::U16(1100));
+    // A value the lens does not have lands on the next one it does.
+    camera.set(PROP_F_NUMBER, PtpValue::U16(480)).await.unwrap();
+    assert_eq!(raw(&camera.state(), PROP_F_NUMBER), PtpValue::U16(450));
+    stop(sim, camera).await;
+}
+
+#[tokio::test]
+async fn a_range_setting_reports_its_ends_and_step() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (sim, camera) = start(SimConfig::default(), tmp.path()).await;
+    let state = camera.state();
+    let kelvin = state.properties.iter().find(|p| p.code == 0xD20F).unwrap();
+    let range = kelvin
+        .range
+        .as_ref()
+        .expect("colour temperature is a range");
+    assert_eq!((range.min, range.max, range.step), (2500, 9900, 100));
+    let iso = state
+        .properties
+        .iter()
+        .find(|p| p.code == PROP_ISO)
+        .unwrap();
+    assert!(iso.range.is_none());
     stop(sim, camera).await;
 }

@@ -55,6 +55,12 @@ pub const PROP_LIVE_VIEW_STATUS: u16 = 0xD221;
 pub const PROP_STILL_DESTINATION: u16 = 0xD222;
 pub const PROP_FOCUS_FOUND: u16 = 0xD213;
 pub const PROP_IMAGE_SIZE_TO_HOST: u16 = 0xD268;
+/// File format on bodies from about 2020 on (RAW, RAW+JPEG, JPEG), where
+/// older bodies use the standard 0x5004. libgphoto2: CompressionSetting.
+pub const PROP_FILE_FORMAT: u16 = 0xD253;
+pub const PROP_JPEG_QUALITY: u16 = 0xD252;
+/// Which files of a RAW+JPEG pair are sent to the computer.
+pub const PROP_PC_SAVE_FORMAT: u16 = 0xD269;
 
 // Controls
 pub const CTRL_SHUTTER_HALF: u16 = 0xD2C1;
