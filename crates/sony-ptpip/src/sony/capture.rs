@@ -104,6 +104,13 @@ pub struct Received {
 /// A table without 0xD215 counts as nothing waiting.
 pub fn captured_ready(props: &[PropertyDesc]) -> Result<u16, Error> {
     let Some(prop) = props.iter().find(|p| p.code == PROP_CAPTURED_READY) else {
+        // Said once: without 0xD215 in the table, shots are never fetched.
+        static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !props.is_empty() && !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            tracing::warn!(
+                "the camera's property table has no 0xD215 (captured-ready); shots will not be received automatically"
+            );
+        }
         return Ok(0);
     };
     let raw = prop

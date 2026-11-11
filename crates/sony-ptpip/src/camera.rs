@@ -447,7 +447,13 @@ impl Camera {
             return Err(Error::Unsupported("property cannot be set now"));
         }
         control::set_value(conn, &desc, &value, &quirks).await?;
-        self.inner.refresh(conn).await?;
+        // The camera took the write; a failed read-back is not a failed
+        // write unless the link is gone. The event loop reads again anyway.
+        match self.inner.refresh(conn).await {
+            Ok(_) => {}
+            Err(e) if matches!(e, Error::Disconnected) || conn.is_disconnected() => return Err(e),
+            Err(e) => tracing::warn!(error = %e, "reading the settings back after a write failed"),
+        }
         Ok(())
     }
 

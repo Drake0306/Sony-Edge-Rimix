@@ -13,8 +13,11 @@ use super::{connect_once, lock, CameraEvent, Inner, RecentShot};
 use crate::capture::{captured_ready, receive_one, Destination};
 use crate::error::Error;
 use crate::liveview::next_frame;
-use crate::ptp::codes::{EV_SONY_DEVICE_PROP_CHANGED, HANDLE_CAPTURED_STILL, OP_GET_OBJECT_INFO};
+use crate::ptp::codes::{
+    EV_SONY_DEVICE_PROP_CHANGED, HANDLE_CAPTURED_STILL, OP_GET_OBJECT_INFO, PROP_CAPTURED_READY,
+};
 use crate::ptp::parse_object_info;
+use crate::ptp::PtpValue;
 use crate::{PtpEvent, PtpIpConnection};
 
 /// Shortest time between two reads of the property table.
@@ -248,7 +251,18 @@ async fn capture_loop(inner: Arc<Inner>) -> String {
                 return "connection closed".into();
             };
             match receive_next(&inner, conn).await {
-                Ok(()) => {}
+                Ok(()) => {
+                    // Forget the fetched shot now, so a failed read below
+                    // cannot leave the old count in place for the next tick.
+                    let mut snap = lock(&inner.snapshot);
+                    if let Some(p) = snap
+                        .props
+                        .iter_mut()
+                        .find(|p| p.code == PROP_CAPTURED_READY)
+                    {
+                        p.current = PtpValue::U16(0);
+                    }
+                }
                 Err(e) if lost(conn, &e) => return e.to_string(),
                 Err(_) => {
                     drop(guard);

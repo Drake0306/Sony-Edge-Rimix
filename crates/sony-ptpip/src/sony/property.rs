@@ -180,11 +180,23 @@ pub fn parse_all_props(buf: &[u8]) -> Result<Vec<PropertyDesc>, Error> {
             Err(Error::Unsupported(_)) => {
                 let code = u16::from_le_bytes([buf[start], buf[start + 1]]);
                 let datatype = u16::from_le_bytes([buf[start + 2], buf[start + 3]]);
-                tracing::warn!(
-                    code = format_args!("{code:#06x}"),
-                    datatype = format_args!("{datatype:#06x}"),
-                    "unknown property datatype; ignoring the rest of the property list"
-                );
+                // The table is read several times a second, so say this
+                // once at warn level and keep the rest at debug.
+                static WARNED: std::sync::atomic::AtomicBool =
+                    std::sync::atomic::AtomicBool::new(false);
+                if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                    tracing::warn!(
+                        code = format_args!("{code:#06x}"),
+                        datatype = format_args!("{datatype:#06x}"),
+                        "unknown property datatype; ignoring the rest of the property list"
+                    );
+                } else {
+                    tracing::debug!(
+                        code = format_args!("{code:#06x}"),
+                        datatype = format_args!("{datatype:#06x}"),
+                        "unknown property datatype; ignoring the rest of the property list"
+                    );
+                }
                 break;
             }
             Err(e) => return Err(e),
@@ -259,7 +271,7 @@ pub async fn read_all_props(conn: &mut PtpIpConnection) -> Result<Vec<PropertyDe
 ///
 /// Not used during a session: some bodies do not answer 0x9251 (libgphoto2
 /// never sends it), so the camera facade reads properties with
-/// [`read_all_props`] only. Kept for one-off reads such as the CLI's.
+/// [`read_all_props`] only. Kept as a library function for one-off reads.
 pub async fn read_property(conn: &mut PtpIpConnection, code: u16) -> Result<PropertyDesc, Error> {
     let (data, _) = conn
         .command_data_in(OP_SDIO_GET_EXT_DEVICE_PROP, &[code as u32])
