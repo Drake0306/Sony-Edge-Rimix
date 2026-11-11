@@ -117,13 +117,16 @@ fn render(n: u32) -> Vec<u8> {
     jpeg
 }
 
-/// Live view metadata: level 1.2°, one focused frame in the middle, a face
-/// up and to the left, and a tracked subject down and to the right.
+/// Live view metadata, laid out as the ZV-E10 sends it: tilted 2° to the
+/// left, one focused frame in the middle, a face up and to the left, a
+/// tracked subject down and to the right, and a fourth, empty block.
 fn metadata() -> Vec<u8> {
-    let mut m = vec![0u8; 0x28];
-    m[0..2].copy_from_slice(&0x0068u16.to_le_bytes()); // version
+    let mut m = vec![0u8; 0x38];
+    m[0..2].copy_from_slice(&0x0065u16.to_le_bytes()); // version
+    m[2..4].copy_from_slice(&1u16.to_le_bytes());
+    m[8..12].copy_from_slice(&1u32.to_le_bytes());
     m[0x10..0x14].copy_from_slice(&2u32.to_le_bytes()); // level state: valid
-    m[0x18..0x1C].copy_from_slice(&1200i32.to_le_bytes()); // x: 1.2°
+    m[0x18..0x1C].copy_from_slice(&358i32.to_le_bytes()); // x: 358 of 360, 2° left
     m[0x1C..0x20].copy_from_slice(&0i32.to_le_bytes()); // y
     m[0x20..0x24].copy_from_slice(&i32::MAX.to_le_bytes()); // z: not measured
     m.extend(655_360u32.to_le_bytes()); // x_max
@@ -154,6 +157,9 @@ fn metadata() -> Vec<u8> {
         m.extend(h.to_le_bytes());
         m.extend(w.to_le_bytes());
     }
+    m.extend(655_360u32.to_le_bytes());
+    m.extend(491_520u32.to_le_bytes());
+    m.extend([0u8; 8]); // no frames in the fourth block
     m
 }
 

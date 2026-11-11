@@ -18,7 +18,7 @@ use crate::capture::{
 };
 use crate::card::CardKind;
 use crate::error::Error;
-use crate::liveview::next_frame;
+use crate::liveview::{next_frame, FocusFrame};
 use crate::ptp::codes::{
     EV_SONY_DEVICE_PROP_CHANGED, EV_SONY_OBJECT_ADDED, HANDLE_CAPTURED_STILL, OP_GET_OBJECT_INFO,
     PROP_CAPTURED_READY, PROP_FILE_FORMAT, PROP_MOVIE_REC_STATE, PROP_PC_SAVE_FORMAT,
@@ -37,6 +37,8 @@ const PROP_REFRESH: Duration = Duration::from_millis(100);
 const PROP_POLL: Duration = Duration::from_millis(250);
 /// Wait before asking for another live view frame when none was ready.
 const NO_FRAME_WAIT: Duration = Duration::from_millis(15);
+/// Most live view metadata samples put in the log in one session.
+const META_SAMPLES: usize = 16;
 /// Wait before the next live view request after `consecutive_failures`
 /// results in a row with no frame: short at first, then slower so a camera
 /// that keeps refusing is not hammered.
@@ -224,8 +226,7 @@ async fn live_view_loop(inner: Arc<Inner>) -> String {
     let mut window_start = Instant::now();
     let mut frames = 0u32;
     let mut consecutive_failures = 0u32;
-    let mut meta_samples = 0u32;
-    let mut last_meta_len = usize::MAX;
+    let mut meta_shapes = Vec::new();
     loop {
         let frame = {
             let mut guard = inner.conn.lock().await;
@@ -243,12 +244,24 @@ async fn live_view_loop(inner: Arc<Inner>) -> String {
         };
         match frame {
             Some(frame) => {
-                // The first metadata of a session, and each new length
-                // after it (frames coming and going), up to a few: the real
-                // layout is what the frame parser has to be checked against.
-                if meta_samples < 4 && frame.raw_meta.len() != last_meta_len {
-                    last_meta_len = frame.raw_meta.len();
-                    meta_samples += 1;
+                // One sample of each shape the metadata takes in a session
+                // (its length, how many frames of each sort, and what sort
+                // the first of each is), up to a few: frames of a sort not
+                // seen yet (a face, a tracked subject) are what the frame
+                // parser still has to be checked against.
+                let first = |frames: &[FocusFrame]| {
+                    frames
+                        .first()
+                        .map_or((0, 0, 0), |f| (frames.len(), f.kind, f.state))
+                };
+                let shape = (
+                    frame.raw_meta.len(),
+                    first(&frame.focus_frames),
+                    first(&frame.face_frames),
+                    first(&frame.tracking_frames),
+                );
+                if meta_shapes.len() < META_SAMPLES && !meta_shapes.contains(&shape) {
+                    meta_shapes.push(shape);
                     let hex: String = frame
                         .raw_meta
                         .iter()
@@ -545,6 +558,17 @@ async fn movie_loop(inner: Arc<Inner>) -> String {
             }
         };
         if now_recording {
+            // A recording that ended while the card was being listed may
+            // already be in the list, and would then pass for an old clip.
+            if !recording() {
+                tracing::warn!(
+                    files = files.len(),
+                    "the recording ended before the card had been listed; its clip cannot be told from older ones and stays on the card"
+                );
+                before = None;
+                was_recording = false;
+                continue;
+            }
             tracing::info!(
                 files = files.len(),
                 "recording started; the card was listed to tell the new clip apart later"

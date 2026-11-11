@@ -8,6 +8,7 @@ use sony_ptpip::error::Error;
 use sony_ptpip::ptp::codes::*;
 use sony_ptpip::ptp::{encode_device_info, DeviceInfo, PtpValue};
 use sony_ptpip::ptpip::{read_frame, Packet};
+use sony_ptpip::sony::{Enabled, Form, PropertyDesc};
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
@@ -103,6 +104,29 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
         if let (Some(value), Some(prop)) = (value, props.iter_mut().find(|p| p.code == code)) {
             prop.current = value;
         }
+    }
+    if let Some((area, changeable)) = config.focus_area {
+        // The ZV-E10's list: wide, zone, centre, the flexible spots and the
+        // tracking forms of each.
+        let listed = [
+            1u16, 2, 3, 0x101, 0x102, 0x103, 0x104, 0x201, 0x202, 0x203, 0x204, 0x205, 0x206, 0x207,
+        ];
+        props.push(PropertyDesc {
+            code: PROP_FOCUS_AREA,
+            datatype: 0x0004,
+            writable: true,
+            enabled: if changeable {
+                Enabled::On
+            } else {
+                Enabled::DisplayOnly
+            },
+            default: PtpValue::U16(1),
+            current: PtpValue::U16(area),
+            form: Form::Enum {
+                settable: listed.map(PtpValue::U16).to_vec(),
+                reportable: vec![],
+            },
+        });
     }
     let bind_addr = config
         .bind_addr
@@ -660,7 +684,11 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
         }
         OP_SDIO_GET_EXT_DEVICE_INFO => {
             let codes = shared.props.lock().unwrap().codes();
-            send_data_in(ctx.w, tid, &encode_ext_device_info(&codes)).await?;
+            let mut controls = EXT_CONTROLS.to_vec();
+            if shared.config.remote_touch {
+                controls.push(CTRL_REMOTE_TOUCH);
+            }
+            send_data_in(ctx.w, tid, &encode_ext_device_info(&codes, &controls)).await?;
             RC_OK
         }
         // Other Sony operations are refused until the handshake completes.
@@ -905,10 +933,10 @@ fn prop_code(params: &[u32]) -> Option<u16> {
     params.first().and_then(|&p| u16::try_from(p).ok())
 }
 
-fn encode_ext_device_info(properties: &[u16]) -> Vec<u8> {
+fn encode_ext_device_info(properties: &[u16], controls: &[u16]) -> Vec<u8> {
     let mut out = EXT_VERSION.to_le_bytes().to_vec();
     // Two standard PTP arrays: a u32 count, then that many u16 codes.
-    for list in [properties, &EXT_CONTROLS[..]] {
+    for list in [properties, controls] {
         out.extend((list.len() as u32).to_le_bytes());
         for code in list {
             out.extend(code.to_le_bytes());

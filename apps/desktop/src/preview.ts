@@ -5,8 +5,10 @@
 //
 // Query parameters: layout=Dock|Ring, theme=Light|Dark, presets=<count>,
 // mode=<raw exposure mode>, drive=<raw drive mode>, apply=<slot to apply>, open=<chip name>, transfers=1 (files arriving), recording=1,
-// screen=connect, webcam=1, copy=0 (copying to this computer off). Never part of the built app.
+// screen=connect, webcam=1, copy=0 (copying to this computer off), report=<file of docs/camera-reports>.
+// Never part of the built app.
 
+/// <reference types="vite/client" />
 import { mockIPC } from '@tauri-apps/api/mocks';
 import { emit } from '@tauri-apps/api/event';
 import cameraState from './fixtures/camera-state.json';
@@ -124,7 +126,11 @@ async function frame(): Promise<ArrayBuffer> {
 }
 
 const connected = q.get('screen') !== 'connect';
-const state = camera();
+// report=<name> puts a real camera's own report behind the interface, untouched:
+// a file of docs/camera-reports, without its .json.
+const reports = import.meta.glob('../../../docs/camera-reports/*.json', { import: 'default' });
+const reportOf = reports[`../../../docs/camera-reports/${q.get('report')}.json`];
+const state = reportOf ? ((await reportOf()) as CameraState) : camera();
 let saved = settings;
 
 mockIPC(

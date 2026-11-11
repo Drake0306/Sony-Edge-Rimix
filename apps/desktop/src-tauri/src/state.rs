@@ -610,6 +610,38 @@ pub fn write_camera_report(log_dir: &Path, camera: &CameraState) -> Option<PathB
     }
 }
 
+/// Keeps the camera report as the camera last described itself, not only
+/// as it did at connect: the ZV-E10's table is not settled then (it lists
+/// no f-stops, calls the drive mode off), so a report written once says
+/// little about the session that followed.
+pub struct ReportKeeper {
+    log_dir: PathBuf,
+    /// What the report on disk holds.
+    written: Option<Vec<sony_ptpip::PropertySummary>>,
+}
+
+impl ReportKeeper {
+    pub fn new(log_dir: PathBuf) -> Self {
+        ReportKeeper {
+            log_dir,
+            written: None,
+        }
+    }
+
+    /// Writes the report again when `event` brings settings that differ
+    /// from the ones written; returns whether it did.
+    pub fn note(&mut self, event: &CameraEvent) -> bool {
+        let CameraEvent::StateChanged(camera) = event else {
+            return false;
+        };
+        if !camera.connected || self.written.as_ref() == Some(&camera.properties) {
+            return false;
+        }
+        self.written = Some(camera.properties.clone());
+        write_camera_report(&self.log_dir, camera).is_some()
+    }
+}
+
 /// Hands every event except `Frame` to `emit`, tagged with `camera_id`
 /// (the UI polls frames instead), until the camera is disconnected or
 /// replaced and its channel closes.
@@ -827,6 +859,7 @@ pub async fn focus_at(
         Error::Response { code, .. } => {
             format!("The camera did not take the focus point (answered {code:#06x})")
         }
+        Error::Unsupported(why) => format!("Cannot focus on a point: {why}"),
         other => other.to_string(),
     })
 }
@@ -1839,6 +1872,55 @@ mod tests {
             off.ble.scan(3).await.unwrap_err(),
             "Bluetooth unavailable: Bluetooth is off for this run"
         );
+    }
+
+    #[test]
+    fn the_camera_report_follows_the_cameras_settings_through_the_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut keeper = ReportKeeper::new(dir.path().to_path_buf());
+        let aperture = |choices: usize| sony_ptpip::PropertySummary {
+            code: 0x5007,
+            label: "f/4.0".into(),
+            short: "f/4.0".into(),
+            raw: PtpValue::U16(400),
+            writable: true,
+            enabled: sony_ptpip::sony::Enabled::DisplayOnly,
+            choices: (0..choices)
+                .map(|i| sony_ptpip::Choice {
+                    raw: PtpValue::U16(400 + 50 * i as u16),
+                    label: String::new(),
+                    short: String::new(),
+                })
+                .collect(),
+            range: None,
+        };
+        let camera = |choices: usize, fps: f32| CameraState {
+            connected: true,
+            secured: false,
+            model: "ZV-E10".into(),
+            firmware: "2.01".into(),
+            generation: "3".into(),
+            battery: Some(72),
+            recording: false,
+            focus_found: false,
+            properties: vec![aperture(choices)],
+            live_view_fps: fps,
+            last_shot_at: None,
+            shots_to_computer: Some(true),
+            controls: Vec::new(),
+        };
+        let read = || -> CameraState {
+            let path = dir.path().join("camera-ZV-E10.json");
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+        };
+        // As it connects the camera lists no f-stops; a moment later it does.
+        assert!(keeper.note(&CameraEvent::StateChanged(camera(0, 0.0))));
+        assert!(read().properties[0].choices.is_empty());
+        assert!(keeper.note(&CameraEvent::StateChanged(camera(3, 0.0))));
+        assert_eq!(read().properties[0].choices.len(), 3);
+        // The frame rate alone, or an event of another kind, writes nothing.
+        assert!(!keeper.note(&CameraEvent::StateChanged(camera(3, 24.0))));
+        assert!(!keeper.note(&CameraEvent::Frame));
     }
 
     #[test]

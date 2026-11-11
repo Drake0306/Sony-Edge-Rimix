@@ -74,15 +74,14 @@ export function chipValue(camera: CameraState | null, code: number): string {
 }
 
 /**
- * Whether a setting can be changed now. Shutter speed and aperture on
- * bodies that list no values for them are only ever nudged, and such a
- * body may mark them "display only" while still taking the nudge, so for
- * those anything but "off" counts.
+ * Whether a setting can be changed now. The ZV-E10 marks its aperture
+ * "display only" while it takes changes to it, so for aperture and shutter
+ * speed anything but "off" counts.
  */
 export const isUsable = (p: PropertySummary | undefined): boolean => {
   if (!p || !p.writable) return false;
-  const nudged = (p.code === PROP.aperture || p.code === PROP.shutter) && p.choices.length === 0;
-  return nudged ? p.enabled !== 'Off' : p.enabled === 'On';
+  const exposure = p.code === PROP.aperture || p.code === PROP.shutter;
+  return exposure ? p.enabled !== 'Off' : p.enabled === 'On';
 };
 
 /** The ends and step of the colour temperature, in kelvin; Sony's own when the camera does not say. */

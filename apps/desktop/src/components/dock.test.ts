@@ -277,6 +277,46 @@ describe('dock', () => {
     expect(invoke).toHaveBeenCalledWith('step_property', { code: 0x5007, delta: 1 });
   });
 
+  // The ZV-E10 lists no f-stops as it connects and lists its lens's own a
+  // moment later; the row was a plain stepper again whenever it did.
+  test('Aperture is a list of the f-stops the camera gives, when it gives them', () => {
+    const { root, store } = setup();
+    const camera = store.get().camera!;
+    const stops = [350, 400, 450, 500, 560, 2200];
+    const listed = {
+      ...camera,
+      properties: camera.properties.map((p) =>
+        p.code === 0x5007
+          ? {
+              ...p,
+              raw: { U16: 450 },
+              label: 'f/4.5',
+              short: 'f/4.5',
+              enabled: 'DisplayOnly' as const,
+              choices: stops.map((f) => ({ raw: { U16: f }, label: `f/${(f / 100).toFixed(1)}`, short: `f/${(f / 100).toFixed(1)}` })),
+            }
+          : p,
+      ),
+    };
+    store.set({ camera: listed });
+    const chip = root.querySelectorAll<HTMLButtonElement>('.chip')[2];
+    // "Display only" with a list is how this camera says a usable aperture.
+    expect(chip.classList.contains('off')).toBe(false);
+    chip.click();
+    const row = root.querySelector<HTMLElement>('.r[data-code="20487"]')!;
+    expect(row.querySelector('.pickbtn')).not.toBeNull();
+    expect(row.querySelectorAll('.step button')).toHaveLength(0);
+    const panel = root.querySelector<HTMLElement>('#panel-20487')!;
+    expect(panel.hidden).toBe(false);
+    const shown = [...panel.querySelectorAll<HTMLButtonElement>('.fstop')];
+    // Only what this lens has, not the whole scale.
+    expect(shown.map((b) => b.textContent)).toEqual(['f/3.5', 'f/4.0', 'f/4.5', 'f/5.0', 'f/5.6', 'f/22']);
+    expect(panel.querySelector('.fstop[aria-checked="true"]')!.textContent).toBe('f/4.5');
+    expect(shown.every((b) => !b.disabled)).toBe(true);
+    shown[4].click();
+    expect(invoke).toHaveBeenCalledWith('set_property', { code: 0x5007, raw: { U16: 560 } });
+  });
+
   test('Colour temperature unfolds a scale to drag and a box to type in', () => {
     const { root } = setup();
     root.querySelectorAll<HTMLButtonElement>('.chip')[5].click();
