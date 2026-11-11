@@ -826,8 +826,9 @@ fn prop_code(params: &[u32]) -> Option<u16> {
 
 fn encode_ext_device_info(properties: &[u16]) -> Vec<u8> {
     let mut out = EXT_VERSION.to_le_bytes().to_vec();
+    // Two standard PTP arrays: a u32 count, then that many u16 codes.
     for list in [properties, &EXT_CONTROLS[..]] {
-        out.extend((list.len() as u16).to_le_bytes());
+        out.extend((list.len() as u32).to_le_bytes());
         for code in list {
             out.extend(code.to_le_bytes());
         }

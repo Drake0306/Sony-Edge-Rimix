@@ -16,24 +16,57 @@ pub struct ExtDeviceInfo {
 }
 
 fn u16_at(buf: &[u8], pos: &mut usize) -> Result<u16, Error> {
-    let bytes = buf
-        .get(*pos..*pos + 2)
-        .ok_or_else(|| Error::Protocol("ExtDeviceInfo truncated".into()))?;
+    let bytes = buf.get(*pos..*pos + 2).ok_or_else(truncated)?;
     *pos += 2;
     Ok(u16::from_le_bytes([bytes[0], bytes[1]]))
 }
 
-fn u16_list(buf: &[u8], pos: &mut usize) -> Result<Vec<u16>, Error> {
-    let n = u16_at(buf, pos)?;
+fn truncated() -> Error {
+    Error::Protocol("ExtDeviceInfo truncated".into())
+}
+
+/// Reads a PTP array of `u16` codes: a `u32` count, then the codes. If that
+/// count would run past the end of `buf`, reads the count as a `u16`
+/// instead (the layout of older hand-made fixtures).
+fn u16_list(buf: &[u8], pos: &mut usize, what: &str) -> Result<Vec<u16>, Error> {
+    // True if `n` codes fit after a count of `count_len` bytes at `at`.
+    let fits = |at: usize, count_len: usize, n: usize| {
+        n.checked_mul(2)
+            .and_then(|b| b.checked_add(at + count_len))
+            .is_some_and(|end| end <= buf.len())
+    };
+    let wide = buf
+        .get(*pos..*pos + 4)
+        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize);
+    let n = match wide {
+        Some(n) if fits(*pos, 4, n) => {
+            *pos += 4;
+            n
+        }
+        _ => {
+            let n = u16_at(buf, pos)? as usize;
+            if !fits(*pos, 0, n) {
+                return Err(truncated());
+            }
+            tracing::debug!(what, n, "ExtDeviceInfo array has a u16 count; read as such");
+            n
+        }
+    };
     (0..n).map(|_| u16_at(buf, pos)).collect()
 }
 
-/// Parses the 0x9202 data phase: version, property codes, control codes.
+/// Parses the 0x9202 data phase: a `u16` version, then the property codes
+/// and, if any bytes remain, the control codes, each as a PTP array with a
+/// `u32` count.
 pub fn parse_ext_device_info(buf: &[u8]) -> Result<ExtDeviceInfo, Error> {
     let mut pos = 0;
     let protocol_version = u16_at(buf, &mut pos)?;
-    let properties = u16_list(buf, &mut pos)?;
-    let controls = u16_list(buf, &mut pos)?;
+    let properties = u16_list(buf, &mut pos, "properties")?;
+    let controls = if pos < buf.len() {
+        u16_list(buf, &mut pos, "controls")?
+    } else {
+        Vec::new()
+    };
     Ok(ExtDeviceInfo {
         protocol_version,
         properties,

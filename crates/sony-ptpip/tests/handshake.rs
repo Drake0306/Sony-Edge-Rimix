@@ -14,7 +14,8 @@ fn opts() -> ConnectOptions {
 }
 
 #[test]
-fn parses_ext_device_info_bytes() {
+fn still_parses_ext_device_info_with_u16_counts() {
+    // The older layout with u16 counts, as hand-made fixtures use.
     let buf = [
         0x2C, 0x01, // version
         0x02, 0x00, 0x05, 0x50, 0x0D, 0xD2, // 2 properties
@@ -24,6 +25,33 @@ fn parses_ext_device_info_bytes() {
     assert_eq!(info.protocol_version, 0x012C);
     assert_eq!(info.properties, vec![0x5005, 0xD20D]);
     assert_eq!(info.controls, vec![0xD2C1]);
+}
+
+#[test]
+fn parses_ext_device_info_in_the_camera_layout() {
+    let buf = [
+        0xC8, 0x00, // version
+        0x03, 0x00, 0x00, 0x00, // 3 properties (u32 count)
+        0x05, 0x50, 0x0D, 0xD2, 0x0E, 0xD2, //
+        0x02, 0x00, 0x00, 0x00, // 2 controls (u32 count)
+        0xC1, 0xD2, 0xC2, 0xD2,
+    ];
+    let info = parse_ext_device_info(&buf).unwrap();
+    assert_eq!(info.protocol_version, 0x00C8);
+    assert_eq!(info.properties, vec![0x5005, 0xD20D, 0xD20E]);
+    assert_eq!(info.controls, vec![0xD2C1, 0xD2C2]);
+}
+
+#[test]
+fn parses_ext_device_info_with_only_one_array() {
+    let buf = [
+        0xC8, 0x00, // version
+        0x02, 0x00, 0x00, 0x00, // 2 properties
+        0x05, 0x50, 0x0D, 0xD2,
+    ];
+    let info = parse_ext_device_info(&buf).unwrap();
+    assert_eq!(info.properties, vec![0x5005, 0xD20D]);
+    assert!(info.controls.is_empty());
 }
 
 #[test]
