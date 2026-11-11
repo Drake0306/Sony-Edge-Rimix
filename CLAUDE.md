@@ -4,8 +4,10 @@ Written 2026-11-11 at Roy's request after the second real-camera test went
 badly; updated the same day once the "did not even connect" regression was
 understood and fixed (see "The 10:00 connect failure" below). Read this
 before touching anything. The user is Roy; the camera is a Sony ZV-E10
-(firmware 2.00) on a Mac running macOS 27. The fix is verified on this Mac
-without the camera; Roy has not yet retested with the camera.
+(firmware 2.00) on a Mac running macOS 27. Roy retested at 05:20Z: it
+connected, stayed connected and shot. He then asked for a list of changes,
+all built the same day (see "Roy's feedback after the first good
+session"); none of those is yet tested on the camera.
 
 ## Rules that bind every session
 
@@ -54,7 +56,7 @@ Then run `scripts/check-mac-bundle.sh ~/Downloads/Rimix-0.1.0/Rimix.app`:
 it must print three `ok` lines. A bundle that fails it cannot reach any
 camera (see "The 10:00 connect failure").
 
-## State of the code (main = merge of fix-local-network)
+## State of the code (main = merge of session-feedback)
 
 All four spec phases are built and merged. Everything was developed against
 the simulator; only three real-camera sessions have happened, all on
@@ -87,12 +89,11 @@ the simulator; only three real-camera sessions have happened, all on
    green (413 Rust, 303 TS, clippy, fmt). Shipped to Downloads at 09:53
    local.
 
-**Caveat on fix 3, not yet proven on the camera:** the ZV-E10 DID answer
-0x9209 with parameter [0] at connect (sessions came up). Whether it answers
-the parameterless form is taken from libgphoto2. If it does not, connect
-would now time out after 5 s and the log would show
-`WARN ... operation timed out op="0x9209"`. The 10:00 local log has no such
-line, so the regression below is not that, but keep it in mind.
+**Fix 3 is proven on the camera.** Session 4 (05:20:39Z to 05:25:55Z, the
+signed build) ran over five minutes and 7,468 transactions on the
+parameterless 0x9209 polling with no timeout and no reconnect; the single
+`operation timed out op="0x9209"` at 05:25:55 is the session ending. Roy:
+"worked perfectly, connected properly, clicked photos properly".
 
 ## The 10:00 connect failure (2026-11-11, 04:29Z): solved, was macOS
 
@@ -163,8 +164,8 @@ not blocked on its first search: 0 block notifications, gateway SYN sent,
 SSDP devices fetched. A deliberately mis-signed copy of it logged the new
 warning. 419 Rust and 306 TS tests, clippy, fmt and tsc pass.
 
-**Not verified:** anything with the camera. Roy must retest. If the app
-is ever blocked again, the manual cure is System Settings, Privacy &
+**Confirmed by Roy at 05:20Z:** the signed build connected first time. If
+the app is ever blocked again, the manual cure is System Settings, Privacy &
 Security, Local Network: turn Rimix off and on, then reopen it.
 
 To check for this block in future, run while the app is open:
@@ -180,22 +181,83 @@ permission again on each new build (its record is tied to the exact
 binary; this was already so). A stable self-signed or Developer ID
 certificate would end that; not done, it needs Roy's keychain.
 
+## Roy's feedback after the first good session (2026-11-11) and what was built
+
+Branch `session-feedback`, merged. Everything below is tested against the
+simulator and in the browser preview; nothing yet on the camera.
+
+1. **Photos never reached the laptop.** The receive code was fine; the
+   camera arrives with Still Img. Save Dest. = Camera Only (0xD222 = 0x10)
+   and then never raises 0xD215. `capture::ensure_host_delivery` now runs
+   in `connect_once` when `auto_receive` is on: it sets 0xD222 to the
+   listed value with both bits (0x11, PC+Camera; the card copy is never
+   given up) and 0xD268 (size sent to the computer) to 1, original. It logs
+   `changed the camera's still image save destination ...` at info, or a
+   warning if the camera refuses. `CameraState.shots_to_computer` drives a
+   line in the Save to panel when the camera still keeps shots to itself.
+   The simulator now models this (`still_destination`, `host_image_size`).
+   Roy said "raw DNG"; Sony raw is ARW and whatever the camera shoots is
+   what is copied.
+2. **Videos.** `movie_loop` (camera/loops.rs): lists the card when a
+   recording starts and again 1.5 s after it stops, and downloads the new
+   `CardKind::Video` files through the card code, emitting the capture
+   events so the filmstrip shows progress. UNKNOWN ON THE ZV-E10: whether
+   it lets the card be read in a PC Remote session at all. If it refuses,
+   `MovieTransferUnavailable` is emitted once and the UI says "Videos stay
+   on the card". Two card walks per clip is slow on a full card; an
+   ObjectAdded-event path would be better if the camera sends one.
+3. **Transfer progress.** The filmstrip (right) has one summary bar above
+   the per-file tiles.
+4. **Mode "numbers".** `decode.rs` only knew eight modes; unknown values
+   showed as `0x8000`. Tables now cover the Sony SDK / libgphoto2 lists for
+   mode, white balance, drive (brackets decoded) and format; unknowns read
+   `Unknown (0x....)`. Two changes are from references, not the camera:
+   focus 0x8005 is now AF-A and 0x8006 DMF (they were swapped), and
+   colour temperature is 0x8012 as well as the fixture's 0x8007.
+5. **ISO.** A camera takes only its listed stops. `iso_step_target`: each
+   press aims 50 away and lands on the nearest listed stop, always moving
+   at least one (100, 160, 200, 250, 320 ...). The popover's Custom row
+   shows min and max and sets the nearest stop to what is typed.
+6. **Dock overlap.** The dock row was three flex items; the preset strip
+   overflowed under Record. Now a grid `1fr auto 1fr`; only the preset in
+   use shows its name.
+7. **Webcam.** macOS needs a Developer ID camera extension to add a system
+   camera, so Rimix cannot be one by itself (0 signing identities here).
+   `src-tauri/src/webcam.rs` serves the live view as MJPEG on
+   `127.0.0.1:8717` (`/`, `/stream.mjpg`, `/frame.jpg`), with Full, Medium
+   and Low quality (scaled with the `image` crate). "Use as a webcam" in
+   the Cameras panel swaps the live view for a panel with the address, the
+   quality choice and the OBS steps. OBS is NOT installed on Roy's Mac;
+   he has to install it, or get an Apple Developer account, in which case
+   a real camera extension becomes possible and would reuse this mode.
+
+Also new: on every connect the app writes `logs/camera-<model>.json`, the
+whole property table with allowed values. READ IT FIRST next session: it
+settles the mode values the ZV-E10 really uses, the focus and white
+balance codes above, the ISO list, what 0xD222 offered, and whether there
+is a live view quality property worth using for the webcam quality.
+
+Dev tools added: `http://localhost:1420/preview.html` under `pnpm dev`
+(the real UI with a pretend camera, `src/preview.ts`; screenshot it with
+headless Chrome to check layout), and
+`cargo run -p rimix-desktop --example webcam_feed`.
+
 ## Next real-camera session
 
-1. Power-cycle the camera, open Menu > Network > PC Remote Function
-   (Wi-Fi Direct Info), start Rimix from `~/Downloads/Rimix-0.1.0/`,
-   connect.
-2. The open question is now fix 3 (parameterless 0x9209 polling), which
-   has still never run against the camera. If the connect times out, look
-   for `WARN ... operation timed out op="0x9209"` in the app log. If the
-   session comes up, watch for `camera connection lost` lines: there
-   should be none.
-3. If the connect screen says macOS is keeping Rimix off the local
-   network, do the Local Network toggle above and say so in the report:
-   it would mean the signing fix is not sufficient on its own.
+Roy opens the new build and tries, in order: shoot (does the file land in
+`~/Pictures/Rimix/<date>` with a progress bar?), the mode dial (names?),
+ISO plus/minus and Custom, record then stop (clip copied, or "Videos stay
+on the card"?), "Use as a webcam". Then read `camera-ZV-E10.json` and the
+log. Likely follow-ups: mode values missing from the table; the card
+refused in PC Remote (then say so in the README and drop the two walks);
+the save destination write refused (the log has a warning naming it).
 
-Diagnostic commands if it still fails (Roy types the password himself;
-never paste it into the chat):
+If the connect screen says macOS is keeping Rimix off the local network,
+do the Local Network toggle above: it would mean the signing fix is not
+sufficient on its own.
+
+Diagnostic commands if the connection itself fails (Roy types the password
+himself; never paste it into the chat):
 
 ```
 networksetup -setairportnetwork en0 "DIRECT-YKE1:ZV-E10" "<password>"

@@ -99,12 +99,26 @@ With Bluetooth on (App settings, Connection, the Bluetooth switch), Nearby also 
 - Wi-Fi joining by QR code, by typed name and password, or from the nearby list. If the network is not visible yet, Rimix says "This computer can't see <name> yet" and tells you to open Wi-Fi Direct Info on the camera and try again.
 - Reconnecting: from the second attempt Rimix rejoins the camera's Wi-Fi by itself. From attempt 5 the top bar says "Reconnecting… if the camera's Wi-Fi dropped, rejoin it from the Wi-Fi menu".
 - Per-model settings: Rimix handles older and newer camera generations differently. Hover the firmware in the top bar to see the generation.
+- Pictures on this computer: when Rimix connects it sets the camera's "Still Img. Save Dest." to PC+Camera, so every picture is saved on the card and copied to the Save to folder (RAW included, in whatever format the camera shoots). While files arrive, the Last captures panel shows one bar for everything ("Copying 2 files to this computer 30%") above a bar for each file. If the camera will not allow it, the Save to panel says so.
+- Videos: when you stop recording, Rimix looks at the card and copies the new clip the same way. Many cameras do not let their card be read while they are remote controlled; Rimix then says "Videos stay on the card" once and leaves them there.
+- ISO: plus and minus move about 50 at a time and land on the nearest ISO the camera has (a camera only takes its own stops: 100, 125, 160, 200 and so on). Under ISO, the Custom box takes a typed value, shows the lowest and highest the camera allows, and sets the nearest one.
+- Webcam: "Use as a webcam" in the Cameras panel sends the camera's live picture to other apps instead of the screen. See "Use the camera as a webcam".
 - Scopes: in the Scopes and timer panel, switch on Waveform, False colour, Zebra or Thirds grid over the live view.
 - Several cameras: the Cameras panel lists every connected camera; click one to make it the one the controls act on. "Add a camera" opens the connect screen while the others stay connected, and "Back to <model>" returns to them. "Shoot all" fires every connected camera at once, and "Disconnect all" drops them all. While several cameras are connected, each filmstrip tile is labelled with the camera it came from. See "Several cameras at once" above for the Wi-Fi limits.
 - Browse card: in the Cameras panel, "Browse card" lists the active camera's card, newest first. "Download" saves a file (videos too) into the Save to folder and into the filmstrip, and the row then says "Saved". Files of 4 GB or more say "Too large to download". An empty card says "No files on the card".
 - Receive from camera: in App settings, the Receive from camera switch starts an SFTP server the camera's FTP Transfer function can send to. While it is on, the section shows the Address, Username, Password and Fingerprint to type into the camera, and "New password" makes a new password. The hint reads "On the camera: Menu, Network, FTP Transfer Func., Server Setting; choose SFTP, enter this address, username and password." Received files land in the Save to folder and in the filmstrip, labelled "Received".
 - Bluetooth: see "Bluetooth" under "Connect your camera".
 - Interval timer: in the Scopes and timer panel, open the Interval timer row. Set Every (seconds, at least 2) and Shots (leave empty for no limit), then press Start. The dock shows, for example, "Interval 3 of 20, next in 4 s". Shots skipped because the camera was busy are counted as missed. A dropped link does not stop the run; Disconnect and Stop do.
+
+## Use the camera as a webcam
+
+macOS only lets an app add a camera to the system if it is signed with an Apple Developer ID, which Rimix does not have. So Rimix serves the picture on this computer and the free OBS app turns it into a camera every app can choose:
+
+1. In Rimix, turn on "Use as a webcam" in the Cameras panel. The live view gives way to a panel with the address of the picture, `http://127.0.0.1:8717/`.
+2. Install OBS (obsproject.com) once. In OBS, add a Browser source and paste that address. (A Media source with `http://127.0.0.1:8717/stream.mjpg` works too.)
+3. In OBS click Start Virtual Camera, then choose "OBS Virtual Camera" in Zoom, Meet, Teams or any other app.
+
+Sound is not part of it: apps keep using this computer's microphone. The Quality choice sets how much picture is sent: Full is every frame as the camera sends it, Medium is three quarters of the size at up to 20 frames a second, Low is half the size at up to 10. Only this computer can reach the address. The camera's own controls keep working while it is a webcam.
 
 ## Logs
 
@@ -193,6 +207,10 @@ All the environment variables:
 - `RIMIX_BLE=fake`: Bluetooth finds a pretend ZV-E10 whose network is `DIRECT-abc1:ZV-E10` with password `12345678`. `RIMIX_BLE=off`: Bluetooth is unavailable for this run.
 - `RIMIX_WEBCAM=off`: the connect screen never opens the webcam and says "Webcam off for this run" on the scan card. Useful for smoke tests on a machine without a webcam, or to avoid the camera permission prompt.
 - `RIMIX_LOG=<level>`: the log level, for example `debug`.
+
+To work on the interface in a browser with a pretend camera behind it (no Tauri, no simulator): `pnpm dev` in `apps/desktop`, then open `http://localhost:1420/preview.html`. `src/preview.ts` lists its query parameters, for example `?layout=Ring&theme=Dark&transfers=1` or `?webcam=1`.
+
+To see the webcam feed without the app, serving the simulator's live view: `cargo run -p rimix-desktop --example webcam_feed`, then open the address it prints.
 
 A full smoke test without any hardware:
 
