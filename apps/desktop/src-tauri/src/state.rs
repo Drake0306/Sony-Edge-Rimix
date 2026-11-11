@@ -1578,6 +1578,7 @@ mod tests {
             }],
             live_view_fps: 29.5,
             last_shot_at: None,
+            shots_to_computer: None,
         });
         let tagged = TaggedEvent {
             camera_id: &id,

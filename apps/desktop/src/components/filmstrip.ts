@@ -27,8 +27,24 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
   film.setAttribute('aria-label', 'Last six captures');
   const h = el('div', 'h');
   h.append(el('span', '', 'Last captures'));
+  // Everything arriving, as one line and bar above the tiles.
+  const total = el('div', 'total');
+  total.setAttribute('role', 'status');
+  const what = el('span', 'what');
+  const pctText = el('span', 'pct');
+  const line = el('div', 'line');
+  line.append(what, pctText);
+  const bar = el('div', 'bar');
+  bar.setAttribute('role', 'progressbar');
+  bar.setAttribute('aria-valuemin', '0');
+  bar.setAttribute('aria-valuemax', '100');
+  bar.setAttribute('aria-label', 'Files being copied to this computer');
+  const fill = el('i');
+  bar.append(fill);
+  total.append(line, bar);
+  total.hidden = true;
   const strip = el('div', 'strip');
-  film.append(h, strip);
+  film.append(h, total, strip);
   root.append(film);
 
   /** Object URLs of thumbnails by file path; '' while loading or when there is none. */
@@ -93,7 +109,19 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
       if (url) URL.revokeObjectURL(url);
       urls.delete(path);
     }
-    const busy = Object.entries(transfers).map(([key, tr]) =>
+    const arriving = Object.entries(transfers);
+    total.hidden = arriving.length === 0;
+    if (arriving.length > 0) {
+      const sum = (pick: (t: Transfer) => number) => arriving.reduce((n, [, t]) => n + pick(t), 0);
+      const all = sum((t) => t.total);
+      const pct = all > 0 ? Math.min(100, Math.round((sum((t) => t.received) / all) * 100)) : 0;
+      const name = arriving.length === 1 ? transferName(arriving[0][0]) : `${arriving.length} files`;
+      what.textContent = `Copying ${name} to this computer`;
+      pctText.textContent = `${pct}%`;
+      bar.setAttribute('aria-valuenow', String(pct));
+      fill.style.width = `${pct}%`;
+    }
+    const busy = arriving.map(([key, tr]) =>
       tile(transferName(key), el('span', 'pic'), labelOf(transferCamera(key)), tr),
     );
     const captionOf = (c: CaptureItem) => (several || c.cameraId === SFTP_CAMERA_ID ? c.cameraLabel || null : null);

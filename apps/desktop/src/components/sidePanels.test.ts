@@ -22,6 +22,19 @@ const settings: AppSettings = {
 };
 
 describe('Save to', () => {
+  test('says when the camera keeps pictures on its card only', () => {
+    const camera = { shots_to_computer: false } as unknown as CameraState;
+    const store = createStore({ ...initialState(), screen: 'main' as const, settings, camera });
+    const section = saveToSection(store, createActions(store));
+    const line = () => section.el.querySelector<HTMLElement>('.save-error')!;
+    expect(line().hidden).toBe(false);
+    expect(line().textContent).toContain('Still Img. Save Dest. to PC+Camera');
+    // Once the camera sends them here, the line goes.
+    store.set({ camera: { ...camera, shots_to_computer: true } });
+    expect(line().hidden).toBe(true);
+    section.destroy();
+  });
+
   test('shows a save failure until it is cleared', () => {
     const store = createStore({ ...initialState(), screen: 'main' as const, settings });
     const section = saveToSection(store, createActions(store));

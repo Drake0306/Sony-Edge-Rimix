@@ -3,6 +3,7 @@
 
 import { sameAddress } from '../address';
 import type { Actions } from '../actions';
+import { SHOTS_STAY_ON_CARD } from '../copy';
 import { button, el, icon } from '../dom';
 import type { AppSettings, DestinationMode, RecentCamera } from '../ipc';
 import { watch, type AppState, type AppStore, type SaveError } from '../state';
@@ -75,10 +76,15 @@ export function saveToSection(store: AppStore, actions: Actions): { el: HTMLElem
     const folder = await actions.pickFolder();
     if (folder) save({ destinationBase: folder });
   });
-  const offError = watch(store, (s) => s.saveError, (e) => {
-    failure.hidden = e === null;
-    failure.textContent = e ? saveErrorText(e) : '';
-  });
+  // A failed save wins; else the camera keeping its shots to itself is said.
+  const showFailure = () => {
+    const { saveError, camera } = store.get();
+    const text = saveError ? saveErrorText(saveError) : camera?.shots_to_computer === false ? SHOTS_STAY_ON_CARD : '';
+    failure.hidden = text === '';
+    failure.textContent = text;
+  };
+  const offError = watch(store, (s) => s.saveError, showFailure);
+  const offCamera = watch(store, (s) => s.camera?.shots_to_computer, showFailure);
   const offSettings = watch(store, (s) => s.settings, (s) => {
     pathText.textContent = s ? destinationText(s) : '';
     pathText.title = s?.destinationBase ?? '';
@@ -96,6 +102,7 @@ export function saveToSection(store: AppStore, actions: Actions): { el: HTMLElem
   });
   const destroy = () => {
     offError();
+    offCamera();
     offSettings();
   };
   return { el: sect('Save to', path, failure, modes), destroy };

@@ -63,6 +63,8 @@ export interface CameraState {
   live_view_fps: number;
   /** Milliseconds since the Unix epoch. */
   last_shot_at: number | null;
+  /** False while the camera keeps new pictures on its card only; null when it does not say. */
+  shots_to_computer?: boolean | null;
 }
 
 export interface Received {
@@ -88,7 +90,8 @@ export type CameraEvent =
   | {
       CardDownloadProgress: { handle: number; filename: string; received: number; total: number };
     }
-  | { CardDownloadFailed: { handle: number; filename: string; error: string } };
+  | { CardDownloadFailed: { handle: number; filename: string; error: string } }
+  | { MovieTransferUnavailable: { reason: string } };
 
 type Tagged<K extends string> = Extract<CameraEvent, Record<K, unknown>>;
 

@@ -67,6 +67,18 @@ pub fn default_card() -> Vec<SimCardFile> {
     ]
 }
 
+/// The clip a finished movie recording leaves in `PRIVATE/M4ROOT/CLIP`:
+/// `C000<n>.MP4`, 3 MiB.
+pub fn new_clip(n: u32) -> SimCardFile {
+    SimCardFile {
+        folder: "PRIVATE/M4ROOT/CLIP".into(),
+        filename: format!("C{n:04}.MP4"),
+        bytes: 3 * MIB,
+        format: FMT_MP4,
+        captured: chrono::Local::now().naive_local(),
+    }
+}
+
 /// The file behind `handle`, if any.
 pub fn file(card: &[SimCardFile], handle: u32) -> Option<&SimCardFile> {
     let index = handle.checked_sub(FIRST_HANDLE)?;
