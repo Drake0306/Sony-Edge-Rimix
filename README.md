@@ -55,13 +55,15 @@ pnpm tauri build
 
 Download the latest `Rimix_..._universal.dmg` from the [Releases](../../releases) page, open it and drag Rimix into Applications. Rimix needs macOS 14 or newer.
 
-The download is unsigned until the project owner adds Apple signing secrets (see "Release a version"), so macOS will warn about it the first time. Either right-click Rimix in Applications and choose Open, or run this once in Terminal:
+The download is not signed with an Apple Developer ID until the project owner adds Apple signing secrets (see "Release a version"), so macOS will warn about it the first time. Either right-click Rimix in Applications and choose Open, or run this once in Terminal:
 
 ```
 xattr -d com.apple.quarantine /Applications/Rimix.app
 ```
 
-Rimix asks for camera permission on first launch. It uses the webcam only to scan the QR code on your camera's screen. To join the camera's Wi-Fi network, Rimix uses macOS's own `networksetup` command, which needs no admin rights.
+On first launch macOS asks whether Rimix may find devices on your local network. Choose Allow: without it Rimix cannot find or reach the camera, and every search fails as if the camera were not there. You can change it later in System Settings, Privacy & Security, Local Network.
+
+Rimix also asks for camera permission on first launch. It uses the webcam only to scan the QR code on your camera's screen. To join the camera's Wi-Fi network, Rimix uses macOS's own `networksetup` command, which needs no admin rights.
 
 ## Install on Windows
 
@@ -158,7 +160,7 @@ git push origin v0.2.0
 
 The Release workflow builds a DMG (universal Mac app) and an NSIS installer for Windows into one draft release. In detail: it creates the draft with the DMG attached, then builds the Windows installer (`Rimix_<version>_x64-setup.exe`) and adds it to the same draft. Review the draft, then publish it.
 
-For a signed and notarized build, add these repository secrets (Settings, Secrets and variables, Actions): `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`. Without them the workflow still runs and the DMG is unsigned.
+For a signed and notarized build, add these repository secrets (Settings, Secrets and variables, Actions): `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`. Without them the workflow still runs and the app is signed ad hoc (`signingIdentity` is `-` in `tauri.conf.json`): macOS still warns on first open, but the app carries its bundle identifier, which macOS needs to keep its Local Network permission from one build to the next. `scripts/check-mac-bundle.sh path/to/Rimix.app` checks a built app for this.
 
 ### Building a release on your own Mac
 

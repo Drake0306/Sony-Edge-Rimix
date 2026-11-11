@@ -15,11 +15,18 @@ use crate::error::Error;
 /// Returns `Ok(None)` when there is no gateway, nothing answers within
 /// `timeout`, or the platform is not macOS or Windows.
 pub async fn probe_gateway(timeout: Duration) -> Result<Option<DiscoveredCamera>, Error> {
-    let Some(ip) = default_gateway().await? else {
-        return Ok(None);
-    };
+    Ok(probe_address(default_gateway().await?, timeout).await)
+}
+
+/// Tries a TCP connection to the PTP/IP port of the gateway at `ip`.
+/// `None` when there is no gateway or nothing answers within `timeout`.
+pub(super) async fn probe_address(
+    ip: Option<IpAddr>,
+    timeout: Duration,
+) -> Option<DiscoveredCamera> {
+    let ip = ip?;
     match tokio::time::timeout(timeout, TcpStream::connect((ip, PTP_PORT))).await {
-        Ok(Ok(_stream)) => Ok(Some(DiscoveredCamera {
+        Ok(Ok(_stream)) => Some(DiscoveredCamera {
             model: "Camera".into(),
             friendly_name: format!("Camera at {ip}"),
             ip,
@@ -28,17 +35,17 @@ pub async fn probe_gateway(timeout: Duration) -> Result<Option<DiscoveredCamera>
             pairing_required: None,
             ssh_supported: None,
             source: DiscoverySource::Gateway,
-        })),
+        }),
         Ok(Err(e)) => {
             tracing::debug!(%ip, error = %e, "gateway refused PTP/IP");
-            Ok(None)
+            None
         }
-        Err(_) => Ok(None),
+        Err(_) => None,
     }
 }
 
 #[cfg(target_os = "macos")]
-async fn default_gateway() -> Result<Option<IpAddr>, Error> {
+pub(super) async fn default_gateway() -> Result<Option<IpAddr>, Error> {
     let mut command = std::process::Command::new("route");
     command.args(["-n", "get", "default"]);
     let output = run(command).await?;
@@ -46,7 +53,7 @@ async fn default_gateway() -> Result<Option<IpAddr>, Error> {
 }
 
 #[cfg(target_os = "windows")]
-async fn default_gateway() -> Result<Option<IpAddr>, Error> {
+pub(super) async fn default_gateway() -> Result<Option<IpAddr>, Error> {
     use std::os::windows::process::CommandExt;
     /// Keeps a console window from flashing up in GUI apps.
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -59,7 +66,7 @@ async fn default_gateway() -> Result<Option<IpAddr>, Error> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-async fn default_gateway() -> Result<Option<IpAddr>, Error> {
+pub(super) async fn default_gateway() -> Result<Option<IpAddr>, Error> {
     Ok(None)
 }
 

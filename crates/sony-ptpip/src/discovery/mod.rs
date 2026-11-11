@@ -44,15 +44,45 @@ pub enum DiscoverySource {
     Manual,
 }
 
+/// What one search of the network found.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Discovery {
+    pub cameras: Vec<DiscoveredCamera>,
+    /// The operating system refused the search itself, so an empty list
+    /// says nothing about the network: see [`local_network_blocked`].
+    pub blocked: bool,
+}
+
 /// Finds cameras by SSDP and by probing the default gateway at the same
 /// time, within `timeout` for each search.
 ///
 /// Only Sony cameras are returned, one per IP address, preferring the SSDP
 /// entry. A failing source is logged and skipped, so this does not fail.
 pub async fn discover(timeout: Duration) -> Result<Vec<DiscoveredCamera>, Error> {
-    let (locations, gateway) = tokio::join!(ssdp_search(timeout, None), probe_gateway(timeout));
+    Ok(discover_report(timeout).await?.cameras)
+}
+
+/// [`discover`], also saying whether the system refused the search.
+pub async fn discover_report(timeout: Duration) -> Result<Discovery, Error> {
+    let gateway = probe::default_gateway().await.unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "gateway probe failed");
+        None
+    });
+    let (locations, at_gateway) = tokio::join!(
+        ssdp_search(timeout, None),
+        probe::probe_address(gateway, timeout)
+    );
+    let blocked =
+        cfg!(target_os = "macos") && refused_by_system(gateway.is_some(), locations.as_ref().err());
     let locations = locations.unwrap_or_else(|e| {
-        tracing::warn!(error = %e, "SSDP search failed");
+        if blocked {
+            tracing::warn!(
+                "the system refused the SSDP search: this program is not allowed on the \
+                 local network (System Settings, Privacy & Security, Local Network)"
+            );
+        } else {
+            tracing::warn!(error = %e, "SSDP search failed");
+        }
         Vec::new()
     });
 
@@ -74,12 +104,37 @@ pub async fn discover(timeout: Duration) -> Result<Vec<DiscoveredCamera>, Error>
         }
     }
 
-    match gateway {
-        Ok(Some(camera)) => cameras.push(camera),
-        Ok(None) => {}
-        Err(e) => tracing::warn!(error = %e, "gateway probe failed"),
-    }
-    Ok(dedup_by_ip(cameras))
+    cameras.extend(at_gateway);
+    Ok(Discovery {
+        cameras: dedup_by_ip(cameras),
+        blocked,
+    })
+}
+
+/// What macOS gives a send it refuses: `EHOSTUNREACH`, "No route to host".
+const MACOS_HOST_UNREACHABLE: i32 = 65;
+
+/// Whether the operating system itself is keeping this program off the
+/// local network, rather than the network being silent.
+///
+/// macOS asks the user once whether an app may reach devices on the local
+/// network. Until that is allowed (and for a build macOS no longer matches
+/// to the permission it stored) every send to the local network fails at
+/// once with "No route to host", SSDP and the camera's PTP/IP port alike.
+/// The same error is genuine when the computer has no default route, so
+/// that case does not count. Always `false` off macOS.
+pub async fn local_network_blocked() -> bool {
+    // Sending is enough: a refusal comes back from the send itself.
+    discover_report(Duration::ZERO)
+        .await
+        .is_ok_and(|found| found.blocked)
+}
+
+/// Whether a failed local send (`error`) on a computer that does or does
+/// not have a default route was the system refusing it.
+fn refused_by_system(has_default_route: bool, error: Option<&Error>) -> bool {
+    has_default_route
+        && matches!(error, Some(Error::Io(e)) if e.raw_os_error() == Some(MACOS_HOST_UNREACHABLE))
 }
 
 /// Keeps the first camera seen at each IP address.
@@ -111,6 +166,36 @@ mod tests {
             ssh_supported: None,
             source,
         }
+    }
+
+    fn send_error(code: i32) -> Error {
+        Error::Io(std::io::Error::from_raw_os_error(code))
+    }
+
+    #[test]
+    fn a_refused_send_with_a_default_route_is_the_system_blocking() {
+        assert!(refused_by_system(true, Some(&send_error(65))));
+    }
+
+    #[test]
+    fn a_refused_send_without_a_default_route_is_just_no_route() {
+        assert!(!refused_by_system(false, Some(&send_error(65))));
+    }
+
+    #[test]
+    fn other_send_failures_and_successes_are_not_the_system_blocking() {
+        // 51: network is unreachable, as while the Wi-Fi changes networks.
+        assert!(!refused_by_system(true, Some(&send_error(51))));
+        assert!(!refused_by_system(true, Some(&Error::Timeout)));
+        assert!(!refused_by_system(true, None));
+    }
+
+    #[tokio::test]
+    async fn an_address_with_nothing_to_probe_finds_nothing() {
+        assert_eq!(
+            probe::probe_address(None, Duration::from_millis(10)).await,
+            None
+        );
     }
 
     #[test]
