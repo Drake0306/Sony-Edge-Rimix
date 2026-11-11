@@ -260,21 +260,34 @@ impl PtpIpConnection {
         Ok((conn, ack))
     }
 
-    fn begin(&mut self) -> Result<u32, Error> {
+    /// Starts transaction `op`: marks it in flight and returns its id.
+    /// Logged at debug level, so `RUST_LOG=debug` traces every exchange.
+    fn begin(&mut self, op: u16, params: &[u32]) -> Result<u32, Error> {
         if self.is_disconnected() {
             return Err(Error::Disconnected);
         }
         self.poisoned = true;
         let tid = self.next_tid;
         self.next_tid = self.next_tid.wrapping_add(1).max(1);
+        tracing::debug!(
+            op = format!("{op:#06x}"),
+            tid,
+            params = params.len(),
+            "transaction"
+        );
         Ok(tid)
     }
 
     /// Clears the in-flight marker when the transaction ran to its response,
-    /// leaving the stream at a frame boundary.
-    fn finish<T>(&mut self, result: Result<T, Error>) -> Result<T, Error> {
-        if matches!(result, Ok(_) | Err(Error::Response { .. })) {
-            self.poisoned = false;
+    /// leaving the stream at a frame boundary. A timeout is logged with the
+    /// operation, since [`Error::Timeout`] does not name it.
+    fn finish<T>(&mut self, op: u16, tid: u32, result: Result<T, Error>) -> Result<T, Error> {
+        match &result {
+            Ok(_) | Err(Error::Response { .. }) => self.poisoned = false,
+            Err(Error::Timeout) => {
+                tracing::warn!(op = format!("{op:#06x}"), tid, "operation timed out");
+            }
+            Err(_) => {}
         }
         result
     }
@@ -285,7 +298,7 @@ impl PtpIpConnection {
     /// the connection unusable: later commands return [`Error::Disconnected`]
     /// and the connection must be reopened.
     pub async fn command(&mut self, op: u16, params: &[u32]) -> Result<Vec<u32>, Error> {
-        let tid = self.begin()?;
+        let tid = self.begin(op, params)?;
         let limit = self.timeout;
         let result = with_timeout(limit, async {
             self.send_request(DATA_PHASE_NONE_OR_IN, op, tid, params)
@@ -311,7 +324,7 @@ impl PtpIpConnection {
             response(op, tid, p)
         })
         .await;
-        self.finish(result)
+        self.finish(op, tid, result)
     }
 
     /// Runs a transaction with a data phase from the camera; returns the data
@@ -325,14 +338,14 @@ impl PtpIpConnection {
         op: u16,
         params: &[u32],
     ) -> Result<(Vec<u8>, Vec<u32>), Error> {
-        let tid = self.begin()?;
+        let tid = self.begin(op, params)?;
         let limit = self.timeout;
         let result = with_timeout(
             limit,
             self.data_in_phase(op, params, tid, None, &mut |_| {}),
         )
         .await;
-        self.finish(result)
+        self.finish(op, tid, result)
     }
 
     /// Like [`command_data_in`](Self::command_data_in), but for large objects
@@ -360,11 +373,11 @@ impl PtpIpConnection {
         idle: Duration,
         on_data: &mut (dyn FnMut(u64) + Send),
     ) -> Result<(Vec<u8>, Vec<u32>), Error> {
-        let tid = self.begin()?;
+        let tid = self.begin(op, params)?;
         let result = self
             .data_in_phase(op, params, tid, Some(idle), on_data)
             .await;
-        self.finish(result)
+        self.finish(op, tid, result)
     }
 
     /// Sends the request and reads the data phase and the response. With
@@ -456,7 +469,7 @@ impl PtpIpConnection {
         params: &[u32],
         data: &[u8],
     ) -> Result<Vec<u32>, Error> {
-        let tid = self.begin()?;
+        let tid = self.begin(op, params)?;
         let limit = self.timeout;
         let result = with_timeout(limit, async {
             self.send_request(DATA_PHASE_OUT, op, tid, params).await?;
@@ -480,7 +493,7 @@ impl PtpIpConnection {
             response(op, tid, p)
         })
         .await;
-        self.finish(result)
+        self.finish(op, tid, result)
     }
 
     async fn send_request(
