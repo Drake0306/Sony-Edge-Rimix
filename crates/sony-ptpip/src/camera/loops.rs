@@ -13,13 +13,19 @@ use super::{connect_once, lock, CameraEvent, Inner, RecentShot};
 use crate::capture::{captured_ready, receive_one, Destination};
 use crate::error::Error;
 use crate::liveview::next_frame;
-use crate::ptp::codes::{EV_SONY_DEVICE_PROP_CHANGED, HANDLE_CAPTURED_STILL, OP_GET_OBJECT_INFO};
+use crate::ptp::codes::{
+    EV_SONY_DEVICE_PROP_CHANGED, HANDLE_CAPTURED_STILL, OP_GET_OBJECT_INFO, PROP_CAPTURED_READY,
+};
 use crate::ptp::parse_object_info;
-use crate::sony::property::read_changed_props;
+use crate::ptp::PtpValue;
 use crate::{PtpEvent, PtpIpConnection};
 
-/// Shortest time between two reads of changed properties.
+/// Shortest time between two reads of the property table.
 const PROP_REFRESH: Duration = Duration::from_millis(100);
+/// Longest time between two reads of the property table, so a change the
+/// camera announces with no event (such as a new shot waiting, 0xD215) is
+/// still seen.
+const PROP_POLL: Duration = Duration::from_millis(250);
 /// Wait before asking for another live view frame when none was ready.
 const NO_FRAME_WAIT: Duration = Duration::from_millis(15);
 /// Wait before the next live view request after `consecutive_failures`
@@ -34,7 +40,7 @@ pub(super) fn live_view_wait(consecutive_failures: u32) -> Duration {
 }
 /// Window the live view frame rate is measured over.
 const FPS_WINDOW: Duration = Duration::from_secs(1);
-/// How often the capture loop asks whether shots are waiting.
+/// How often the capture loop looks for waiting shots in the snapshot.
 const CAPTURE_POLL: Duration = Duration::from_millis(250);
 /// Pause after a failed delivery, so a full disk does not fail four times a second.
 const CAPTURE_RETRY: Duration = Duration::from_secs(2);
@@ -124,11 +130,21 @@ async fn run_session(inner: &Arc<Inner>, events: broadcast::Receiver<PtpEvent>) 
     reason
 }
 
-/// Re-reads changed properties after DevicePropChanged events, at most once
-/// per [`PROP_REFRESH`], and emits StateChanged. When idle it also checks the
-/// connection, so a drop is noticed even with live view and capture off.
+/// Keeps the snapshot's property table fresh: reads the whole table after
+/// DevicePropChanged events, at most once per [`PROP_REFRESH`], and at
+/// least once per [`PROP_POLL`] without them, and emits StateChanged when a
+/// property changed. Between reads it checks the connection, so a drop is
+/// noticed even with live view and capture off.
+///
+/// The table is read with 0x9209 and no parameters and compared with the
+/// snapshot here, the way libgphoto2 polls Sony bodies
+/// (`ptp_sony_getalldevicepropdesc` in `camlibs/ptp2/ptp.c`). The "changed
+/// only" form (0x9209 with parameter 1) is not used: the ZV-E10 never
+/// answers it, and every read then timed out and dropped the session.
 async fn event_loop(inner: Arc<Inner>, mut events: broadcast::Receiver<PtpEvent>) -> String {
     let mut dirty = false;
+    // The table was read while connecting.
+    let mut last_read = Instant::now();
     let mut tick = interval(PROP_REFRESH);
     tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
     loop {
@@ -141,20 +157,16 @@ async fn event_loop(inner: Arc<Inner>, mut events: broadcast::Receiver<PtpEvent>
                 Err(RecvError::Closed) => return "event channel closed".into(),
             },
             _ = tick.tick() => {
-                if dirty {
+                if dirty || last_read.elapsed() >= PROP_POLL {
                     let mut guard = inner.conn.lock().await;
                     let Some(conn) = guard.as_mut() else {
                         return "connection closed".into();
                     };
-                    match read_changed_props(conn).await {
-                        Ok(changed) => {
-                            drop(guard);
-                            dirty = false;
-                            inner.merge(changed);
-                            inner.emit_state();
-                        }
+                    last_read = Instant::now();
+                    match inner.refresh(conn).await {
+                        Ok(_) => dirty = false,
                         Err(e) if lost(conn, &e) => return e.to_string(),
-                        Err(e) => tracing::debug!(error = %e, "reading changed properties failed"),
+                        Err(e) => tracing::debug!(error = %e, "reading the properties failed"),
                     }
                 } else if let Ok(guard) = inner.conn.try_lock() {
                     // Only checked when nobody else is using the connection,
@@ -213,19 +225,19 @@ async fn live_view_loop(inner: Arc<Inner>) -> String {
 }
 
 /// Saves new shots as the camera reports them waiting.
+///
+/// The waiting count (0xD215) comes from the snapshot's property table,
+/// which the event loop keeps fresh; nothing is asked of the camera until a
+/// shot waits. After each delivery the table is read again here, so the
+/// shot just fetched is not taken for another one.
 async fn capture_loop(inner: Arc<Inner>) -> String {
     let mut tick = interval(CAPTURE_POLL);
     tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
     loop {
         tick.tick().await;
         loop {
-            let mut guard = inner.conn.lock().await;
-            let Some(conn) = guard.as_mut() else {
-                return "connection closed".into();
-            };
-            let ready = match captured_ready(conn).await {
+            let ready = match captured_ready(&lock(&inner.snapshot).props) {
                 Ok(n) => n,
-                Err(e) if lost(conn, &e) => return e.to_string(),
                 Err(e) => {
                     tracing::debug!(error = %e, "reading the capture count failed");
                     break;
@@ -234,12 +246,35 @@ async fn capture_loop(inner: Arc<Inner>) -> String {
             if ready == 0 {
                 break;
             }
+            let mut guard = inner.conn.lock().await;
+            let Some(conn) = guard.as_mut() else {
+                return "connection closed".into();
+            };
             match receive_next(&inner, conn).await {
-                Ok(()) => {}
+                Ok(()) => {
+                    // Forget the fetched shot now, so a failed read below
+                    // cannot leave the old count in place for the next tick.
+                    let mut snap = lock(&inner.snapshot);
+                    if let Some(p) = snap
+                        .props
+                        .iter_mut()
+                        .find(|p| p.code == PROP_CAPTURED_READY)
+                    {
+                        p.current = PtpValue::U16(0);
+                    }
+                }
                 Err(e) if lost(conn, &e) => return e.to_string(),
                 Err(_) => {
                     drop(guard);
                     sleep(CAPTURE_RETRY).await;
+                    break;
+                }
+            }
+            match inner.refresh(conn).await {
+                Ok(_) => {}
+                Err(e) if lost(conn, &e) => return e.to_string(),
+                Err(e) => {
+                    tracing::debug!(error = %e, "reading the properties failed");
                     break;
                 }
             }

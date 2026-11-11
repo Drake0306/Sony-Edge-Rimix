@@ -105,6 +105,14 @@ rimix props 192.168.122.1 --all > zv-e10-props.txt
 
 **What to send back:** the file `zv-e10-props.txt` (it is created in the folder you ran the command from). If the command printed an error instead, paste that.
 
+Good to know: while connected, Rimix keeps the settings fresh by reading the whole list again a few times a second, the same way libgphoto2 does (operation 0x9209 with no parameters). Earlier versions asked for "only what changed" (0x9209 with a parameter) and read the new-picture flag on its own (0x9251); the ZV-E10 never answered one of those, so the app dropped and reconnected every few seconds. If the app still says "disconnected" over and over, run this with the Mac on the camera's network:
+
+```
+RUST_LOG=debug ~/Downloads/Rimix-0.1.0/rimix watch 192.168.122.1 --exit-after 20 2>&1 | tail -80
+```
+
+It logs every operation Rimix sends (`transaction op=0x…`), and an operation the camera never answers shows as `operation timed out` with its `op` named. Paste the output.
+
 ## 5. Take a picture
 
 ```

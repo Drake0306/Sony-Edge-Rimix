@@ -12,7 +12,7 @@ use crate::ptp::codes::{
 };
 use crate::ptp::PtpValue;
 use crate::quirks::{Quirks, WriteMode};
-use crate::sony::property::{read_property, set_property, Form, PropertyDesc};
+use crate::sony::property::{read_all_props, set_property, Form, PropertyDesc};
 use crate::PtpIpConnection;
 
 const PRESS: PtpValue = PtpValue::U16(2);
@@ -172,7 +172,14 @@ async fn step_to(
         let at = index(&current).ok_or(Error::Unsupported("step"))?;
         let direction = if goal > at { 1 } else { -1 };
         control(conn, desc.code, &PtpValue::I8(direction)).await?;
-        current = read_property(conn, desc.code).await?.current;
+        // The whole table, as libgphoto2 reads it; some bodies never answer
+        // the single-property read (0x9251).
+        current = read_all_props(conn)
+            .await?
+            .into_iter()
+            .find(|p| p.code == desc.code)
+            .ok_or_else(|| Error::Protocol(format!("property {:#06x} disappeared", desc.code)))?
+            .current;
     }
     if current == *target {
         Ok(())

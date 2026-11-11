@@ -13,7 +13,7 @@ use crate::ptp::codes::{
     HANDLE_CAPTURED_STILL, OP_GET_OBJECT, OP_GET_OBJECT_INFO, PROP_CAPTURED_READY,
 };
 use crate::ptp::parse_object_info;
-use crate::sony::property::read_property;
+use crate::sony::property::PropertyDesc;
 use crate::PtpIpConnection;
 
 /// Longest silence from the camera while a shot downloads; the download as
@@ -96,9 +96,23 @@ pub struct Received {
     pub camera_filename: String,
 }
 
-/// How many shots the camera holds ready to fetch (property 0xD215).
-pub async fn captured_ready(conn: &mut PtpIpConnection) -> Result<u16, Error> {
-    let prop = read_property(conn, PROP_CAPTURED_READY).await?;
+/// How many shots the camera holds ready to fetch, from property 0xD215 in
+/// a property table read with
+/// [`read_all_props`](crate::sony::property::read_all_props). This talks to
+/// no camera: like libgphoto2, the flag is taken from the 0x9209 table
+/// rather than read on its own with 0x9251, which some bodies never answer.
+/// A table without 0xD215 counts as nothing waiting.
+pub fn captured_ready(props: &[PropertyDesc]) -> Result<u16, Error> {
+    let Some(prop) = props.iter().find(|p| p.code == PROP_CAPTURED_READY) else {
+        // Said once: without 0xD215 in the table, shots are never fetched.
+        static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !props.is_empty() && !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            tracing::warn!(
+                "the camera's property table has no 0xD215 (captured-ready); shots will not be received automatically"
+            );
+        }
+        return Ok(0);
+    };
     let raw = prop
         .current
         .as_u64()

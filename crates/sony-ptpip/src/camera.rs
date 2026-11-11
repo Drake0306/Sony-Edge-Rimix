@@ -5,11 +5,14 @@
 //! A supervisor task owns the connection's lifecycle. While connected it runs
 //! two or three loops that share the one connection through a mutex:
 //!
-//! - the event loop re-reads changed properties after DevicePropChanged
-//!   events (at most every 100 ms) and emits [`CameraEvent::StateChanged`];
+//! - the event loop re-reads the whole property table (0x9209 with no
+//!   parameters, as libgphoto2 polls it) after DevicePropChanged events, at
+//!   most every 100 ms, and at least every 250 ms without them, and emits
+//!   [`CameraEvent::StateChanged`] when something changed;
 //! - the live view loop fetches frames and emits [`CameraEvent::Frame`];
 //! - the capture loop, when `auto_receive` is on, saves new shots into the
-//!   destination folder.
+//!   destination folder, seeing them waiting in the property table the event
+//!   loop keeps fresh (0xD215).
 //!
 //! When any loop finds the connection gone, the supervisor emits
 //! [`CameraEvent::Disconnected`], stops the loops and, if reconnecting is on,
@@ -39,7 +42,7 @@ use crate::error::Error;
 use crate::liveview::{self, LiveViewFrame};
 use crate::ptp::codes::{OP_GET_DEVICE_INFO, PROP_FOCUS_MODE};
 use crate::ptp::{parse_device_info, PtpValue};
-use crate::sony::property::{read_all_props, read_changed_props, Enabled, PropertyDesc};
+use crate::sony::property::{read_all_props, Enabled, PropertyDesc};
 use crate::sony::{control, sdio_connect};
 use crate::ssh::{SshConfig, SshTunnel};
 use crate::{quirks_for, ConnectOptions, PtpEvent, PtpIpConnection};
@@ -286,8 +289,15 @@ impl Inner {
         self.stop.load(Ordering::SeqCst)
     }
 
-    fn merge(&self, changed: Vec<PropertyDesc>) {
-        lock(&self.snapshot).merge(changed);
+    /// Reads the whole property table and merges it into the snapshot,
+    /// emitting StateChanged if anything changed. Returns whether it did.
+    async fn refresh(&self, conn: &mut PtpIpConnection) -> Result<bool, Error> {
+        let props = read_all_props(conn).await?;
+        let changed = lock(&self.snapshot).merge(props);
+        if changed {
+            self.emit_state();
+        }
+        Ok(changed)
     }
 
     fn mark_shot(&self) {
@@ -422,7 +432,8 @@ impl Camera {
     }
 
     /// Sets a property to `value`, which must be one of its settable values
-    /// (or on its range), then refreshes the state and emits StateChanged.
+    /// (or on its range), then refreshes the state, emitting StateChanged
+    /// if the camera now reports anything different.
     pub async fn set(&self, code: u16, value: PtpValue) -> Result<(), Error> {
         let mut guard = self.inner.conn.lock().await;
         let conn = guard.as_mut().ok_or(Error::Disconnected)?;
@@ -436,10 +447,13 @@ impl Camera {
             return Err(Error::Unsupported("property cannot be set now"));
         }
         control::set_value(conn, &desc, &value, &quirks).await?;
-        let changed = read_changed_props(conn).await?;
-        drop(guard);
-        self.inner.merge(changed);
-        self.inner.emit_state();
+        // The camera took the write; a failed read-back is not a failed
+        // write unless the link is gone. The event loop reads again anyway.
+        match self.inner.refresh(conn).await {
+            Ok(_) => {}
+            Err(e) if matches!(e, Error::Disconnected) || conn.is_disconnected() => return Err(e),
+            Err(e) => tracing::warn!(error = %e, "reading the settings back after a write failed"),
+        }
         Ok(())
     }
 

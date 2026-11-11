@@ -305,6 +305,9 @@ impl Session {
         let event_reader = tokio::spawn(log_event_packets(event_r, shared.log.clone()));
         let (pkt_tx, mut packets) = mpsc::channel(16);
         let reader = tokio::spawn(read_packets(r, pkt_tx));
+        // Set once a request is left unanswered: from then on the session
+        // reads and drops every packet, like a camera stuck on an operation.
+        let mut hung = false;
         let result = loop {
             tokio::select! {
                 p = packets.recv() => {
@@ -313,7 +316,11 @@ impl Session {
                         Some(Err(e)) => break Err(e),
                         None => break Ok(()),
                     };
-                    let mut ctx = Ctx { packets: &mut packets, w: &mut w, event: &mut event, shared: &shared };
+                    if hung {
+                        tracing::debug!(?p, "simulator stuck; dropping packet");
+                        continue;
+                    }
+                    let mut ctx = Ctx { packets: &mut packets, w: &mut w, event: &mut event, shared: &shared, hung: &mut hung };
                     if let Err(e) = handle_packet(p, &mut ctx, &mut handshake_phase).await {
                         break Err(e);
                     }
@@ -461,6 +468,9 @@ struct Ctx<'a, W> {
     w: &'a mut W,
     event: &'a mut OwnedWriteHalf,
     shared: &'a Shared,
+    /// Set by an operation the simulator never answers (see
+    /// `SimConfig::props_param_hangs` and `single_prop_read_hangs`).
+    hung: &'a mut bool,
 }
 
 async fn handle_packet<W: AsyncWriteExt + Unpin>(
@@ -629,8 +639,20 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
         }
         // Other Sony operations are refused until the handshake completes.
         0x9200..=0x92FF if *handshake_phase < 3 => RC_ACCESS_DENIED,
+        OP_SDIO_GET_ALL_EXT_DEVICE_PROP_INFO
+            if shared.config.props_param_hangs && !params.is_empty() =>
+        {
+            *ctx.hung = true;
+            RC_OK
+        }
+        OP_SDIO_GET_EXT_DEVICE_PROP if shared.config.single_prop_read_hangs => {
+            *ctx.hung = true;
+            RC_OK
+        }
         OP_SDIO_GET_ALL_EXT_DEVICE_PROP_INFO => {
             let blob = match params.first() {
+                // No parameter is how libgphoto2 asks; every property.
+                None => Some(shared.props.lock().unwrap().encode_all()),
                 Some(0) => Some(shared.props.lock().unwrap().encode_all()),
                 Some(1) => Some(shared.props.lock().unwrap().take_changed()),
                 _ => None,
@@ -686,6 +708,11 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
         },
         _ => RC_OPERATION_NOT_SUPPORTED,
     };
+    if *ctx.hung {
+        line.push_str(" unanswered");
+        shared.log.lock().unwrap().push(line);
+        return Ok(());
+    }
     shared.log.lock().unwrap().push(line);
     send(
         ctx.w,
