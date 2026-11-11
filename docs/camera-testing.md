@@ -89,6 +89,8 @@ If it fails, run it again with `-v` for more detail:
 rimix connect 192.168.122.1 -v
 ```
 
+Good to know: the ZV-E10 answers each of the Sony connect steps with 8 bytes of data (confirmed on 2026-11-11). That is expected, and Rimix reads them and carries on. To see the bytes, run with `RUST_LOG=debug` in front of the command and look for `SDIO_Connect answered with data`.
+
 **What to send back:** the whole terminal output (copy and paste it, successful or not), and a photo of the camera screen at the moment it asked you to confirm. If the camera showed nothing at all, say so.
 
 ## 4. The property dump (Changes the plan)
