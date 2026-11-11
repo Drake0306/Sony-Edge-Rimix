@@ -46,9 +46,20 @@ async fn stop(sim: SimHandle, camera: Camera) {
 async fn wait_for<T>(
     rx: &mut broadcast::Receiver<CameraEvent>,
     what: &str,
+    pick: impl FnMut(&CameraEvent) -> Option<T>,
+) -> T {
+    wait_within(WAIT, rx, what, pick).await
+}
+
+/// [`wait_for`] with its own limit, for what follows a card listing: with
+/// every test of this file running at once that takes seconds.
+async fn wait_within<T>(
+    limit: Duration,
+    rx: &mut broadcast::Receiver<CameraEvent>,
+    what: &str,
     mut pick: impl FnMut(&CameraEvent) -> Option<T>,
 ) -> T {
-    timeout(WAIT, async {
+    timeout(limit, async {
         loop {
             match rx.recv().await {
                 Ok(ev) => {
@@ -784,7 +795,10 @@ async fn record_a_clip(camera: &Camera, rx: &mut broadcast::Receiver<CameraEvent
         _ => None,
     })
     .await;
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    // Long enough for the card to be listed while the recording runs, with
+    // every test of this file running at once: a clip that ends before the
+    // listing does cannot be told from older ones (see `movie_loop`).
+    tokio::time::sleep(Duration::from_secs(5)).await;
     camera.toggle_record().await.unwrap();
     wait_for(rx, "recording stopped", |ev| match ev {
         CameraEvent::StateChanged(s) if !s.recording => Some(()),
@@ -799,7 +813,8 @@ async fn a_finished_recording_is_copied_from_the_card() {
     let (sim, camera) = start(SimConfig::default(), tmp.path()).await;
     let mut rx = camera.subscribe();
     record_a_clip(&camera, &mut rx).await;
-    let started = wait_for(&mut rx, "CaptureStarted", |ev| match ev {
+    let listed = Duration::from_secs(20);
+    let started = wait_within(listed, &mut rx, "CaptureStarted", |ev| match ev {
         CameraEvent::CaptureStarted { filename } => Some(filename.clone()),
         _ => None,
     })
@@ -1074,6 +1089,101 @@ async fn focusing_at_a_point_sends_it_on_the_cameras_grid_then_focuses() {
     let log = sim.log.lock().unwrap().join("\n");
     assert!(log.contains(&format!("D2DC={}", 639u64 << 16)), "{log}");
     drop(log);
+    stop(sim, camera).await;
+}
+
+fn focus_area(camera: &Camera) -> u64 {
+    let state = camera.state();
+    let area = state.properties.iter().find(|p| p.code == 0xD22C);
+    area.and_then(|p| p.raw.as_u64()).expect("a focus area")
+}
+
+/// A spot the camera already uses is moved, and left the size it is.
+#[tokio::test]
+async fn a_focus_point_moves_the_spot_the_camera_already_uses() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = SimConfig {
+        // Flexible Spot: L.
+        focus_area: Some((0x0103, true)),
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(config, tmp.path()).await;
+    camera.focus_at(0.25, 0.5).await.unwrap();
+    let log = sim.log.lock().unwrap().join("\n");
+    assert!(
+        log.contains(&format!("D2DC={}", (160u64 << 16) | 240)),
+        "{log}"
+    );
+    assert!(!log.contains("D2E4="), "{log}");
+    drop(log);
+    assert_eq!(focus_area(&camera), 0x0103);
+    stop(sim, camera).await;
+}
+
+/// Wide, zone and centre ignore a point: the area becomes a spot first, and
+/// the point is only sent once the camera says the area has changed.
+#[tokio::test]
+async fn a_focus_point_first_makes_the_focus_area_a_spot() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = SimConfig {
+        focus_area: Some((1, true)),
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(config, tmp.path()).await;
+    camera.focus_at(0.5, 0.5).await.unwrap();
+    assert_eq!(focus_area(&camera), 0x0102);
+    let log = sim.log.lock().unwrap().join("\n");
+    // The write of the area (0x9205) comes before the point.
+    let write = log.find("op 0x9205").expect("the area is written");
+    let point = log.find("D2DC=").expect("the point is sent");
+    assert!(write < point, "{log}");
+    assert!(log[point..].contains("D2C1=2"), "{log}");
+    drop(log);
+    stop(sim, camera).await;
+}
+
+/// In its automatic modes the camera fixes the focus area. A touch on its
+/// own screen still focuses there, so the tap is sent as that touch.
+#[tokio::test]
+async fn where_the_camera_fixes_the_focus_area_a_tap_is_sent_as_a_touch() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = SimConfig {
+        focus_area: Some((1, false)),
+        remote_touch: true,
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(config, tmp.path()).await;
+    assert!(camera.state().controls.contains(&0xD2E4));
+    camera.focus_at(0.5, 0.25).await.unwrap();
+    let log = sim.log.lock().unwrap().join("\n");
+    let touch = format!("D2E4={}", (320u64 << 16) | 120);
+    assert!(log.contains(&touch), "{log}");
+    assert!(!log.contains("D2DC="), "{log}");
+    // Then the half press, to focus at the touched point.
+    let at = log.find("D2E4=").unwrap();
+    assert!(log[at..].contains("D2C1=2"), "{log}");
+    drop(log);
+    assert_eq!(focus_area(&camera), 1);
+    stop(sim, camera).await;
+}
+
+/// With the area fixed and no touch control there is nothing that would
+/// move the focus: the tap fails and says why, and no half press is made
+/// that would focus somewhere else.
+#[tokio::test]
+async fn a_tap_the_camera_cannot_follow_says_so_and_does_not_focus_elsewhere() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = SimConfig {
+        focus_area: Some((1, false)),
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(config, tmp.path()).await;
+    let before = sim.log.lock().unwrap().len();
+    let err = camera.focus_at(0.5, 0.5).await.unwrap_err();
+    assert!(err.to_string().contains("chooses where to focus"), "{err}");
+    let log = sim.log.lock().unwrap()[before..].join("\n");
+    assert!(!log.contains("D2C1="), "{log}");
+    assert!(!log.contains("D2DC="), "{log}");
     stop(sim, camera).await;
 }
 

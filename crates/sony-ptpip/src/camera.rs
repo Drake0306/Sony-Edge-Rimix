@@ -41,7 +41,8 @@ use crate::card::{self, CardObject, PartialDownload, CARD_CHUNK};
 use crate::error::Error;
 use crate::liveview::{self, LiveViewFrame};
 use crate::ptp::codes::{
-    CTRL_AF_AREA_POSITION, OP_GET_DEVICE_INFO, PROP_FOCUS_AREA, PROP_FOCUS_MODE, PROP_ISO,
+    CTRL_AF_AREA_POSITION, CTRL_REMOTE_TOUCH, OP_GET_DEVICE_INFO, PROP_EXPOSURE_PROGRAM,
+    PROP_FOCUS_AREA, PROP_FOCUS_MODE, PROP_F_NUMBER, PROP_ISO, PROP_SHUTTER_SPEED,
 };
 use crate::ptp::{parse_device_info, PtpValue};
 use crate::sony::property::{read_all_props, Enabled, Form, PropertyDesc};
@@ -583,18 +584,42 @@ impl Camera {
             (desc, quirks_for(&snap.model))
         };
         let desc = desc.ok_or(Error::Unsupported("the camera has no such property"))?;
-        if matches!(desc.form, Form::None) {
+        // The ZV-E10 calls its aperture "display only" while it takes
+        // changes to it, so aperture and shutter speed are refused only
+        // when they are off.
+        let exposure = code == PROP_F_NUMBER || code == PROP_SHUTTER_SPEED;
+        let nudged = matches!(desc.form, Form::None);
+        let usable = if nudged || exposure {
+            desc.enabled != Enabled::Off
+        } else {
+            desc.enabled == Enabled::On
+        };
+        if !desc.writable || !usable {
+            return Err(Error::Unsupported("property cannot be set now"));
+        }
+        let written = if nudged {
             // No list of values: the camera only takes nudges (shutter
             // speed and aperture on the ZV-E10), so it is walked there.
-            if !desc.writable || desc.enabled == Enabled::Off {
-                return Err(Error::Unsupported("property cannot be set now"));
-            }
-            control::nudge_to(conn, &desc, &value).await?;
+            control::nudge_to(conn, &desc, &value).await
         } else {
-            if !desc.writable || desc.enabled != Enabled::On {
-                return Err(Error::Unsupported("property cannot be set now"));
+            control::set_value(conn, &desc, &value, &quirks).await
+        };
+        tracing::info!(
+            code = %format_args!("{code:#06x}"),
+            from = ?desc.current,
+            to = ?value,
+            nudged,
+            result = %match &written {
+                Ok(()) => "taken".to_string(),
+                Err(e) => e.to_string(),
+            },
+            "setting written to the camera"
+        );
+        written?;
+        if code == PROP_EXPOSURE_PROGRAM {
+            if let Some(mode) = value.as_u64() {
+                lock(&self.inner.snapshot).mode_chosen(mode);
             }
-            control::set_value(conn, &desc, &value, &quirks).await?;
         }
         // The camera took the write; a failed read-back is not a failed
         // write unless the link is gone. The event loop reads again anyway.
@@ -602,6 +627,18 @@ impl Camera {
             Ok(_) => {}
             Err(e) if matches!(e, Error::Disconnected) || conn.is_disconnected() => return Err(e),
             Err(e) => tracing::warn!(error = %e, "reading the settings back after a write failed"),
+        }
+        // A camera can answer OK and keep its value: say so in the log.
+        let now = lock(&self.inner.snapshot)
+            .prop(code)
+            .map(|p| p.current.clone());
+        if !nudged && now.as_ref() != Some(&value) {
+            tracing::info!(
+                code = %format_args!("{code:#06x}"),
+                asked = ?value,
+                reports = ?now,
+                "the camera took a setting and reports another value straight after"
+            );
         }
         Ok(())
     }
@@ -661,52 +698,150 @@ impl Camera {
         Ok(())
     }
 
-    /// Focuses at a point of the picture, as a tap on the camera's own
-    /// screen does. `x` and `y` run from 0 to 1 across and down the picture.
+    /// Focuses at a point of the picture, `x` and `y` from 0 to 1 across
+    /// and down, as a tap on the camera's own screen does.
     ///
-    /// The point only means something while autofocus uses a movable spot,
-    /// so the focus area is switched to Flexible Spot: M first when it is
-    /// something else and the camera lists that. Then the point is sent
-    /// (0xD2DC, on the camera's 640 by 480 grid, as libgphoto2's
-    /// `_put_Sony_SpotFocusArea`) and the shutter is half pressed to focus.
+    /// What moves the focus depends on the camera's focus area:
+    ///
+    /// - a spot the camera already uses (Flexible Spot, or its tracking
+    ///   form) is moved to the point (0xD2DC, on the camera's 640 by 480
+    ///   grid, as libgphoto2's `_put_Sony_SpotFocusArea`);
+    /// - wide, zone and centre ignore a point, so the area is made Flexible
+    ///   Spot: M first, and the point is sent once the camera reports the
+    ///   change (Sony's own sample waits half a second there);
+    /// - where the camera fixes the area (its automatic modes) the tap is
+    ///   sent as a touch on its screen (0xD2E4), if it lists that control.
+    ///   Otherwise nothing would move the focus, and the tap is refused
+    ///   rather than focusing wherever the camera likes.
+    ///
+    /// Then the shutter is half pressed to focus. What the camera then
+    /// reports as its focus frames goes to the log beside the point asked
+    /// for, so a point that lands somewhere else can be seen there.
     pub async fn focus_at(&self, x: f32, y: f32) -> Result<(), Error> {
         /// The grid the camera counts the point on.
         const GRID: (f32, f32) = (640.0, 480.0);
         /// Flexible Spot: M.
         const SPOT: u16 = 0x0102;
+        /// How often, and how far apart, the area is read back after it is
+        /// changed.
+        const AREA_READS: u32 = 8;
+        const AREA_READ_EVERY: std::time::Duration = std::time::Duration::from_millis(150);
         let on_grid = |v: f32, size: f32| (v.clamp(0.0, 1.0) * size).min(size - 1.0) as u32;
         let point = (on_grid(x, GRID.0) << 16) | on_grid(y, GRID.1);
-        let (area, quirks) = {
+        let (area, mode, touch, movie, quirks) = {
             let snap = lock(&self.inner.snapshot);
-            (snap.prop(PROP_FOCUS_AREA).cloned(), quirks_for(&snap.model))
+            let number = |code| snap.prop(code).and_then(|p| p.current.as_u64());
+            (
+                snap.prop(PROP_FOCUS_AREA).cloned(),
+                number(PROP_FOCUS_MODE),
+                snap.controls.contains(&CTRL_REMOTE_TOUCH),
+                // The movie and the slow and quick motion modes.
+                number(PROP_EXPOSURE_PROGRAM)
+                    .is_some_and(|m| (0x8050..=0x805E).contains(&(m & 0xFFFF))),
+                quirks_for(&snap.model),
+            )
         };
+        // 0x01xx are the movable spots, 0x02xx their tracking forms (0x0204
+        // and up); wide, zone and centre ignore a point.
+        let movable = |v: u64| (0x0101..=0x0104).contains(&v) || (0x0204..=0x0207).contains(&v);
+        let spot = PtpValue::U16(SPOT);
+        let area_now = area.as_ref().and_then(|a| a.current.as_u64());
+        let how = match &area {
+            // Bodies with no focus area to read take the point as it is.
+            None => "point",
+            Some(a) if a.current.as_u64().is_some_and(movable) => "point",
+            Some(a) if a.writable && a.enabled == Enabled::On && a.accepts(&spot) => "spot first",
+            Some(_) if touch => "touch",
+            Some(_) => "none",
+        };
+        tracing::info!(
+            x,
+            y,
+            point = %format_args!("{point:#010x}"),
+            focus_area = %format_args!("{:#06x}", area_now.unwrap_or(0)),
+            focus_mode = %format_args!("{:#06x}", mode.unwrap_or(0)),
+            how,
+            "focus point"
+        );
+        if how == "none" {
+            return Err(Error::Unsupported(
+                "the camera chooses where to focus in this shooting mode",
+            ));
+        }
         let mut guard = self.inner.conn.lock().await;
         let conn = guard.as_mut().ok_or(Error::Disconnected)?;
-        if let Some(area) = area {
-            // 0x01xx are the movable spots, 0x02xx their tracking forms
-            // (0x0204 and up); wide, zone and centre ignore a point.
-            let movable = area
-                .current
-                .as_u64()
-                .is_some_and(|v| (0x0101..=0x0104).contains(&v) || (0x0204..=0x0207).contains(&v));
-            let spot = PtpValue::U16(SPOT);
-            if !movable && area.writable && area.enabled == Enabled::On && area.accepts(&spot) {
-                match control::set_value(conn, &area, &spot, &quirks).await {
-                    Ok(()) => {
-                        tracing::info!("focus area set to Flexible Spot: M for a focus point")
-                    }
-                    Err(e) if matches!(e, Error::Disconnected) || conn.is_disconnected() => {
-                        return Err(e)
-                    }
-                    Err(e) => {
-                        tracing::warn!(error = %e, "the camera refused Flexible Spot; sending the point anyway")
-                    }
+        if let (Some(area), "spot first") = (&area, how) {
+            control::set_value(conn, area, &spot, &quirks).await?;
+            // The camera takes a moment to change the area, and a point
+            // sent before it has is lost.
+            let mut changed = false;
+            for _ in 0..AREA_READS {
+                tokio::time::sleep(AREA_READ_EVERY).await;
+                self.inner.refresh(conn).await?;
+                let now = lock(&self.inner.snapshot)
+                    .prop(PROP_FOCUS_AREA)
+                    .and_then(|p| p.current.as_u64());
+                if now == Some(u64::from(SPOT)) {
+                    changed = true;
+                    break;
                 }
             }
+            if changed {
+                tracing::info!("focus area set to Flexible Spot: M for a focus point");
+            } else {
+                tracing::warn!("the camera has not changed its focus area to Flexible Spot: M; sending the point anyway");
+            }
         }
-        tracing::info!(x, y, point = %format_args!("{point:#010x}"), "focus point");
-        control::control(conn, CTRL_AF_AREA_POSITION, &PtpValue::U32(point)).await?;
-        control::focus(conn).await
+        let code = if how == "touch" {
+            CTRL_REMOTE_TOUCH
+        } else {
+            CTRL_AF_AREA_POSITION
+        };
+        control::control(conn, code, &PtpValue::U32(point)).await?;
+        // A touch in a movie mode focuses there by itself, and a half press
+        // would focus again by the camera's own choice.
+        let result = if how == "touch" && movie {
+            Ok(())
+        } else {
+            control::focus(conn).await
+        };
+        drop(guard);
+        self.log_focus_frames(x, y);
+        result
+    }
+
+    /// Says in the log, twice in the two seconds after a focus point, where
+    /// the camera's own focus frames are: the place the point really took.
+    fn log_focus_frames(&self, x: f32, y: f32) {
+        let inner = self.inner.clone();
+        tokio::spawn(async move {
+            for wait_ms in [500u64, 1500] {
+                tokio::time::sleep(std::time::Duration::from_millis(wait_ms)).await;
+                let Some(frame) = lock(&inner.frame).clone() else {
+                    return;
+                };
+                let list = |frames: &[liveview::FocusFrame]| {
+                    frames
+                        .iter()
+                        .map(|f| {
+                            format!(
+                                "kind {} state {} at {:.3},{:.3} size {:.3}x{:.3}",
+                                f.kind, f.state, f.cx, f.cy, f.w, f.h
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                };
+                tracing::info!(
+                    asked_x = x,
+                    asked_y = y,
+                    focus = %list(&frame.focus_frames),
+                    faces = %list(&frame.face_frames),
+                    tracking = %list(&frame.tracking_frames),
+                    "the camera's frames after a focus point"
+                );
+            }
+        });
     }
 
     /// Half presses the shutter long enough to focus.

@@ -48,7 +48,15 @@ pub async fn connect(
             keep_others.unwrap_or(true),
         ))
         .await?;
+    // The report written at connect is kept up with the camera's settings.
+    let mut report = state
+        .settings_path
+        .parent()
+        .map(|dir| state::ReportKeeper::new(crate::logging::log_dir(dir)));
     tauri::async_runtime::spawn(state::forward_events(id.clone(), events, move |event| {
+        if let Some(report) = report.as_mut() {
+            report.note(event.event);
+        }
         if let Err(e) = app.emit(CAMERA_EVENT, event) {
             tracing::warn!(error = %e, "cannot send a camera event to the window");
         }

@@ -69,6 +69,9 @@ pub const CTRL_MOVIE_REC: u16 = 0xD2C8;
 /// Where the autofocus frame goes: a u32, x in the upper 16 bits and y in
 /// the lower, on a 640 by 480 grid (libgphoto2: AFAreaPosition).
 pub const CTRL_AF_AREA_POSITION: u16 = 0xD2DC;
+/// A touch on the camera's screen, sent from the computer: where, as
+/// [`CTRL_AF_AREA_POSITION`]. Bodies that have it list it among their controls.
+pub const CTRL_REMOTE_TOUCH: u16 = 0xD2E4;
 /// Which part of the picture autofocus uses (wide, zone, a movable spot...).
 pub const PROP_FOCUS_AREA: u16 = 0xD22C;
 /// Shots left on the card in slot 1.

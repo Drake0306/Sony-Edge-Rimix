@@ -56,7 +56,7 @@ Then run `scripts/check-mac-bundle.sh ~/Downloads/Rimix-0.1.0/Rimix.app`:
 it must print three `ok` lines. A bundle that fails it cannot reach any
 camera (see "The 10:00 connect failure").
 
-## State of the code (main = merge of focus-and-connect)
+## State of the code (main = merge of frames-and-aperture)
 
 All four spec phases are built and merged. Everything was developed against
 the simulator; only three real-camera sessions have happened, all on
@@ -371,6 +371,68 @@ What it showed, and what was fixed on branch `real-values` (merged):
     Cancel (`cancel_connect`; `AppState::cancellable` wraps join, find
     and connect).
 
+- **Session 8 (08:48Z) and branch `frames-and-aperture` (merged).** Fourth
+  report: `docs/camera-reports/zv-e10-fw2.01-session8.json`. Roy: tap to
+  focus works but lands somewhere else; Auto modes (photo and movie) still
+  show Macro; the Aperture list is not there, only the old stepper.
+  - *THE TABLE AT CONNECT IS NOT SETTLED.* The report is written at
+    connect, and there the ZV-E10 says drive off, focus Manual, focus area
+    Wide, aperture "display only" with no values. Roy then autofocused and
+    saw a stepper for aperture, which the popover only draws when the
+    camera LISTS f-stops. So do not reason about a session from the
+    connect-time report. `ReportKeeper` (state.rs) now rewrites
+    `logs/camera-<model>.json` whenever the settings change, so the file
+    is the camera's last state of the session.
+  - *Aperture.* Cause (inferred from the above, reproduced in a test): with
+    listed f-stops the row was a plain stepper and the chip greyed out
+    ("display only"). The row is now always the f-stop list, with the
+    camera's own stops when it lists them, and aperture and shutter speed
+    count as usable unless "off", in the interface and in `Camera::set`.
+  - *Live view metadata, decoded from the log's samples* (tests in
+    `sony/liveview.rs` hold the real bytes): version 0x65; level at 0x10
+    (state 2 = valid, roll at 0x18 in WHOLE DEGREES wrapping at 360, so
+    359 is one degree left; it was read as thousandths); frame blocks
+    start at 0x38, not 0x28, which is why no frame and no level ever
+    showed. Each block: grid 640x1024 by 480x1024, count, 24 bytes per
+    frame (kind, state, centre x and y, height, width). The camera sends
+    FOUR blocks; the first is focus frames (seen: kind 6, state 1). Which
+    of the others is faces and which tracking is still from Sony's SDK,
+    not seen filled. The loop now logs a sample for each new shape of the
+    data (up to 16 a session), so a face in front of the camera gives the
+    bytes to check.
+  - *Tap to focus.* The camera took every point (0xD2DC answered OK, a
+    0xC20C event after each) and nothing asked for a change of focus area,
+    so the area was a spot already or was fixed by the mode: unknown
+    which. `Camera::focus_at` now goes by the area: a spot in use is moved
+    (0xD2DC); wide, zone and centre are made Flexible Spot: M and the
+    point waits until the camera reports the change; an area the camera
+    fixes (automatic modes) gets a remote touch (0xD2E4, which the ZV-E10
+    lists; value assumed to be the same x << 16 | y, UNTESTED) or, with no
+    such control, an error saying the camera chooses. Each tap logs
+    `focus point ... focus_area=... focus_mode=... how=...` and then twice
+    `the camera's frames after a focus point` with where the camera's own
+    frames are. THAT PAIR OF LINES SAYS whether a point lands where it was
+    asked (compare asked_x/asked_y with the frame's centre). If they
+    differ by a fixed scale or offset, the grid is not 640 by 480 over the
+    whole picture (3:2 and 16:9 letterboxing is the suspect).
+  - *Macro in Auto modes.* The log has no `does not list` line in any
+    session, so the earlier reading (Auto's family over the scene's code)
+    never happened. New reading: in an automatic mode the camera reports
+    the scene it recognises as that scene's own listed mode
+    (`0x0005_8015`). `Snapshot` now remembers the automatic mode
+    (`auto_mode`) and shows it while scene modes follow it, unless the
+    scene was asked for through the app (`mode_chosen`). Every change of
+    the reported mode is logged (`the camera's shooting mode reported=...
+    shown_as=... was=...`), and every write (`setting written to the
+    camera`, and `the camera took a setting and reports another value
+    straight after`). If the reading is wrong the log shows what the
+    camera does instead: a write of Movie P that the camera ignores (it
+    may need its own Still/Movie button) is the other suspect.
+  - *Photos:* no still was taken in session 8 (no `the camera took a
+    picture` line), so the question from session 7 is still open.
+  - Dev tool: `preview.html?report=<file of docs/camera-reports>` puts a
+    real report behind the interface.
+
 Seen in the report and not used yet: 0xD278 is an HTTP live view stream
 URL on the camera (`http://192.168.122.1:60152/liveviewstream?...`),
 possibly a faster live view than the PTP frames; 0xD26A (1 or 2,
@@ -379,9 +441,14 @@ still a stepper.
 
 ## Next real-camera session
 
-Roy opens the new build and tries: the Mode chip (picker, names), Drive
-(names), then shoot. The question that matters most is still whether a
-picture reaches the Save to folder. Read the log for `the camera is
+Roy opens the new build and tries: Aperture (the list), an automatic mode
+(should stay Auto), a tap on the live view (the camera's own frame is now
+drawn, so he can see where it went), a face in front of the camera, then
+shoot. Read first: `logs/camera-ZV-E10.json` (now the settled table), the
+`focus point` and `the camera's frames after a focus point` lines, the
+`the camera's shooting mode` lines and the `live view metadata sample`
+lines. The question that matters most is still whether a picture reaches
+the Save to folder. Read the log for `the camera is
 sending new pictures to this computer` (the save destination took),
 `the camera offers a picture` and `picture saved`; or the warning that the
 camera keeps saving to its card only, in which case Roy sets Still Img.
@@ -413,6 +480,14 @@ The CLI is not subject to the app's Local Network block, so if the CLI
 connects and the app does not, suspect the block first.
 
 ### Other open items
+
+- A movie clip that ends before the card has been listed (the listing
+  starts when the recording does) cannot be told from older clips and is
+  not copied; `movie_loop` now says so in the log (`the recording ended
+  before the card had been listed`). On a full card that listing takes
+  many seconds, so short clips will hit this. A listing kept from connect
+  would fix it at the price of a card walk on every connect; not done,
+  and whether the ZV-E10 lets the card be read at all is still unknown.
 
 - The join code still treats "any IPv4 address" as joined. It was not the
   cause here and the camera's lease does arrive that fast, but a join to

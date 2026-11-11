@@ -145,7 +145,8 @@ export function createSettingsPopover(
   function panelKind(code: number, prop: PropertySummary | undefined): 'list' | 'fstops' | 'kelvin' | null {
     if (!prop) return null;
     if (pickerFor(prop.code) && prop.choices.length > 0) return 'list';
-    if (code === PROP.aperture && prop.choices.length === 0) return 'fstops';
+    // With the camera's own f-stops or, when it lists none, the usual ones.
+    if (code === PROP.aperture) return 'fstops';
     if (code === PROP.colourTemp) return 'kelvin';
     return null;
   }
@@ -293,15 +294,21 @@ export function createSettingsPopover(
   function drawFstops(code: number, prop: PropertySummary, head: HTMLButtonElement, panel: HTMLElement, open: boolean): void {
     const usable = isUsable(prop);
     const now = 'U16' in prop.raw ? prop.raw.U16 : 0;
-    const key = JSON.stringify([now, open, usable]);
+    // The lens's own f-stops when the camera lists them (it does not while
+    // it connects), else every usual one: the lens stops where it ends.
+    const own = prop.choices.flatMap((c) => ('U16' in c.raw ? [c.raw.U16] : []));
+    const stops = own.length ? own : F_STOPS;
+    const key = JSON.stringify([now, open, usable, stops]);
     if (drawn.get(code) === key) return;
     drawn.set(code, key);
     panel.querySelectorAll<HTMLButtonElement>('.fnudge button').forEach((b) => (b.disabled = !usable));
+    // The note is about the usual f-stops; the lens's own need none.
+    panel.querySelector<HTMLElement>('.note')!.hidden = own.length > 0;
     head.replaceChildren(iris(now || 400), el('span', 'mn', shortText(prop)), chevron());
     head.setAttribute('aria-label', `Aperture, ${shortText(prop)}. ${open ? 'Hide' : 'Show'} the f-stops`);
     if (!open) return;
     (panel.children[0] as HTMLElement).replaceChildren(
-      ...F_STOPS.map((f) => {
+      ...stops.map((f) => {
         const b = button(f === now ? 'fstop on' : 'fstop');
         b.setAttribute('role', 'radio');
         b.setAttribute('aria-checked', String(f === now));

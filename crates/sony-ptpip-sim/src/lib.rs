@@ -140,6 +140,16 @@ pub struct SimConfig {
     /// of the fixture's: 1 original, 2 a small 2M copy.
     #[serde(default)]
     pub host_image_size: Option<u8>,
+    /// Give the camera a focus area (0xD22C), which the fixtures leave out:
+    /// its value (1 wide, 0x0102 Flexible Spot: M, as the ZV-E10 lists them)
+    /// and whether it can be changed. In its automatic modes a real body
+    /// fixes the area and refuses a change.
+    #[serde(default)]
+    pub focus_area: Option<(u16, bool)>,
+    /// List the remote touch control (0xD2E4) among the camera's controls,
+    /// as the ZV-E10 does.
+    #[serde(default)]
+    pub remote_touch: bool,
 }
 
 fn default_true() -> bool {
@@ -179,6 +189,8 @@ impl Default for SimConfig {
             terse_capture_info: false,
             card_denied: false,
             host_image_size: None,
+            focus_area: None,
+            remote_touch: false,
         }
     }
 }

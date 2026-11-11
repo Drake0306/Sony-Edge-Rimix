@@ -68,7 +68,7 @@ impl Controls {
             }
             // Where to focus: four bytes, x in the upper half and y in the
             // lower, on a 640 by 480 grid. Taken and remembered by the log.
-            CTRL_AF_AREA_POSITION => match data {
+            CTRL_AF_AREA_POSITION | CTRL_REMOTE_TOUCH => match data {
                 [_, _, _, _] => Ok(Outcome::Unchanged),
                 _ => Err(RC_INVALID_PARAMETER),
             },

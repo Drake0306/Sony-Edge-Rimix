@@ -38,8 +38,7 @@ pub struct LiveViewFrame {
     pub tracking_frames: Vec<FocusFrame>,
     /// Roll from the camera's level gauge, in degrees.
     pub level_deg: Option<f32>,
-    /// The metadata as the camera sent it, for the log: its layout on a real
-    /// body has only been read from documents so far.
+    /// The metadata as the camera sent it, for the log.
     #[serde(skip)]
     pub raw_meta: Vec<u8>,
 }
@@ -48,8 +47,9 @@ pub struct LiveViewFrame {
 const MIN_META_VERSION: u16 = 0x64;
 /// Metadata offset of the level gauge block.
 const LEVEL_BLOCK: usize = 0x10;
-/// Metadata offset of the first frame block (the focus frames).
-const FRAME_BLOCK: usize = 0x28;
+/// Metadata offset of the first frame block (the focus frames), as the
+/// ZV-E10 sends it (metadata version 0x65).
+const FRAME_BLOCK: usize = 0x38;
 /// Bytes from a frame block's start to its first entry.
 const FRAME_BLOCK_HEADER: usize = 16;
 const FRAME_ENTRY_LEN: usize = 24;
@@ -133,12 +133,13 @@ type FrameBlocks = [Vec<FocusFrame>; 3];
 
 /// Reads the frames and the level; `None` if the metadata is malformed.
 ///
-/// After the level come up to three blocks of frames, one after another:
-/// focus frames, then faces, then the tracked subject. Each block is a
-/// 16-byte header (the size of the grid its frames are measured on, then
-/// how many frames) and 24 bytes per frame. The first block is required;
-/// the others are read while they are there and make sense, since their
-/// layout is taken from Sony's SDK structures, not yet from a real body.
+/// After the level come blocks of frames, one after another: focus frames,
+/// then faces, then the tracked subject (the ZV-E10 sends a fourth, which
+/// is not read). Each block is a 16-byte header (the size of the grid its
+/// frames are measured on, 640 by 480 times 1024 on the ZV-E10, then how
+/// many frames) and 24 bytes per frame. The offsets and the first block are
+/// as a real ZV-E10 sent them; which of the later blocks holds faces and
+/// which the tracked subject follows Sony's SDK and is not yet seen filled.
 fn parse_metadata(meta: &[u8]) -> Option<(FrameBlocks, Option<f32>)> {
     if meta.is_empty() {
         return Some((FrameBlocks::default(), None));
@@ -150,9 +151,12 @@ fn parse_metadata(meta: &[u8]) -> Option<(FrameBlocks, Option<f32>)> {
 
     let state = u32_at(meta, LEVEL_BLOCK)?;
     let x = i32_at(meta, LEVEL_BLOCK + 8)?;
-    // Assumption: the roll is reported in thousandths of a degree.
-    // i32::MAX marks an axis the camera does not measure.
-    let level_deg = (state == LEVEL_VALID && x != i32::MAX).then(|| x as f32 / 1000.0);
+    // The roll comes in whole degrees on a scale that wraps at 360 (the
+    // ZV-E10 sends 359, then 0, when it is nearly level), so the upper half
+    // is a tilt the other way. i32::MAX marks an axis the camera does not
+    // measure.
+    let level_deg =
+        (state == LEVEL_VALID && x != i32::MAX).then(|| if x > 180 { x - 360 } else { x } as f32);
 
     let mut blocks = FrameBlocks::default();
     let mut at = FRAME_BLOCK;
@@ -259,13 +263,70 @@ mod tests {
 
     const JPEG: [u8; 6] = [0xFF, 0xD8, 0xFF, 0xE0, 0xFF, 0xD9];
 
-    /// Metadata as the simulator builds it: level 1.2°, one focused frame in
-    /// the middle.
+    /// What the ZV-E10 (firmware 2.01) sent on 2026-11-11, from the app's
+    /// log: nothing in any of its four frame blocks, tilted 1° to the left.
+    const REAL_NO_FRAMES: &str = "65000100000000000100000000000000020000000000000067010000fbfffffffbffffff000000000000000000000000000000000000000000000a0000800700000000000000000000000a0000800700000000000000000000000a0000800700000000000000000000000a00008007000000000000000000";
+    /// The same body a moment later, with one focus frame up and to the right.
+    const REAL_ONE_FRAME: &str = "650001000000000001000000000000000200000000000000660100000000000000000000000000000000000000000000000000000000000000000a00008007000100000000000000060001000200000000c0080007d701003ef200000010010000000a0000800700000000000000000000000a0000800700000000000000000000000a00008007000000000000000000";
+
+    fn unhex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn reads_what_a_real_camera_sent() {
+        let frame = parse_live_view_dataset(&dataset(&unhex(REAL_ONE_FRAME), &JPEG))
+            .unwrap()
+            .unwrap();
+        assert_eq!(frame.focus_frames.len(), 1, "{frame:?}");
+        let f = &frame.focus_frames[0];
+        assert_eq!((f.kind, f.state), (6, 1));
+        // 573440 of 655360 across, 120583 of 491520 down.
+        assert!((f.cx - 0.875).abs() < 0.0005, "{f:?}");
+        assert!((f.cy - 0.2453).abs() < 0.0005, "{f:?}");
+        assert!((f.w - 0.10625).abs() < 0.0005, "{f:?}");
+        assert!((f.h - 0.1262).abs() < 0.0005, "{f:?}");
+        assert!(frame.face_frames.is_empty() && frame.tracking_frames.is_empty());
+        // 358 on a scale that wraps at 360: two degrees to the left.
+        assert_eq!(frame.level_deg, Some(-2.0));
+
+        let frame = parse_live_view_dataset(&dataset(&unhex(REAL_NO_FRAMES), &JPEG))
+            .unwrap()
+            .unwrap();
+        assert!(frame.focus_frames.is_empty());
+        assert!(frame.face_frames.is_empty() && frame.tracking_frames.is_empty());
+        assert_eq!(frame.level_deg, Some(-1.0));
+    }
+
+    #[test]
+    fn level_is_in_whole_degrees_either_way() {
+        for (sent, shown) in [
+            (0, 0.0),
+            (3, 3.0),
+            (180, 180.0),
+            (181, -179.0),
+            (359, -1.0),
+            (-4, -4.0),
+        ] {
+            let mut meta = metadata();
+            meta[0x18..0x1C].copy_from_slice(&i32::to_le_bytes(sent));
+            let frame = parse_live_view_dataset(&dataset(&meta, &JPEG))
+                .unwrap()
+                .unwrap();
+            assert_eq!(frame.level_deg, Some(shown), "{sent}");
+        }
+    }
+
+    /// Metadata as the simulator builds it: tilted 2° to the left, one
+    /// focused frame in the middle.
     fn metadata() -> Vec<u8> {
-        let mut m = vec![0u8; 0x28];
-        m[0..2].copy_from_slice(&0x0068u16.to_le_bytes());
+        let mut m = vec![0u8; 0x38];
+        m[0..2].copy_from_slice(&0x0065u16.to_le_bytes());
         m[0x10..0x14].copy_from_slice(&2u32.to_le_bytes()); // state
-        m[0x18..0x1C].copy_from_slice(&1200i32.to_le_bytes()); // x
+        m[0x18..0x1C].copy_from_slice(&358i32.to_le_bytes()); // x
         m[0x20..0x24].copy_from_slice(&i32::MAX.to_le_bytes()); // z
         m.extend(655_360u32.to_le_bytes()); // x_max
         m.extend(491_520u32.to_le_bytes()); // y_max
@@ -298,7 +359,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(frame.jpeg, JPEG);
-        assert_eq!(frame.level_deg, Some(1.2));
+        assert_eq!(frame.level_deg, Some(-2.0));
         assert_eq!(
             frame.focus_frames,
             vec![FocusFrame {
@@ -344,7 +405,7 @@ mod tests {
     fn metadata_parse_failure_still_returns_jpeg() {
         // Frame count claims more entries than the metadata holds.
         let mut meta = metadata();
-        meta[0x30..0x32].copy_from_slice(&5u16.to_le_bytes());
+        meta[0x40..0x42].copy_from_slice(&5u16.to_le_bytes());
         let frame = parse_live_view_dataset(&dataset(&meta, &JPEG))
             .unwrap()
             .unwrap();

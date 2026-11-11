@@ -31,7 +31,7 @@ async fn streams_ten_frames_from_sim() {
         let img = image::load_from_memory_with_format(&frame.jpeg, image::ImageFormat::Jpeg)
             .expect("frame decodes as JPEG");
         assert_eq!((img.width(), img.height()), (640, 424));
-        assert_eq!(frame.level_deg, Some(1.2));
+        assert_eq!(frame.level_deg, Some(-2.0));
         assert_eq!(frame.focus_frames.len(), 1);
         // A face up and to the left, a tracked subject down and to the right.
         assert_eq!(frame.face_frames.len(), 1);

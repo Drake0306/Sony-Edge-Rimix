@@ -34,6 +34,26 @@ pub(super) struct Snapshot {
     /// Mode values reported that the camera does not list, each said in
     /// the log once.
     unlisted_modes: Vec<u64>,
+    /// The mode value last reported, to say each change in the log.
+    mode_reported: Option<u64>,
+    /// The automatic mode the camera is in while it recognises scenes: the
+    /// last automatic mode reported with no other mode since.
+    auto_mode: Option<u64>,
+    /// A scene mode asked for through the app, and whether the camera has
+    /// reported it since: that scene is chosen, not recognised.
+    scene_chosen: Option<(u64, bool)>,
+}
+
+/// Whether a mode value is an automatic mode, in which the camera
+/// recognises scenes: Intelligent and Superior Auto, and the automatic
+/// modes of movies and of slow and quick motion.
+fn is_auto_mode(value: u64) -> bool {
+    matches!(value & 0xFFFF, 0x8000 | 0x8001 | 0x8054 | 0x805D)
+}
+
+/// Whether a mode value is a scene: one of Scene Selection's.
+fn is_scene_mode(value: u64) -> bool {
+    matches!(value & 0xFFFF, 0x0005..=0x0007 | 0x8011..=0x801C)
 }
 
 impl Snapshot {
@@ -70,6 +90,28 @@ impl Snapshot {
         let Some((current, listed)) = self.mode_and_list() else {
             return;
         };
+        if is_auto_mode(current) {
+            self.auto_mode = Some(current);
+        } else if !is_scene_mode(current) {
+            self.auto_mode = None;
+        }
+        // A chosen scene stays chosen until the camera has shown it and
+        // then moved on.
+        match self.scene_chosen {
+            Some((scene, _)) if scene == current => self.scene_chosen = Some((scene, true)),
+            Some((_, true)) => self.scene_chosen = None,
+            _ => {}
+        }
+        if self.mode_reported != Some(current) {
+            let shown = self.mode_shown().and_then(|v| v.as_u64());
+            tracing::info!(
+                reported = %format_args!("{current:#010x}"),
+                shown_as = %format_args!("{:#010x}", shown.unwrap_or(current)),
+                was = %format_args!("{:#010x}", self.mode_reported.unwrap_or(0)),
+                "the camera's shooting mode"
+            );
+            self.mode_reported = Some(current);
+        }
         if listed.contains(&current) {
             // Also when it is another family's: a remembered Superior Auto
             // must not come back after the camera has been somewhere else.
@@ -85,6 +127,12 @@ impl Snapshot {
         }
     }
 
+    /// Notes a shooting mode asked for through the app: a scene asked for
+    /// is a scene chosen, whatever mode the camera was in before.
+    pub fn mode_chosen(&mut self, value: u64) {
+        self.scene_chosen = is_scene_mode(value).then_some((value, false));
+    }
+
     /// The mode's current value and the values the camera lists for it.
     fn mode_and_list(&self) -> Option<(u64, Vec<u64>)> {
         let desc = self.prop(PROP_EXPOSURE_PROGRAM)?;
@@ -95,8 +143,8 @@ impl Snapshot {
         Some((desc.current.as_u64()?, listed))
     }
 
-    /// The shooting mode to show instead of the one reported, when the
-    /// camera reports one it does not list.
+    /// The shooting mode to show instead of the one reported, when that is
+    /// a scene the camera recognised in an automatic mode.
     ///
     /// In Intelligent Auto (and Superior Auto, and movie Intelligent Auto)
     /// the camera recognises the scene and puts it in the mode value: the
@@ -107,6 +155,17 @@ impl Snapshot {
     /// seen while the camera stayed in the family, else its automatic one.
     fn mode_shown(&self) -> Option<PtpValue> {
         let (current, listed) = self.mode_and_list()?;
+        // In an automatic mode the ZV-E10 reports the scene it recognises
+        // as that scene's own listed mode (Macro, `0x0005_8015`): the app
+        // showed Macro with no unlisted mode in the log. A scene that
+        // follows an automatic mode with no other mode between, and was not
+        // asked for through the app, is recognised and not chosen.
+        let chosen = self.scene_chosen.is_some_and(|(scene, _)| scene == current);
+        if let Some(auto) = self.auto_mode {
+            if is_scene_mode(current) && !chosen && listed.contains(&auto) {
+                return same_type(&self.prop(PROP_EXPOSURE_PROGRAM)?.current, auto as i64);
+            }
+        }
         // Bodies that send 16 bits have no family to go by.
         if listed.contains(&current) || current <= 0xFFFF {
             return None;
@@ -570,6 +629,50 @@ mod tests {
         snap.merge(vec![mode(0x0004_8001)]);
         snap.merge(vec![mode(0x0001_0002)]);
         snap.merge(vec![mode(0x0004_8013)]);
+        assert_eq!(shown(&snap).1, "Intelligent Auto");
+    }
+
+    /// What the ZV-E10 did on 2026-11-11: Roy chose an automatic mode, the
+    /// app showed Macro, and the log has no mode outside the camera's list.
+    /// So the scene the camera recognises arrives as that scene's own listed
+    /// mode, straight after the automatic one.
+    #[test]
+    fn a_listed_scene_reported_in_an_automatic_mode_is_one_the_camera_recognised() {
+        let mut snap = Snapshot::default();
+        snap.merge(vec![mode(0x0004_8000)]);
+        snap.merge(vec![mode(0x0005_8015)]);
+        assert_eq!(
+            shown(&snap),
+            (PtpValue::U32(0x0004_8000), "Intelligent Auto".into())
+        );
+        // What it recognises changes as the camera moves; the mode does not.
+        snap.merge(vec![mode(0x0005_8011)]);
+        assert_eq!(shown(&snap).1, "Intelligent Auto");
+        snap.merge(vec![mode(0x0004_8000)]);
+        assert_eq!(shown(&snap).1, "Intelligent Auto");
+        // The same in the movie's automatic mode.
+        snap.merge(vec![mode(0x0007_8054)]);
+        snap.merge(vec![mode(0x0005_8015)]);
+        assert_eq!(shown(&snap).1, "Intelligent Auto (Movie)");
+        // After a mode that recognises nothing, a scene is a scene.
+        snap.merge(vec![mode(0x0001_0002)]);
+        snap.merge(vec![mode(0x0005_8015)]);
+        assert_eq!(shown(&snap), (PtpValue::U32(0x0005_8015), "Macro".into()));
+    }
+
+    #[test]
+    fn a_scene_chosen_in_the_app_is_shown_as_that_scene() {
+        let mut snap = Snapshot::default();
+        snap.merge(vec![mode(0x0004_8000)]);
+        snap.mode_chosen(0x0005_8015);
+        // The camera may still say Auto for a moment after the write.
+        snap.merge(vec![mode(0x0004_8000)]);
+        snap.merge(vec![mode(0x0005_8015)]);
+        assert_eq!(shown(&snap), (PtpValue::U32(0x0005_8015), "Macro".into()));
+        // Back to Auto from the app, and recognising is recognising again.
+        snap.mode_chosen(0x0004_8000);
+        snap.merge(vec![mode(0x0004_8000)]);
+        snap.merge(vec![mode(0x0005_8015)]);
         assert_eq!(shown(&snap).1, "Intelligent Auto");
     }
 }
