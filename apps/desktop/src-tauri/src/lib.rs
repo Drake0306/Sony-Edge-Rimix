@@ -6,6 +6,7 @@ pub mod logging;
 pub mod settings;
 pub mod sftp;
 pub mod state;
+pub mod webcam;
 
 use tauri::Manager;
 
@@ -67,6 +68,9 @@ pub fn run() {
             commands::ble_handoff,
             commands::ble_shoot,
             commands::ble_retry,
+            commands::webcam_set,
+            commands::webcam_set_quality,
+            commands::webcam_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while running Rimix")
