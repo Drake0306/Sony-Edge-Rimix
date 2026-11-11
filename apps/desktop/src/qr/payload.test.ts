@@ -10,6 +10,13 @@ describe('parseWifiQr', () => {
     expect(parseWifiQr('W01:S:DIRECT-abc1:ZV-E10;P:12345678;C:ZV-E10;M:aabbccddeeff;'))
       .toEqual({ ssid: 'DIRECT-abc1:ZV-E10', password: '12345678', model: 'ZV-E10' });
   });
+  it('composes the Wi-Fi Direct name from the short name and the model', () => {
+    expect(parseWifiQr('W01:S:YKE1;P:pw;C:ZV-E10;M:DCFE231B98C3;'))
+      .toEqual({ ssid: 'DIRECT-YKE1:ZV-E10', password: 'pw', model: 'ZV-E10' });
+    expect(parseWifiQr('W01:S:YKE1;P:pw;')).toEqual({ ssid: 'DIRECT-YKE1', password: 'pw' });
+    expect(parseWifiQr('S:YKE1;P:pw;C:ZV-E10;'))
+      .toEqual({ ssid: 'DIRECT-YKE1:ZV-E10', password: 'pw', model: 'ZV-E10' });
+  });
   it('unescapes the special characters and accepts an open network', () => {
     expect(parseWifiQr('WIFI:S:Caf\\;e\\:1;T:nopass;;')).toEqual({ ssid: 'Caf;e:1', password: '' });
     expect(parseWifiQr('S:a;P:p\\\\q;')).toEqual({ ssid: 'a', password: 'p\\q' });

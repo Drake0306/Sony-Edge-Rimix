@@ -1,5 +1,7 @@
 // Parses the Wi-Fi credentials a Sony camera encodes in its setup QR code.
 // Grammar: optional `WIFI:` or `W01:` prefix, then `KEY:VALUE;` fields.
+// Sony's `W01:` text carries only the short name in `S` and the model in
+// `C`; the camera's network is `DIRECT-<S>:<C>` (confirmed on a ZV-E10).
 
 export interface WifiCredentials {
   ssid: string;
@@ -8,6 +10,7 @@ export interface WifiCredentials {
 }
 
 const PREFIX = /^(?:WIFI|W01):/i;
+const SONY_PREFIX = /^W01:/i;
 
 /** Reads one field value starting at `start`, up to the next unescaped `;`. */
 function readValue(text: string, start: number): { value: string; next: number } | null {
@@ -30,7 +33,9 @@ function readValue(text: string, start: number): { value: string; next: number }
 }
 
 export function parseWifiQr(text: string): WifiCredentials | null {
-  const body = text.trim().replace(PREFIX, '');
+  const trimmed = text.trim();
+  const sony = SONY_PREFIX.test(trimmed);
+  const body = trimmed.replace(PREFIX, '');
   const fields = new Map<string, string>();
   let i = 0;
   while (i < body.length) {
@@ -48,10 +53,13 @@ export function parseWifiQr(text: string): WifiCredentials | null {
     i = parsed.next;
   }
 
-  const ssid = fields.get('S');
+  let ssid = fields.get('S');
   if (!ssid) return null;
-  const result: WifiCredentials = { ssid, password: fields.get('P') ?? '' };
   const model = fields.get('C');
+  if ((sony || fields.has('C')) && !/^DIRECT-/i.test(ssid)) {
+    ssid = model ? `DIRECT-${ssid}:${model}` : `DIRECT-${ssid}`;
+  }
+  const result: WifiCredentials = { ssid, password: fields.get('P') ?? '' };
   if (model) result.model = model;
   return result;
 }
