@@ -107,7 +107,7 @@ pub fn kind_text(kind: CardKind) -> &'static str {
 
 /// The card newest first, by capture date then by handle; undated files last.
 pub fn sort_card(card: &mut [CardObject]) {
-    card.sort_by(|a, b| (b.captured, b.handle).cmp(&(a.captured, a.handle)));
+    card.sort_by_key(|a| std::cmp::Reverse((a.captured, a.handle)));
 }
 
 /// The `card list` table: a header and one row per file, columns padded and
