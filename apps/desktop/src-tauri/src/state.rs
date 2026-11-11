@@ -482,14 +482,17 @@ pub(crate) async fn connect_via(
     for old in previous {
         old.camera.disconnect().await;
     }
-    let destination = lock(&state.settings).destination();
+    let (destination, save_here) = {
+        let s = lock(&state.settings);
+        (s.destination(), s.save_to_computer)
+    };
     let before_reconnect = ssid.map(|name| rejoin_hook(state.wifi.clone(), name.to_string(), addr));
     let camera = Camera::connect(CameraConfig {
         addr,
         guid: state.guid,
         host_name: sony_ptpip::default_host_name(),
         destination,
-        auto_receive: true,
+        auto_receive: save_here,
         reconnect: true,
         before_reconnect,
         ssh,
@@ -503,6 +506,11 @@ pub(crate) async fn connect_via(
         } => format!("{HOSTKEY_CHANGED_PREFIX}{expected} {actual_sha256}"),
         e => format!("Cannot connect to {addr}: {e}"),
     })?;
+    if !save_here {
+        // Not merely left alone: a camera still set to send its pictures to
+        // a computer would hold them for one that never fetches.
+        camera.set_receiving(false);
+    }
     let events = camera.subscribe();
     let camera_state = camera.state();
     if let Some(dir) = state.settings_path.parent() {
@@ -854,18 +862,25 @@ pub async fn save_settings(state: &AppState, mut s: AppSettings) -> Result<(), S
     // `sftp_set_enabled` (which also saves under this lock) lands either
     // wholly before, and its `sftp` is copied in here, or wholly after, and
     // it changes what is assigned here. Either way the switch is not lost.
-    let (moved, destination) = {
+    let (moved, destination, save_here, switched) = {
         let mut current = lock(&state.settings);
         s.sftp = current.sftp.clone();
         let moved = current.destination() != s.destination();
+        let switched = current.save_to_computer != s.save_to_computer;
         settings::save(&state.settings_path, &s)
             .map_err(|e| format!("Cannot save settings: {e}"))?;
-        let destination = s.destination();
+        let (destination, save_here) = (s.destination(), s.save_to_computer);
         *current = s;
-        (moved, destination)
+        (moved, destination, save_here, switched)
     };
     for slot in state.cameras.lock().await.iter() {
         slot.camera.set_destination(destination.clone());
+        // Only when the switch itself moved: saving any other setting must
+        // not start the camera being asked all over again.
+        if switched {
+            tracing::info!(on = save_here, camera = %slot.id, "copying pictures to this computer switched");
+            slot.camera.set_receiving(save_here);
+        }
     }
     if moved {
         crate::sftp::restart_if_enabled(state).await;
@@ -1537,6 +1552,77 @@ mod tests {
         })
         .await
         .expect("shot not saved in the new destination");
+        stop(sim, &state).await;
+    }
+
+    /// The Save to panel's switch, thrown while a camera is connected.
+    #[tokio::test]
+    async fn switching_copying_off_stops_pictures_arriving_and_on_starts_it_again() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (sim, state, _) = connected(tmp.path()).await;
+        let sending = |want: bool| {
+            let state = &state;
+            async move {
+                timeout(WAIT, async {
+                    loop {
+                        let now = get_state(state, None)
+                            .await
+                            .and_then(|s| s.shots_to_computer);
+                        if now == Some(want) {
+                            return;
+                        }
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                })
+                .await
+                .unwrap_or_else(|_| panic!("the camera never reported sending = {want}"));
+            }
+        };
+        let files = || std::fs::read_dir(tmp.path().join("shots")).map_or(0, |d| d.count());
+        let mut s = get_settings(&state);
+        s.destination_base = tmp.path().join("shots");
+        s.destination_mode = sony_ptpip::capture::DestinationMode::CustomFolder;
+        s.save_to_computer = false;
+        save_settings(&state, s.clone()).await.unwrap();
+        sending(false).await;
+        shoot(&state, None).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        assert_eq!(files(), 0, "nothing is copied while the switch is off");
+
+        s.save_to_computer = true;
+        save_settings(&state, s).await.unwrap();
+        sending(true).await;
+        shoot(&state, None).await.unwrap();
+        timeout(WAIT, async {
+            while files() == 0 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("a picture taken after switching on is saved");
+        stop(sim, &state).await;
+    }
+
+    #[tokio::test]
+    async fn connecting_with_copying_off_puts_the_camera_on_its_card_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sim = spawn(SimConfig::default()).await;
+        let state = app_state(tmp.path());
+        lock(&state.settings).save_to_computer = false;
+        connect(&state, &sim.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        timeout(WAIT, async {
+            while get_state(&state, None)
+                .await
+                .and_then(|s| s.shots_to_computer)
+                != Some(false)
+            {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("the camera is set to its card alone");
         stop(sim, &state).await;
     }
 

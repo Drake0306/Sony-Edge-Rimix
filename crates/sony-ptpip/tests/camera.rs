@@ -895,3 +895,56 @@ async fn a_camera_that_ignores_the_first_request_is_asked_again_until_it_sends_s
     assert_eq!(saved.path, tmp.path().join("DSC00001.JPG"));
     stop(sim, camera).await;
 }
+
+/// The app's "Copy pictures to this computer" switch.
+#[tokio::test]
+async fn receiving_can_be_switched_off_and_on_while_connected() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (sim, camera) = start(SimConfig::default(), tmp.path()).await;
+    let mut rx = camera.subscribe();
+    assert_eq!(camera.state().shots_to_computer, Some(true));
+
+    // Off: the camera goes back to its card only, so it never waits for a
+    // computer that will not fetch, and a shot brings nothing here.
+    camera.set_receiving(false);
+    wait_for(&mut rx, "card only", |ev| match ev {
+        CameraEvent::StateChanged(s) if s.shots_to_computer == Some(false) => Some(()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(
+        raw(&camera.state(), PROP_STILL_DESTINATION),
+        PtpValue::U16(0x0010)
+    );
+    camera.shoot().await.unwrap();
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert_eq!(std::fs::read_dir(tmp.path()).unwrap().count(), 0);
+
+    // On again: the camera is asked again and the next picture arrives.
+    camera.set_receiving(true);
+    wait_for(&mut rx, "computer and card", |ev| match ev {
+        CameraEvent::StateChanged(s) if s.shots_to_computer == Some(true) => Some(()),
+        _ => None,
+    })
+    .await;
+    camera.shoot().await.unwrap();
+    let saved = wait_for(&mut rx, "CaptureSaved", |ev| match ev {
+        CameraEvent::CaptureSaved(r) => Some(r.clone()),
+        _ => None,
+    })
+    .await;
+    assert!(saved.path.starts_with(tmp.path()));
+    stop(sim, camera).await;
+}
+
+#[tokio::test]
+async fn a_recording_is_not_copied_while_receiving_is_off() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (sim, camera) = start(SimConfig::default(), tmp.path()).await;
+    camera.set_receiving(false);
+    let mut rx = camera.subscribe();
+    record_a_clip(&camera, &mut rx).await;
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    assert!(!tmp.path().join("C0002.MP4").exists());
+    stop(sim, camera).await;
+}

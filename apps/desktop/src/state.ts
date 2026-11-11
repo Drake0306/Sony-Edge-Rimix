@@ -216,6 +216,7 @@ export const defaultSettings = (destinationBase = ''): AppSettings => ({
   webcamId: null,
   presets: [],
   bluetooth: true,
+  saveToComputer: true,
 });
 
 /**

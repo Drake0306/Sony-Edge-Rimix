@@ -10,9 +10,9 @@ use tokio::sync::broadcast::{self, error::RecvError};
 use tokio::task::JoinSet;
 use tokio::time::{interval, sleep, MissedTickBehavior};
 
-use super::{connect_once, lock, CameraEvent, Inner, RecentShot};
+use super::{connect_once, lock, CameraEvent, Inner, Receive, RecentShot};
 use crate::capture::{
-    captured_ready, ensure_host_delivery, receive_one, Destination, DEST_COMPUTER,
+    captured_ready, delivery_target, ensure_delivery, receive_one, Destination, DEST_COMPUTER,
 };
 use crate::card::CardKind;
 use crate::error::Error;
@@ -133,11 +133,11 @@ async fn run_session(inner: &Arc<Inner>, events: broadcast::Receiver<PtpEvent>) 
     let mut loops = JoinSet::new();
     loops.spawn(event_loop(inner.clone(), events));
     loops.spawn(live_view_loop(inner.clone()));
-    if inner.auto_receive {
-        loops.spawn(capture_loop(inner.clone()));
-        loops.spawn(movie_loop(inner.clone()));
-        loops.spawn(delivery_loop(inner.clone()));
-    }
+    // Always running: each looks at what the session is to do about new
+    // pictures (`Receive`), which can change while connected.
+    loops.spawn(capture_loop(inner.clone()));
+    loops.spawn(movie_loop(inner.clone()));
+    loops.spawn(delivery_loop(inner.clone()));
     let reason = match loops.join_next().await {
         Some(Ok(reason)) => reason,
         Some(Err(e)) => format!("camera task failed: {e}"),
@@ -253,6 +253,9 @@ async fn capture_loop(inner: Arc<Inner>) -> String {
     loop {
         tick.tick().await;
         loop {
+            if inner.receive() != Receive::Here {
+                break;
+            }
             let ready = match captured_ready(&lock(&inner.snapshot).props) {
                 Ok(n) => n,
                 Err(e) => {
@@ -301,52 +304,73 @@ async fn capture_loop(inner: Arc<Inner>) -> String {
     }
 }
 
-/// Keeps the camera handing new pictures to the computer.
+/// Keeps the camera's save destination where the session wants it: the
+/// computer as well as the card while pictures are copied here, the card
+/// alone while they are not (see [`Receive`]).
 ///
-/// The request made while connecting is not always obeyed: the real ZV-E10
-/// answered OK and went on saving to its card only. So the save
-/// destination is watched for the whole session. While it leaves the
-/// computer out, the camera is asked again, a few times a few seconds
-/// apart; after [`DELIVERY_TRIES`] it is left alone, with a warning that
-/// names the camera's own menu item. Each change of state is logged once.
+/// A request is not always obeyed: the real ZV-E10 answered OK to the one
+/// made while connecting and went on saving to its card only. So the save
+/// destination is watched for the whole session. While it is not as
+/// wanted, the camera is asked again, a few times a few seconds apart;
+/// after [`DELIVERY_TRIES`] it is left alone, with a warning that names the
+/// camera's own menu item. Each change of state is logged once, and
+/// flipping the switch starts the count again.
 async fn delivery_loop(inner: Arc<Inner>) -> String {
     let mut tick = interval(DELIVERY_CHECK);
     tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    // What was last said about it: Some(true) sending, Some(false) given up.
+    // What was last said about it: Some(true) as wanted, Some(false) given up.
     let mut said: Option<bool> = None;
     let mut tries = 0;
+    let mut mode = inner.receive();
     loop {
         tick.tick().await;
+        let now = inner.receive();
+        if now != mode {
+            (mode, said, tries) = (now, None, 0);
+        }
+        let to_computer = match mode {
+            Receive::Leave => continue,
+            Receive::Here => true,
+            Receive::CardOnly => false,
+        };
         let (props, quirks) = {
             let snap = lock(&inner.snapshot);
             (snap.props.clone(), quirks_for(&snap.model))
         };
-        let Some(sending) = props
-            .iter()
-            .find(|p| p.code == PROP_STILL_DESTINATION)
-            .and_then(|p| p.current.as_u64())
-            .map(|v| v & DEST_COMPUTER != 0)
-        else {
+        let Some(dest) = props.iter().find(|p| p.code == PROP_STILL_DESTINATION) else {
             continue;
         };
-        if sending {
+        let Some(sending) = dest.current.as_u64().map(|v| v & DEST_COMPUTER != 0) else {
+            continue;
+        };
+        if sending == to_computer {
             if said != Some(true) {
-                tracing::info!("the camera is sending new pictures to this computer");
+                if to_computer {
+                    tracing::info!("the camera is sending new pictures to this computer");
+                } else {
+                    tracing::info!("the camera is keeping new pictures on its card only, as asked");
+                }
                 said = Some(true);
             }
             tries = 0;
             continue;
         }
         if said == Some(true) {
-            tracing::info!("the camera went back to saving pictures on its card only");
+            tracing::info!(sending, "the camera's save destination changed");
             said = None;
         }
-        if tries >= DELIVERY_TRIES {
+        // Nothing the camera lists would make it so: say it once.
+        let possible = delivery_target(dest, to_computer).is_some();
+        if tries >= DELIVERY_TRIES || !possible {
             if said != Some(false) {
-                tracing::warn!(
-                    tries,
-                    "the camera keeps saving pictures to its card only; on the camera set Menu, Network, PC Remote Function, Still Img. Save Dest. to PC+Camera"
-                );
+                if to_computer {
+                    tracing::warn!(
+                        tries,
+                        "the camera keeps saving pictures to its card only; on the camera set Menu, Network, PC Remote Function, Still Img. Save Dest. to PC+Camera"
+                    );
+                } else {
+                    tracing::warn!(tries, "the camera keeps offering pictures to this computer; on the camera set Still Img. Save Dest. to Camera Only");
+                }
                 said = Some(false);
             }
             continue;
@@ -356,9 +380,8 @@ async fn delivery_loop(inner: Arc<Inner>) -> String {
         let Some(conn) = guard.as_mut() else {
             return "connection closed".into();
         };
-        match ensure_host_delivery(conn, &props, &quirks).await {
-            Ok(_) => {}
-            Err(e) => return e.to_string(),
+        if let Err(e) = ensure_delivery(conn, &props, &quirks, to_computer).await {
+            return e.to_string();
         }
         match inner.refresh(conn).await {
             Ok(_) => {}
@@ -395,6 +418,12 @@ async fn movie_loop(inner: Arc<Inner>) -> String {
     loop {
         tick.tick().await;
         let now_recording = recording();
+        if inner.receive() != Receive::Here {
+            // Not copying: a clip recorded meanwhile is never called new.
+            was_recording = now_recording;
+            before = None;
+            continue;
+        }
         if unavailable || now_recording == was_recording {
             was_recording = now_recording;
             continue;

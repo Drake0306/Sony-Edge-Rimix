@@ -5,7 +5,7 @@
 //
 // Query parameters: layout=Dock|Ring, theme=Light|Dark, presets=<count>,
 // mode=<raw exposure mode>, drive=<raw drive mode>, apply=<slot to apply>, open=<chip name>, transfers=1 (files arriving), recording=1,
-// screen=connect, webcam=1. Never part of the built app.
+// screen=connect, webcam=1, copy=0 (copying to this computer off). Never part of the built app.
 
 import { mockIPC } from '@tauri-apps/api/mocks';
 import { emit } from '@tauri-apps/api/event';
@@ -76,6 +76,7 @@ const settings: AppSettings = {
   appearance: q.get('theme') === 'Dark' ? 'Dark' : 'Light',
   presets: presets(num('presets', 4)),
   bluetooth: false,
+  saveToComputer: q.get('copy') !== '0',
 };
 
 /** A stand-in live view frame. */

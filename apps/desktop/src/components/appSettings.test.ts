@@ -29,6 +29,7 @@ const settings: AppSettings = {
   webcamId: null,
   presets: [],
   bluetooth: true,
+  saveToComputer: true,
 };
 
 const mounted: (() => void)[] = [];
