@@ -466,6 +466,17 @@ What it showed, and what was fixed on branch `real-values` (merged):
     touch. STILL NOT KNOWN: whether the point lands where asked; the
     `the camera's frames after a focus point` lines will say (none were
     written this session, every tap failed first).
+  - *Frames, from this session's samples* (decoded by hand from the log):
+    at the shot, ten focus frames of kind 2, state 2 (the small focused
+    points of Wide), so the first block is read right on real data; at
+    10:03:05 ONE frame in the SECOND block (kind 2, state 1, the field
+    after them 0x800), centre 0.50, 0.58, 0.528 wide and 0.79 high. On a
+    3:2 picture that is a square (0.528 x 3 = 0.79 x 2), as a face frame
+    is, and the focus points are squares the same way. So the second
+    block is faces, and the 640 by 480 grid is STRETCHED over the whole
+    picture, not letterboxed: fractions of the grid are fractions of the
+    picture, which is how the parser and `focus_at` already count. The
+    letterbox suspicion noted under session 8 is very likely wrong.
   - The focus area has names (`decode::focus_area_names`) and a row in
     the settings popover, because a tap leaves the camera on a spot.
   - *Auto for shutter speed, aperture, ISO* (Roy: "add an auto mode ...
