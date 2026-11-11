@@ -4,7 +4,23 @@ A desktop companion for Sony Alpha cameras that connects over Wi-Fi, the way Son
 
 ## Status
 
-Phases 1 to 4 work against a simulated camera: the protocol library, a command line tool and a desktop app all run and pass their tests there. None of it has been tried on a real camera yet. To change that, follow [docs/camera-testing.md](docs/camera-testing.md).
+Rimix has met one real camera so far: a Sony ZV-E10 (firmware 2.01) on its own Wi-Fi, from a Mac on macOS 27. Everything else was built against a simulated camera. Nothing has been tried on Windows with a camera, or on any other Sony body.
+
+| | On the ZV-E10 |
+|---|---|
+| Connect over the camera's Wi-Fi, live view, take pictures | Works |
+| Mode, aperture, ISO and focus area from the app, and the Auto buttons | Works |
+| Shutter speed, drive, focus mode, white balance, recording | Built; not yet confirmed |
+| Tap to focus | Built; where the point lands is not yet checked |
+| Zoom with a power zoom lens | Built from Sony's reference; not tried |
+| Browse files (the camera's Send to Smartphone mode) | Built from other open-source programs; not tried |
+| Webcam feed | The feed runs; not tried with OBS |
+| Copying each picture to the computer as it is taken | Does not work: the ZV-E10 never offers the picture over Wi-Fi. Hidden by default |
+| Browse card inside a remote session | Not possible: the ZV-E10 has no card commands there |
+| SteadyShot, Face/Eye AF from the app | Not possible: the ZV-E10 does not accept them remotely |
+| Bluetooth, FTP transfer from the camera, Access Authentication, several cameras | Simulated camera only |
+
+To try it on your own camera, follow [docs/camera-testing.md](docs/camera-testing.md). `docs/camera-reports/` holds what the ZV-E10 reported about itself.
 
 ## What's inside
 
@@ -81,6 +97,12 @@ The connect screen has three ways in:
 2. **Nearby.** If the camera and the Mac are on the same router, the camera shows up in the list. Pick it.
 3. **Type the Wi-Fi name and password.** On the camera choose Menu, Network, PC Remote Function, Wi-Fi Direct Info, then type the name (it starts with DIRECT-) and the password. The Mac joins the camera's network by itself. The camera's network is named `DIRECT-<code>:<model>`, for example `DIRECT-YKE1:ZV-E10`.
 
+Above them, choose what the camera is for; Rimix remembers the choice:
+
+- **Remote shooting** opens the live view and the controls.
+- **Webcam** connects the same way and turns the webcam feed on straight away.
+- **Browse files** reads the pictures on the camera instead. This is a different mode of the camera: play back a picture, choose Menu, Network, Send to Smartphone Func., Send to Smartphone, and pick the pictures to offer. Then connect with the Wi-Fi name and password the camera shows. See "Browse files" under Features.
+
 "Advanced: connect by address" holds the old IP address field. Rimix remembers cameras you have used. In App settings, the Connection section lets you choose whether Wi-Fi joins happen automatically or ask first, pick the webcam, and forget remembered cameras.
 
 If the camera's Wi-Fi drops while you work, Rimix tries to rejoin it by itself from the second reconnect attempt. If that does not work, join the camera's network again from the Wi-Fi menu, or press Disconnect and connect again.
@@ -99,19 +121,23 @@ With Bluetooth on (App settings, Connection, the Bluetooth switch), Nearby also 
 - Wi-Fi joining by QR code, by typed name and password, or from the nearby list. If the network is not visible yet, Rimix says "This computer can't see <name> yet" and tells you to open Wi-Fi Direct Info on the camera and try again.
 - Reconnecting: from the second attempt Rimix rejoins the camera's Wi-Fi by itself. From attempt 5 the top bar says "Reconnecting… if the camera's Wi-Fi dropped, rejoin it from the Wi-Fi menu".
 - Per-model settings: Rimix handles older and newer camera generations differently. Hover the firmware in the top bar to see the generation.
-- Copy to this computer: the switch at the top of the Save to panel. On (the default), new pictures and videos are copied to the Save to folder as described below. Off, they stay on the camera's card and Rimix sets the camera back to "Camera Only", so it never waits for a computer that is not fetching. Turning it on again copies the pictures taken from then on.
+- Copying after each shot: off and out of sight by default, because not every camera does it (the ZV-E10 does not hand over its pictures over Wi-Fi). "Show copying to this computer" in App settings brings back the Save to panel and Last captures. The next three entries describe it when shown.
+- Copy to this computer: the switch at the top of the Save to panel. On, new pictures and videos are copied to the Save to folder as described below. Off, they stay on the camera's card and Rimix sets the camera back to "Camera Only", so it never waits for a computer that is not fetching. Turning it on again copies the pictures taken from then on.
 - Pictures on this computer: when Rimix connects it sets the camera's "Still Img. Save Dest." to PC+Camera, so every picture is saved on the card and copied to the Save to folder (RAW included, in whatever format the camera shoots). While files arrive, the Last captures panel shows one bar for everything ("Copying 2 files to this computer 30%") above a bar for each file. If the camera will not allow it, the Save to panel says so.
 - Videos: when you stop recording, Rimix looks at the card and copies the new clip the same way. Many cameras do not let their card be read while they are remote controlled; Rimix then says "Videos stay on the card" once and leaves them there.
-- Tap to focus: click anywhere on the live view and the camera focuses there. Rimix switches the camera's focus area to Flexible Spot: M when it is on something that ignores a point.
+- Tap to focus: click anywhere on the live view and the camera focuses there. If the focus area ignores a point (Wide, Zone, Center), Rimix first switches the camera to a spot it lists, and it stays there; the Focus area row in Settings puts it back. In modes where the camera fixes the focus area, Rimix says the camera chooses where to focus.
 - Frames: the camera's focus frames, the faces it finds and the subject it tracks are drawn on the live view; "Focus and face frames" in the Scopes and timer panel turns them off. Whether the camera looks for faces, and for people or animals, is still set in the camera's own menu.
 - Connecting: while Rimix joins the camera's Wi-Fi, finds the camera and connects, the screen is covered with which of those three steps it is at, and a Cancel button that stops it.
 - Settings chosen from a list: Mode, Drive, Focus, White balance and Format each open a list of the camera's own values, with a pictogram, the name and a short badge; Drive is split under tabs (Shoot, Timer, the two kinds of bracket, More). Aperture opens the f-stops, each drawn as wide as it is; the lens decides which of them it can reach. With white balance on Colour temperature, the Colour temp row opens a strip from warm to cool to drag along, and a box to type a kelvin value into. On bodies that keep the file format at their own code (the ZV-E10 does), Format finds it there.
 - Mode: the Mode chip opens a list instead of stepping through values. Tabs split the modes by kind of shooting (Photo, Movie, S&Q, Scene); each mode shows a pictogram, Sony's name for it and its dial letter (P, A, S, M, AUTO, SCN). The chip itself reads, for example, "P", "Movie M", "S&Q A" or "Twilight".
 - ISO: plus and minus move one of the camera's own stops at a time (100, 125, 160, 200 and so on). A camera takes no value between its stops, so this is the smallest change there is. Under ISO, the Custom box takes a typed value, shows the lowest and highest the camera allows, and sets the nearest one.
+- Auto: Shutter, Aperture and ISO each have an Auto button. ISO has an Auto value of its own. A camera has no auto value for shutter speed or aperture; which of them it chooses is the shooting mode, so the button changes the mode (from Manual, Auto on Shutter goes to Aperture Priority, on Aperture to Shutter Priority, on both to Program Auto). Movie modes stay movie modes.
+- Zoom: with a power zoom lens, the Lens section of Settings has W and T buttons that zoom while held, and a Zoom setting list (optical only, Clear Image Zoom, digital zoom). Sony cameras allow the zooms beyond the lens only in JPEG; in RAW the list says so and offers "Switch to JPEG". SteadyShot is listed there too on cameras that let it be set remotely.
 - Webcam: "Use as a webcam" in the Cameras panel sends the camera's live picture to other apps instead of the screen. See "Use the camera as a webcam".
 - Scopes: in the Scopes and timer panel, switch on Waveform, False colour, Zebra or Thirds grid over the live view.
 - Several cameras: the Cameras panel lists every connected camera; click one to make it the one the controls act on. "Add a camera" opens the connect screen while the others stay connected, and "Back to <model>" returns to them. "Shoot all" fires every connected camera at once, and "Disconnect all" drops them all. While several cameras are connected, each filmstrip tile is labelled with the camera it came from. See "Several cameras at once" above for the Wi-Fi limits.
-- Browse card: in the Cameras panel, "Browse card" lists the active camera's card, newest first. "Download" saves a file (videos too) into the Save to folder and into the filmstrip, and the row then says "Saved". Files of 4 GB or more say "Too large to download". An empty card says "No files on the card".
+- Browse files: chosen on the connect screen (see "Connect your camera"). Rimix shows the camera's folders with a thumbnail for each file, opens a picture large when clicked (arrow keys move on, Escape closes), and imports one file or all of them into the folder shown at the top. No live view runs meanwhile. "Done" tells the camera it is finished, and the camera leaves the mode. Cameras that choose the pictures on the camera list only those; a RAW may be offered only as a JPEG copy, and Rimix marks it when so.
+- Browse card: on cameras that can list their card during remote shooting (the ZV-E10 cannot, and the row is hidden for it), "Browse card" in the Cameras panel lists the card, newest first. "Import" saves a file (videos too) into the folder shown at the top. Files of 4 GB or more say "Too large to import". An empty card says "No files on the card".
 - FTP transfer from the camera: in App settings. This is separate from "Copy to this computer": here the camera itself sends files with its FTP Transfer function, if it has one, to an SFTP server Rimix starts. While it is on, the section shows the Address, Username, Password and Fingerprint to type into the camera, and "New password" makes a fresh one. Leave it off unless you have set that up on the camera.
 - Bluetooth: see "Bluetooth" under "Connect your camera".
 - Interval timer: in the Scopes and timer panel, open the Interval timer row. Set Every (seconds, at least 2) and Shots (leave empty for no limit), then press Start. The dock shows, for example, "Interval 3 of 20, next in 4 s". Shots skipped because the camera was busy are counted as missed. A dropped link does not stop the run; Disconnect and Stop do.
