@@ -9,51 +9,38 @@
  "focus_found": false,
  "properties": [
   {
-   "code": 20484,
+   "code": 53843,
    "label": "RAW+JPEG",
    "short": "RAW+JPEG",
    "raw": {
-    "U8": 19
+    "U8": 2
    },
    "writable": true,
    "enabled": "On",
    "choices": [
     {
      "raw": {
-      "U8": 2
-     },
-     "label": "Standard",
-     "short": "Standard"
-    },
-    {
-     "raw": {
-      "U8": 3
-     },
-     "label": "Fine",
-     "short": "Fine"
-    },
-    {
-     "raw": {
-      "U8": 4
-     },
-     "label": "Extra fine",
-     "short": "Extra fine"
-    },
-    {
-     "raw": {
-      "U8": 16
+      "U8": 1
      },
      "label": "RAW",
      "short": "RAW"
     },
     {
      "raw": {
-      "U8": 19
+      "U8": 2
      },
      "label": "RAW+JPEG",
      "short": "RAW+JPEG"
+    },
+    {
+     "raw": {
+      "U8": 3
+     },
+     "label": "JPEG",
+     "short": "JPEG"
     }
-   ]
+   ],
+   "range": null
   },
   {
    "code": 20485,
@@ -86,7 +73,8 @@
      "label": "Colour temp",
      "short": "Colour temp"
     }
-   ]
+   ],
+   "range": null
   },
   {
    "code": 20487,
@@ -96,34 +84,13 @@
     "U16": 400
    },
    "writable": true,
-   "enabled": "On",
-   "choices": [
-    {
-     "raw": {
-      "U16": 350
-     },
-     "label": "f/3.5",
-     "short": "f/3.5"
-    },
-    {
-     "raw": {
-      "U16": 400
-     },
-     "label": "f/4.0",
-     "short": "f/4.0"
-    },
-    {
-     "raw": {
-      "U16": 450
-     },
-     "label": "f/4.5",
-     "short": "f/4.5"
-    }
-   ]
+   "enabled": "DisplayOnly",
+   "choices": [],
+   "range": null
   },
   {
    "code": 20490,
-   "label": "AF-C",
+   "label": "Continuous AF",
    "short": "AF-C",
    "raw": {
     "U16": 32772
@@ -135,24 +102,39 @@
      "raw": {
       "U16": 2
      },
-     "label": "AF-S",
+     "label": "Single-shot AF",
      "short": "AF-S"
+    },
+    {
+     "raw": {
+      "U16": 32773
+     },
+     "label": "Automatic AF",
+     "short": "AF-A"
     },
     {
      "raw": {
       "U16": 32772
      },
-     "label": "AF-C",
+     "label": "Continuous AF",
      "short": "AF-C"
+    },
+    {
+     "raw": {
+      "U16": 32774
+     },
+     "label": "Direct Manual Focus",
+     "short": "DMF"
     },
     {
      "raw": {
       "U16": 1
      },
-     "label": "MF",
+     "label": "Manual Focus",
      "short": "MF"
     }
-   ]
+   ],
+   "range": null
   },
   {
    "code": 20494,
@@ -248,7 +230,8 @@
      "label": "Hand-held Twilight",
      "short": "Twilight"
     }
-   ]
+   ],
+   "range": null
   },
   {
    "code": 20496,
@@ -281,7 +264,8 @@
      "label": "+0.7",
      "short": "+0.7"
     }
-   ]
+   ],
+   "range": null
   },
   {
    "code": 20499,
@@ -302,12 +286,41 @@
     },
     {
      "raw": {
-      "U32": 65555
+      "U32": 98322
      },
-     "label": "Continuous",
-     "short": "Continuous"
+     "label": "Continuous Lo",
+     "short": "Cont. Lo"
+    },
+    {
+     "raw": {
+      "U32": 65538
+     },
+     "label": "Continuous Hi",
+     "short": "Cont. Hi"
+    },
+    {
+     "raw": {
+      "U32": 229380
+     },
+     "label": "Self-timer 10 s",
+     "short": "Timer 10 s"
+    },
+    {
+     "raw": {
+      "U32": 557068
+     },
+     "label": "Self-timer 5 s, 3 shots",
+     "short": "Timer 5 s \u00d73"
+    },
+    {
+     "raw": {
+      "U32": 295735
+     },
+     "label": "Bracket 0.3 EV, 3 shots, continuous",
+     "short": "BRK C 0.3 \u00d73"
     }
-   ]
+   ],
+   "range": null
   },
   {
    "code": 53773,
@@ -340,7 +353,8 @@
      "label": "1/250",
      "short": "1/250"
     }
-   ]
+   ],
+   "range": null
   },
   {
    "code": 53775,
@@ -351,7 +365,12 @@
    },
    "writable": true,
    "enabled": "On",
-   "choices": []
+   "choices": [],
+   "range": {
+    "min": 2500,
+    "max": 9900,
+    "step": 100
+   }
   },
   {
    "code": 53790,
@@ -384,7 +403,8 @@
      "label": "1600",
      "short": "1600"
     }
-   ]
+   ],
+   "range": null
   }
  ],
  "live_view_fps": 29.5,

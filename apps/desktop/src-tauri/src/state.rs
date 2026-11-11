@@ -1707,6 +1707,7 @@ mod tests {
                     label: "1/125".into(),
                     short: "1/125".into(),
                 }],
+                range: None,
             }],
             live_view_fps: 29.5,
             last_shot_at: None,

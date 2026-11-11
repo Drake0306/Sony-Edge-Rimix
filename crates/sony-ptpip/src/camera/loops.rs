@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -12,14 +13,15 @@ use tokio::time::{interval, sleep, MissedTickBehavior};
 
 use super::{connect_once, lock, CameraEvent, Inner, Receive, RecentShot};
 use crate::capture::{
-    captured_ready, delivery_target, ensure_delivery, receive_one, Destination, DEST_COMPUTER,
+    captured_ready, delivery_target, ensure_delivery, receive_one, shot_name, Destination,
+    DEST_COMPUTER,
 };
 use crate::card::CardKind;
 use crate::error::Error;
 use crate::liveview::next_frame;
 use crate::ptp::codes::{
-    EV_SONY_DEVICE_PROP_CHANGED, HANDLE_CAPTURED_STILL, OP_GET_OBJECT_INFO, PROP_CAPTURED_READY,
-    PROP_MOVIE_REC_STATE, PROP_STILL_DESTINATION,
+    EV_SONY_DEVICE_PROP_CHANGED, EV_SONY_OBJECT_ADDED, HANDLE_CAPTURED_STILL, OP_GET_OBJECT_INFO,
+    PROP_CAPTURED_READY, PROP_MOVIE_REC_STATE, PROP_STILL_DESTINATION,
 };
 use crate::ptp::parse_object_info;
 use crate::ptp::PtpValue;
@@ -168,6 +170,16 @@ async fn event_loop(inner: Arc<Inner>, mut events: broadcast::Receiver<PtpEvent>
         tokio::select! {
             event = events.recv() => match event {
                 Ok(e) if e.code == EV_SONY_DEVICE_PROP_CHANGED => dirty = true,
+                // The camera announcing a new object: a picture in its
+                // memory for the computer (older bodies say it only this
+                // way), or a file on its card.
+                Ok(e) if e.code == EV_SONY_OBJECT_ADDED => {
+                    tracing::info!(params = ?e.params, "the camera announced a new object");
+                    if e.params.first() == Some(&HANDLE_CAPTURED_STILL) {
+                        inner.object_added.store(true, Ordering::SeqCst);
+                    }
+                    dirty = true;
+                }
                 Ok(_) => {}
                 // Missed events may have been property changes.
                 Err(RecvError::Lagged(_)) => dirty = true,
@@ -250,20 +262,36 @@ async fn live_view_loop(inner: Arc<Inner>) -> String {
 async fn capture_loop(inner: Arc<Inner>) -> String {
     let mut tick = interval(CAPTURE_POLL);
     tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    let mut last_waiting: Option<u64> = None;
+    // The last failure said, so one that repeats every two seconds is said once.
+    let mut last_error = String::new();
     loop {
         tick.tick().await;
         loop {
             if inner.receive() != Receive::Here {
                 break;
             }
+            // What the camera says about pictures waiting, said in the log
+            // whenever it changes: the raw value tells a body that never
+            // offers one from a body whose offer Rimix cannot read.
+            let waiting = lock(&inner.snapshot)
+                .prop(PROP_CAPTURED_READY)
+                .and_then(|p| p.current.as_u64());
+            if waiting != last_waiting {
+                if let Some(raw) = waiting.filter(|&raw| raw != 0) {
+                    tracing::info!(value = %format_args!("{raw:#06x}"), "the camera says pictures are waiting (0xD215)");
+                }
+                last_waiting = waiting;
+            }
+            let announced = inner.object_added.swap(false, Ordering::SeqCst);
             let ready = match captured_ready(&lock(&inner.snapshot).props) {
                 Ok(n) => n,
                 Err(e) => {
-                    tracing::debug!(error = %e, "reading the capture count failed");
+                    tracing::warn!(error = %e, "the camera's count of waiting pictures cannot be read");
                     break;
                 }
             };
-            if ready == 0 {
+            if ready == 0 && !announced {
                 break;
             }
             let mut guard = inner.conn.lock().await;
@@ -284,12 +312,20 @@ async fn capture_loop(inner: Arc<Inner>) -> String {
                     }
                 }
                 Err(e) if lost(conn, &e) => return e.to_string(),
-                Err(_) => {
+                Err(e) => {
+                    // Never silently: this is a picture the camera offered
+                    // and Rimix did not get.
+                    let text = e.to_string();
+                    if text != last_error {
+                        tracing::warn!(error = %text, "a picture the camera offered could not be received; trying again");
+                        last_error = text;
+                    }
                     drop(guard);
                     sleep(CAPTURE_RETRY).await;
                     break;
                 }
             }
+            last_error.clear();
             match inner.refresh(conn).await {
                 Ok(_) => {}
                 Err(e) if lost(conn, &e) => return e.to_string(),
@@ -510,7 +546,7 @@ async fn receive_next(inner: &Inner, conn: &mut PtpIpConnection) -> Result<(), E
         .command_data_in(OP_GET_OBJECT_INFO, &[HANDLE_CAPTURED_STILL])
         .await?;
     let info = parse_object_info(&info)?;
-    let filename = info.filename;
+    let filename = shot_name(&info);
     let size = u64::from(info.compressed_size);
     let dest = lock(&inner.destination).clone();
     // Nothing is fetched while the folder cannot be written: the shot stays

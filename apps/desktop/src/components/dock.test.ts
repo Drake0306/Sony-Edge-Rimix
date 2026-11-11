@@ -78,11 +78,11 @@ describe('dock', () => {
     expect(pop.querySelector('.ttl span')!.textContent).toBe('opened from ISO');
     expect(pop.querySelector('.r.active .k')!.textContent).toBe('ISO');
     // Opened from ISO, the Mode row is closed: it shows the mode in use.
-    const mode = pop.querySelector<HTMLButtonElement>('.r[data-code="20494"] .modebtn')!;
+    const mode = pop.querySelector<HTMLButtonElement>('.r[data-code="20494"] .pickbtn')!;
     expect(mode.getAttribute('aria-expanded')).toBe('false');
     expect(mode.querySelector('.mn')!.textContent).toBe('Manual Exposure');
     expect(mode.querySelector('.cap')!.textContent).toBe('M');
-    expect(pop.querySelector<HTMLElement>('.modepick')!.hidden).toBe(true);
+    expect(pop.querySelector<HTMLElement>('#panel-20494')!.hidden).toBe(true);
     // White balance is colour temp, so the colour temp row appears.
     expect(pop.querySelector('.r[data-code="53775"] .k')!.textContent).toBe('Colour temp');
     iso.click();
@@ -156,9 +156,9 @@ describe('dock', () => {
     const { root } = setup();
     root.querySelectorAll<HTMLButtonElement>('.chip')[0].click();
     const pop = root.querySelector<HTMLElement>('.pop')!;
-    const pick = pop.querySelector<HTMLElement>('.modepick')!;
+    const pick = pop.querySelector<HTMLElement>('#panel-20494')!;
     expect(pick.hidden).toBe(false);
-    expect(pop.querySelector('.modebtn')!.getAttribute('aria-expanded')).toBe('true');
+    expect(pop.querySelector('.pickbtn')!.getAttribute('aria-expanded')).toBe('true');
     const tabs = () => [...pick.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
     expect(tabs().map((t) => t.textContent)).toEqual(['Photo', 'Movie', 'S&Q', 'Scene']);
     // The camera is in M, a photo mode, so the Photo tab is showing.
@@ -199,15 +199,107 @@ describe('dock', () => {
       p.code === 0x500e ? { ...p, raw: { U32: 0x00058016 }, label: 'Hand-held Twilight', short: 'Twilight' } : p,
     );
     store.set({ camera: { ...camera, properties } });
-    expect(pop.querySelector('.modebtn .mn')!.textContent).toBe('Hand-held Twilight');
-    expect(pop.querySelector('.modebtn .cap')!.textContent).toBe('SCN');
-    expect(pop.querySelector('.modebtn use')!.getAttribute('href')).toBe('#m-twilight');
+    expect(pop.querySelector('.pickbtn .mn')!.textContent).toBe('Hand-held Twilight');
+    expect(pop.querySelector('.pickbtn .cap')!.textContent).toBe('SCN');
+    expect(pop.querySelector('.pickbtn use')!.getAttribute('href')).toBe('#m-twilight');
     expect(pop.querySelector('[role="tab"][aria-selected="true"]')!.textContent).toBe('Scene');
-    const checked = pop.querySelector('.modepick [role="radio"][aria-checked="true"] .mn')!;
+    const checked = pop.querySelector('#panel-20494 [role="radio"][aria-checked="true"] .mn')!;
     expect(checked.textContent).toBe('Hand-held Twilight');
     // The row's own button folds the list away again.
-    pop.querySelector<HTMLButtonElement>('.modebtn')!.click();
-    expect(pop.querySelector<HTMLElement>('.modepick')!.hidden).toBe(true);
+    pop.querySelector<HTMLButtonElement>('.pickbtn')!.click();
+    expect(pop.querySelector<HTMLElement>('#panel-20494')!.hidden).toBe(true);
+  });
+
+  test('Focus, Drive, White balance and Format open the same kind of list', () => {
+    const { root } = setup();
+    const chips = root.querySelectorAll<HTMLButtonElement>('.chip');
+    const pop = root.querySelector<HTMLElement>('.pop')!;
+    const open = (code: number) => pop.querySelector<HTMLElement>(`#panel-${code}`)!;
+    const rows = (code: number) =>
+      [...open(code).querySelectorAll<HTMLButtonElement>('[role="radio"]')].map((b) => [
+        b.querySelector('use')!.getAttribute('href'),
+        b.querySelector('.mn')!.textContent,
+        b.querySelector('.cap')?.textContent ?? '',
+        b.getAttribute('aria-checked'),
+      ]);
+    // Focus, from its chip: unfolded, the others folded.
+    chips[6].click();
+    expect(open(0x500a).hidden).toBe(false);
+    expect(open(0x500e).hidden).toBe(true);
+    expect(rows(0x500a)).toEqual([
+      ['#f-af', 'Single-shot AF', 'AF-S', 'false'],
+      ['#f-af', 'Automatic AF', 'AF-A', 'false'],
+      ['#f-afc', 'Continuous AF', 'AF-C', 'true'],
+      ['#f-dmf', 'Direct Manual Focus', 'DMF', 'false'],
+      ['#f-mf', 'Manual Focus', 'MF', 'false'],
+    ]);
+    open(0x500a).querySelectorAll<HTMLButtonElement>('[role="radio"]')[4].click();
+    expect(invoke).toHaveBeenCalledWith('set_property', { code: 0x500a, raw: { U16: 1 } });
+
+    // Drive has tabs; unfolding it folds Focus.
+    pop.querySelector<HTMLButtonElement>('.r[data-code="20499"] .pickbtn')!.click();
+    expect(open(0x500a).hidden).toBe(true);
+    expect([...open(0x5013).querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual(['Shoot', 'Timer', 'BRK burst']);
+    expect(rows(0x5013)).toEqual([
+      ['#d-single', 'Single shooting', '1', 'true'],
+      ['#d-burst', 'Continuous shooting: Lo', 'Lo', 'false'],
+      ['#d-burst', 'Continuous shooting: Hi', 'Hi', 'false'],
+    ]);
+
+    // White balance, and Format under the code this camera keeps it at.
+    pop.querySelector<HTMLButtonElement>('.r[data-code="20485"] .pickbtn')!.click();
+    expect(rows(0x5005).map((r) => r[1])).toEqual(['Auto', 'Daylight', 'Colour temperature']);
+    pop.querySelector<HTMLButtonElement>('.r[data-code="20484"] .pickbtn')!.click();
+    expect(rows(0x5004)).toEqual([
+      ['#fmt-raw', 'RAW', 'RAW', 'false'],
+      ['#fmt-both', 'RAW+JPEG', 'R+J', 'true'],
+      ['#fmt-jpeg', 'JPEG', 'JPG', 'false'],
+    ]);
+    open(0x5004).querySelectorAll<HTMLButtonElement>('[role="radio"]')[0].click();
+    expect(invoke).toHaveBeenCalledWith('set_property', { code: 0xd253, raw: { U8: 1 } });
+  });
+
+  test('Aperture unfolds the f-stops and asks for the one chosen', () => {
+    const { root } = setup();
+    root.querySelectorAll<HTMLButtonElement>('.chip')[2].click();
+    const panel = root.querySelector<HTMLElement>('#panel-20487')!;
+    expect(panel.hidden).toBe(false);
+    const stops = [...panel.querySelectorAll<HTMLButtonElement>('.fstop')];
+    expect(stops.map((b) => b.textContent)).toContain('f/5.6');
+    expect(panel.querySelector('.fstop[aria-checked="true"]')!.textContent).toBe('f/4.0');
+    stops.find((b) => b.textContent === 'f/8.0')!.click();
+    expect(invoke).toHaveBeenCalledWith('set_property', { code: 0x5007, raw: { U16: 800 } });
+    // Plus and minus stay beside it.
+    expect(root.querySelectorAll('.r[data-code="20487"] .step button')).toHaveLength(2);
+  });
+
+  test('Colour temperature unfolds a scale to drag and a box to type in', () => {
+    const { root } = setup();
+    root.querySelectorAll<HTMLButtonElement>('.chip')[5].click();
+    const pop = root.querySelector<HTMLElement>('.pop')!;
+    pop.querySelector<HTMLButtonElement>('.r[data-code="53775"] .pickbtn')!.click();
+    const panel = pop.querySelector<HTMLElement>('#panel-53775')!;
+    expect(panel.hidden).toBe(false);
+    const scale = panel.querySelector<HTMLInputElement>('.kscale')!;
+    expect([scale.min, scale.max, scale.step, scale.value]).toEqual(['2500', '9900', '100', '5200']);
+    expect(panel.querySelector('.kmin')!.textContent).toBe('2500K');
+    expect(panel.querySelector('.kmax')!.textContent).toBe('9900K');
+    // Dragging shows the value; letting go sets it.
+    scale.value = '6500';
+    scale.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(panel.querySelector('.know')!.textContent).toBe('6500K');
+    expect(invoke).not.toHaveBeenCalledWith('set_property', expect.objectContaining({ code: 0xd20f }));
+    scale.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(invoke).toHaveBeenCalledWith('set_property', { code: 0xd20f, raw: { U16: 6500 } });
+    // A typed value goes to the camera's nearest step, inside its range.
+    const input = panel.querySelector<HTMLInputElement>('.ktype input')!;
+    input.value = '4321';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(invoke).toHaveBeenCalledWith('set_property', { code: 0xd20f, raw: { U16: 4300 } });
+    expect(panel.querySelector('.ktype .range')!.textContent).toBe('Nearest the camera has: 4300');
+    input.value = '99999';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(invoke).toHaveBeenCalledWith('set_property', { code: 0xd20f, raw: { U16: 9900 } });
   });
 
   test('the ISO row takes a typed value, shows the range and sets the nearest stop', () => {

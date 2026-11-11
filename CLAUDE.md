@@ -56,7 +56,7 @@ Then run `scripts/check-mac-bundle.sh ~/Downloads/Rimix-0.1.0/Rimix.app`:
 it must print three `ok` lines. A bundle that fails it cannot reach any
 camera (see "The 10:00 connect failure").
 
-## State of the code (main = merge of save-switch)
+## State of the code (main = merge of controls-and-capture)
 
 All four spec phases are built and merged. Everything was developed against
 the simulator; only three real-camera sessions have happened, all on
@@ -291,6 +291,47 @@ What it showed, and what was fixed on branch `real-values` (merged):
   Here, CardOnly). Off writes 0xD222 back to 0x10 so the camera does not
   hold shots for a computer that will not fetch; flipping the switch
   restarts the six tries of the delivery loop.
+
+- **Session 6 (07:16Z) and branch `controls-and-capture` (merged).** The
+  second report is `docs/camera-reports/zv-e10-fw2.01-session6.json`.
+  - *Photos still not received, and now it is narrowed down.* The log
+    shows 0xD222 = 0x11 at connect (`the camera is sending new pictures to
+    this computer`), the switch flipping it both ways correctly, and NOT
+    ONE `the camera offers a picture` line, while the card's remaining
+    shots dropped by one. So the camera offered and Rimix failed before
+    logging. Two faults found by reading the code against libgphoto2's
+    `camera_sony_capture`: `parse_object_info` required the date strings
+    after the file name, and `check_filename` rejected an empty name
+    (libgphoto2 names such files itself); and every such failure was
+    swallowed without a word. Now the dataset may end after the numbers,
+    a nameless picture is saved as `Rimix-<date>.<EXT>`, 0xD215 changes
+    and ObjectAdded (0xC201) events are logged at info, ObjectAdded on
+    0xFFFFC001 also triggers a fetch, and every failed fetch warns with
+    its error. WHICH of these was the cause on the ZV-E10 is not known:
+    the next log will say (`a picture the camera offered could not be
+    received` plus the error, or `picture saved`).
+  - *Mode jumped to Macro in Intelligent Auto.* Reading of Roy's report:
+    the camera puts the scene it recognises into the mode value, the Auto
+    family number over the scene's code (`0x0004_8015`), and the lower
+    half alone read as Macro. `Snapshot::mode_shown` now shows the listed
+    mode of that family (last seen, else its automatic one) and logs each
+    unlisted value once (`the camera reports a shooting mode it does not
+    list`): that line confirms or refutes the reading.
+  - *Format was blank:* the ZV-E10 has no 0x5004; file format is 0xD253
+    (1 RAW, 2 RAW+JPEG, 3 JPEG), JPEG quality 0xD252, what is sent to the
+    computer 0xD269 (it was 3, RAW only). `findProp(camera, PROP.format)`
+    finds either.
+  - *Shutter and aperture list no values* (form none): plus and minus did
+    nothing. `Camera::step` now nudges with 0x9207 +1/-1 and `Camera::set`
+    walks there (`control::nudge_to`), as libgphoto2's
+    `_put_sony_value_u16`. Aperture was "display only" at both connects;
+    such nudge-only settings are treated as usable unless "off". Whether
+    the ZV-E10 obeys the nudge for aperture is untested.
+  - *ISO* is back to one camera stop per press (Roy asked for steps of
+    50, then of 10; neither exists on a camera, and the 50 rule skipped
+    stops). *Colour temperature* has a kelvin scale; `PropertySummary`
+    carries `range`. *Drive, Focus, White balance, Format* use the shared
+    picker (`src/pickers.ts`); *Aperture* a grid of f-stops.
 
 Seen in the report and not used yet: 0xD278 is an HTTP live view stream
 URL on the camera (`http://192.168.122.1:60152/liveviewstream?...`),

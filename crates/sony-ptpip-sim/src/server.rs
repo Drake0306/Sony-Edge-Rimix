@@ -113,6 +113,8 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
     let addr = listener.local_addr().expect("listener address");
     let log: Log = Arc::default();
     let controls = Controls::new(config.files_per_shot);
+    let mut store = PropStore::new(props);
+    store.keep_lists_of(&config.unlisted);
     let shared = Arc::new(Shared {
         card: Mutex::new(config.card.clone()),
         config,
@@ -120,7 +122,7 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
         next_conn: AtomicU32::new(1),
         pending: Mutex::default(),
         current: Mutex::default(),
-        props: Mutex::new(PropStore::new(props)),
+        props: Mutex::new(store),
         controls: Mutex::new(controls),
         live_view: Mutex::default(),
         live_view_infos: AtomicU32::new(0),
@@ -822,7 +824,14 @@ async fn captured_still<W: AsyncWriteExt + Unpin>(
         return Ok(Err(RC_INVALID_OBJECT_HANDLE));
     };
     if op == OP_GET_OBJECT_INFO {
-        send_data_in(ctx.w, tid, &frames::capture_object_info(shot, jpeg.len())).await?;
+        let mut info = frames::capture_object_info(shot, jpeg.len());
+        if shared.config.terse_capture_info {
+            // Everything up to the file name is 52 bytes; an empty PTP
+            // string is one zero byte, and nothing follows it.
+            info.truncate(52);
+            info.push(0);
+        }
+        send_data_in(ctx.w, tid, &info).await?;
         return Ok(Ok(None));
     }
     if shared.config.drop_during_capture {

@@ -18,7 +18,12 @@ use crate::PtpIpConnection;
 const PRESS: PtpValue = PtpValue::U16(2);
 const RELEASE: PtpValue = PtpValue::U16(1);
 /// Longest number of single steps a stepped write may take.
-const MAX_STEPS: usize = 40;
+pub(crate) const MAX_STEPS: usize = 40;
+/// How many times, and how far apart, the value is read again after a
+/// nudge before the camera is taken to be at its limit: a body applies a
+/// nudge a moment after it answers.
+const NUDGE_READS: usize = 6;
+const NUDGE_WAIT: std::time::Duration = std::time::Duration::from_millis(70);
 
 /// Sends one control (0x9207 [code]) with `value` as its data phase.
 pub async fn control(conn: &mut PtpIpConnection, code: u16, value: &PtpValue) -> Result<(), Error> {
@@ -146,6 +151,55 @@ pub async fn set_value(
             other => other,
         },
     }
+}
+
+/// Walks a property that lists no values to `target`, one nudge (0x9207
+/// with +1 or -1) at a time, as libgphoto2 sets aperture and shutter speed
+/// on these bodies (`_put_sony_value_u16`). +1 moves to the larger value.
+///
+/// It stops when the value reaches or passes `target`, so a target between
+/// two of the lens's values ends on the first one beyond it, and when the
+/// value no longer moves, which is the end of what the lens or body
+/// allows. Neither is an error.
+pub async fn nudge_to(
+    conn: &mut PtpIpConnection,
+    desc: &PropertyDesc,
+    target: &PtpValue,
+) -> Result<(), Error> {
+    let not_numeric = Error::Unsupported("value is not a number");
+    let target = target.as_i64().ok_or(not_numeric)?;
+    let mut current = desc
+        .current
+        .as_i64()
+        .ok_or(Error::Unsupported("value is not a number"))?;
+    let up = target > current;
+    for _ in 0..MAX_STEPS {
+        if current == target || (up && current > target) || (!up && current < target) {
+            return Ok(());
+        }
+        control(conn, desc.code, &PtpValue::I8(if up { 1 } else { -1 })).await?;
+        let mut moved = None;
+        for read in 0..NUDGE_READS {
+            if read > 0 {
+                tokio::time::sleep(NUDGE_WAIT).await;
+            }
+            let now = read_all_props(conn)
+                .await?
+                .into_iter()
+                .find(|p| p.code == desc.code)
+                .and_then(|p| p.current.as_i64());
+            if now.is_some_and(|n| n != current) {
+                moved = now;
+                break;
+            }
+        }
+        match moved {
+            Some(now) => current = now,
+            // The end of what the lens or body allows.
+            None => return Ok(()),
+        }
+    }
+    Ok(())
 }
 
 fn settable(desc: &PropertyDesc) -> Option<&[PtpValue]> {

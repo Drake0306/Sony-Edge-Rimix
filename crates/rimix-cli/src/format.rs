@@ -148,6 +148,7 @@ mod tests {
             writable: true,
             enabled: Enabled::On,
             choices: Vec::new(),
+            range: None,
         }
     }
 

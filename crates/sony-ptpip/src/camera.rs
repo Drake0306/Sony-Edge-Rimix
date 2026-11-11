@@ -42,7 +42,7 @@ use crate::error::Error;
 use crate::liveview::{self, LiveViewFrame};
 use crate::ptp::codes::{OP_GET_DEVICE_INFO, PROP_FOCUS_MODE, PROP_ISO};
 use crate::ptp::{parse_device_info, PtpValue};
-use crate::sony::property::{read_all_props, Enabled, PropertyDesc};
+use crate::sony::property::{read_all_props, Enabled, Form, PropertyDesc};
 use crate::sony::{control, sdio_connect};
 use crate::ssh::{SshConfig, SshTunnel};
 use crate::{quirks_for, ConnectOptions, PtpEvent, PtpIpConnection};
@@ -151,6 +151,18 @@ pub struct PropertySummary {
     /// The values the camera accepts, in its order. Empty for range-form
     /// properties; use [`Camera::step`] for those.
     pub choices: Vec<Choice>,
+    /// The ends and step of a range-form property, such as the colour
+    /// temperature in kelvin.
+    #[serde(default)]
+    pub range: Option<ValueRange>,
+}
+
+/// The values a range-form property takes: `min`, `min + step`, ... `max`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ValueRange {
+    pub min: i64,
+    pub max: i64,
+    pub step: i64,
 }
 
 /// One settable value of a property.
@@ -255,6 +267,9 @@ struct Inner {
     /// The last delivery failure reported, as (camera file name, error
     /// text); the same failure again is not reported. Cleared by a save.
     last_failure: StdMutex<Option<(String, String)>>,
+    /// Set when the camera announces (ObjectAdded) a picture in its memory
+    /// for the computer; the capture loop takes it as "one is waiting".
+    object_added: AtomicBool,
 }
 
 /// What a session does about new pictures and movies.
@@ -521,6 +536,7 @@ impl Camera {
             stop: AtomicBool::new(false),
             recent: StdMutex::new(VecDeque::new()),
             last_failure: StdMutex::new(None),
+            object_added: AtomicBool::new(false),
         });
         let session = connect_once(&inner).await?;
         let events = inner.install(session).await;
@@ -557,10 +573,19 @@ impl Camera {
             (desc, quirks_for(&snap.model))
         };
         let desc = desc.ok_or(Error::Unsupported("the camera has no such property"))?;
-        if !desc.writable || desc.enabled != Enabled::On {
-            return Err(Error::Unsupported("property cannot be set now"));
+        if matches!(desc.form, Form::None) {
+            // No list of values: the camera only takes nudges (shutter
+            // speed and aperture on the ZV-E10), so it is walked there.
+            if !desc.writable || desc.enabled == Enabled::Off {
+                return Err(Error::Unsupported("property cannot be set now"));
+            }
+            control::nudge_to(conn, &desc, &value).await?;
+        } else {
+            if !desc.writable || desc.enabled != Enabled::On {
+                return Err(Error::Unsupported("property cannot be set now"));
+            }
+            control::set_value(conn, &desc, &value, &quirks).await?;
         }
-        control::set_value(conn, &desc, &value, &quirks).await?;
         // The camera took the write; a failed read-back is not a failed
         // write unless the link is gone. The event loop reads again anyway.
         match self.inner.refresh(conn).await {
@@ -576,6 +601,9 @@ impl Camera {
     pub async fn step(&self, code: u16, delta: i32) -> Result<(), Error> {
         let desc = lock(&self.inner.snapshot).prop(code).cloned();
         let desc = desc.ok_or(Error::Unsupported("the camera has no such property"))?;
+        if matches!(desc.form, Form::None) {
+            return self.nudge(&desc, delta).await;
+        }
         let target = if code == PROP_ISO {
             state::iso_step_target(&desc, delta)?
         } else {
@@ -585,6 +613,28 @@ impl Camera {
             return Ok(());
         }
         self.set(code, target).await
+    }
+
+    /// Moves a property that lists no values `delta` steps, one nudge at a
+    /// time, then reads the settings back.
+    async fn nudge(&self, desc: &PropertyDesc, delta: i32) -> Result<(), Error> {
+        if !desc.writable || desc.enabled == Enabled::Off {
+            return Err(Error::Unsupported("property cannot be set now"));
+        }
+        let mut guard = self.inner.conn.lock().await;
+        let conn = guard.as_mut().ok_or(Error::Disconnected)?;
+        let direction = PtpValue::I8(if delta > 0 { 1 } else { -1 });
+        for _ in 0..delta.unsigned_abs().min(control::MAX_STEPS as u32) {
+            control::control(conn, desc.code, &direction).await?;
+        }
+        match self.inner.refresh(conn).await {
+            Ok(_) => Ok(()),
+            Err(e) if matches!(e, Error::Disconnected) || conn.is_disconnected() => Err(e),
+            Err(e) => {
+                tracing::warn!(error = %e, "reading the settings back after a step failed");
+                Ok(())
+            }
+        }
     }
 
     /// Takes a picture, focusing first unless the camera reports manual focus.
