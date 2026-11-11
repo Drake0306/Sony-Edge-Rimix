@@ -266,7 +266,17 @@ export interface AppSettings {
   bluetooth: boolean;
   /** Whether new pictures and movies are copied to this computer; off, they stay on the card. */
   saveToComputer: boolean;
+  /**
+   * Whether copying after each shot is offered at all: its panel, its switch
+   * and the last captures. Off unless asked for; off, nothing is copied.
+   */
+  copyFeature: boolean;
+  /** What the next camera is connected for: the screen it opens on. */
+  openAs: OpenAs;
 }
+
+/** Remote shooting, the live view as a webcam, or the files on the card. */
+export type OpenAs = 'Remote' | 'Webcam' | 'Files';
 
 /** What a Sony camera's Bluetooth advertisement says. */
 export interface BleAdvert {

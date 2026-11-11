@@ -49,6 +49,8 @@ describe('startApp', () => {
         presets: [],
         bluetooth: true,
         saveToComputer: true,
+        copyFeature: false,
+        openAs: 'Remote',
       },
     });
 

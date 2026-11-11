@@ -317,6 +317,122 @@ describe('dock', () => {
     expect(invoke).toHaveBeenCalledWith('set_property', { code: 0x5007, raw: { U16: 560 } });
   });
 
+  // A tap on the picture makes the camera's focus area a spot; this row is
+  // the way back to Wide without going to the camera.
+  test('Focus area is a list of the areas the camera gives, named', () => {
+    const { root, store } = setup();
+    const camera = store.get().camera!;
+    const area = (raw: number, label: string, short: string) => ({ raw: { U16: raw }, label, short });
+    // What the ZV-E10 listed once settled.
+    const listed = [area(1, 'Wide', 'Wide'), area(2, 'Zone', 'Zone'), area(0x103, 'Flexible Spot: L', 'Spot L'), area(0x201, 'Tracking: Wide', 'Trk Wide')];
+    store.set({
+      camera: {
+        ...camera,
+        properties: [...camera.properties, { code: 0xd22c, label: 'Flexible Spot: L', short: 'Spot L', raw: { U16: 0x103 }, writable: true, enabled: 'On' as const, choices: listed }],
+      },
+    });
+    root.querySelectorAll<HTMLButtonElement>('.chip')[6].click();
+    const pop = root.querySelector<HTMLElement>('.pop')!;
+    const row = pop.querySelector<HTMLElement>('.r[data-code="53804"]')!;
+    expect(row.querySelector('.k')!.textContent).toBe('Focus area');
+    // After Focus, before Drive.
+    const order = [...row.parentElement!.querySelectorAll<HTMLElement>('.r')].map((r) => r.querySelector('.k')!.textContent);
+    expect(order).toEqual(['Focus', 'Focus area', 'Drive']);
+    row.querySelector<HTMLButtonElement>('.pickbtn')!.click();
+    const panel = pop.querySelector<HTMLElement>('#panel-53804')!;
+    expect([...panel.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual(['Area', 'Tracking']);
+    const names = () => [...panel.querySelectorAll<HTMLButtonElement>('[role="radio"]')].map((b) => [b.querySelector('use')!.getAttribute('href'), b.querySelector('.mn')!.textContent, b.getAttribute('aria-checked')]);
+    expect(names()).toEqual([
+      ['#fa-wide', 'Wide', 'false'],
+      ['#fa-zone', 'Zone', 'false'],
+      ['#fa-spot', 'Flexible Spot: L', 'true'],
+    ]);
+    panel.querySelectorAll<HTMLButtonElement>('[role="radio"]')[0].click();
+    expect(invoke).toHaveBeenLastCalledWith('set_property', { code: 0xd22c, raw: { U16: 1 } });
+  });
+
+  test('a camera that reports no focus area has no such row', () => {
+    const { root } = setup();
+    root.querySelectorAll<HTMLButtonElement>('.chip')[6].click();
+    expect(root.querySelector('.pop .r[data-code="53804"]')).toBeNull();
+  });
+
+  // Roy, 2026-11-11: "add an auto mode" to shutter speed, aperture and ISO.
+  // A camera's automatic shutter speed is its aperture priority mode, so
+  // the button changes the mode; ISO has an Auto value of its own.
+  test('Shutter and Aperture have an Auto button that changes the mode to make it so', () => {
+    const { root, store } = setup();
+    root.querySelectorAll<HTMLButtonElement>('.chip')[1].click();
+    const pop = root.querySelector<HTMLElement>('.pop')!;
+    const auto = (code: number) => pop.querySelector<HTMLButtonElement>(`.r[data-code="${code}"] .autobtn`)!;
+    const steps = (code: number) => [...pop.querySelectorAll<HTMLButtonElement>(`.r[data-code="${code}"] .step button`)];
+    // In M the camera chooses neither.
+    expect(auto(0xd20d).textContent).toBe('Auto');
+    expect(auto(0xd20d).getAttribute('aria-pressed')).toBe('false');
+    expect(auto(0x5007).getAttribute('aria-pressed')).toBe('false');
+    expect(steps(0xd20d).every((b) => !b.disabled)).toBe(true);
+
+    // Automatic shutter speed from M is aperture priority.
+    auto(0xd20d).click();
+    expect(invoke).toHaveBeenLastCalledWith('set_property', { code: 0x500e, raw: { U32: 0x00020003 } });
+    const withMode = (raw: number) => ({
+      ...store.get().camera!,
+      properties: store.get().camera!.properties.map((p) => (p.code === 0x500e ? { ...p, raw: { U32: raw } } : p)),
+    });
+    store.set({ camera: withMode(0x00020003) });
+    expect(auto(0xd20d).getAttribute('aria-pressed')).toBe('true');
+    expect(auto(0x5007).getAttribute('aria-pressed')).toBe('false');
+    // What the camera chooses is not stepped by hand; the Auto button stays live.
+    expect(steps(0xd20d).every((b) => b.disabled)).toBe(true);
+    expect(auto(0xd20d).disabled).toBe(false);
+
+    // Aperture too: both automatic is P. Then the shutter taken back in hand: S.
+    auto(0x5007).click();
+    expect(invoke).toHaveBeenLastCalledWith('set_property', { code: 0x500e, raw: { U32: 0x00010002 } });
+    store.set({ camera: withMode(0x00010002) });
+    expect(auto(0x5007).getAttribute('aria-pressed')).toBe('true');
+    auto(0xd20d).click();
+    expect(invoke).toHaveBeenLastCalledWith('set_property', { code: 0x500e, raw: { U32: 0x00030004 } });
+
+    // A movie mode stays a movie mode.
+    store.set({ camera: withMode(0x00078053) });
+    auto(0xd20d).click();
+    expect(invoke).not.toHaveBeenLastCalledWith('set_property', { code: 0x500e, raw: { U32: 0x00020003 } });
+  });
+
+  test('ISO has an Auto button: the camera\'s own Auto, and back to the value it had', () => {
+    const { root, store } = setup();
+    const camera = store.get().camera!;
+    const withIso = (raw: number, auto = true) => ({
+      ...camera,
+      properties: camera.properties.map((p) =>
+        p.code === 0xd21e
+          ? {
+              ...p,
+              raw: { U32: raw },
+              short: raw === 0xffffff ? 'Auto' : String(raw),
+              choices: [...(auto ? [0xffffff] : []), 400, 800, 1600].map((v) => ({ raw: { U32: v }, label: `ISO ${v}`, short: String(v) })),
+            }
+          : p,
+      ),
+    });
+    store.set({ camera: withIso(800) });
+    root.querySelectorAll<HTMLButtonElement>('.chip')[3].click();
+    const pop = root.querySelector<HTMLElement>('.pop')!;
+    const auto = () => pop.querySelector<HTMLButtonElement>('.r[data-code="53790"]:not(.custom) .autobtn')!;
+    expect(auto().getAttribute('aria-pressed')).toBe('false');
+    auto().click();
+    expect(invoke).toHaveBeenLastCalledWith('set_property', { code: 0xd21e, raw: { U32: 0xffffff } });
+    store.set({ camera: withIso(0xffffff) });
+    expect(auto().getAttribute('aria-pressed')).toBe('true');
+    // Off again goes back to what it was set to before.
+    auto().click();
+    expect(invoke).toHaveBeenLastCalledWith('set_property', { code: 0xd21e, raw: { U32: 800 } });
+    // A camera with no Auto among its ISO values offers none.
+    store.set({ camera: withIso(800, false) });
+    expect(auto().disabled).toBe(true);
+  });
+
   test('Colour temperature unfolds a scale to drag and a box to type in', () => {
     const { root } = setup();
     root.querySelectorAll<HTMLButtonElement>('.chip')[5].click();

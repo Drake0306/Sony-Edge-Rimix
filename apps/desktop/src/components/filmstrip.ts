@@ -6,17 +6,7 @@
 import type { Actions } from '../actions';
 import { el } from '../dom';
 import { readThumbnail } from '../ipc';
-import {
-  cameraCount,
-  MAX_CAPTURES,
-  SFTP_CAMERA_ID,
-  transferCamera,
-  transferName,
-  watch,
-  type AppStore,
-  type CaptureItem,
-  type Transfer,
-} from '../state';
+import { copyShown, cameraCount, MAX_CAPTURES, SFTP_CAMERA_ID, transferCamera, transferName, watch, type AppStore, type CaptureItem, type Transfer } from '../state';
 
 const stem = (name: string) => name.replace(/\.[^.]+$/, '');
 const ext = (name: string) => (/\.([^.]+)$/.exec(name)?.[1] ?? '').toUpperCase();
@@ -46,6 +36,8 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
   const strip = el('div', 'strip');
   film.append(h, total, strip);
   root.append(film);
+  // The last captures belong to copying after each shot, shown on request.
+  const offShown = watch(store, copyShown, (shown) => (film.hidden = !shown));
 
   /** Object URLs of thumbnails by file path; '' while loading or when there is none. */
   const urls = new Map<string, string>();
@@ -137,6 +129,7 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
   ];
   return () => {
     offs.forEach((off) => off());
+    offShown();
     for (const url of urls.values()) if (url) URL.revokeObjectURL(url);
     film.remove();
   };

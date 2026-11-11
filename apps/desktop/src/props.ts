@@ -13,6 +13,7 @@ export const PROP = {
   drive: 0x5013,
   format: 0x5004,
   colourTemp: 0xd20f,
+  focusArea: 0xd22c,
 } as const;
 
 /** The nine chips in dock order; a tenth, Picture profile, has no code yet. */
@@ -32,6 +33,7 @@ export const SETTING_NAMES: Record<number, string> = {
   [PROP.drive]: 'Drive',
   [PROP.format]: 'Format',
   [PROP.colourTemp]: 'Colour temp',
+  [PROP.focusArea]: 'Focus area',
 };
 
 /** White balance raw values meaning "use the colour temperature" (as the Rust side's `WB_COLOUR_TEMP`). */

@@ -172,6 +172,17 @@ html[data-layout="ring"] .strip{grid-template-columns:1fr 1fr;gap:6px}
 .headline{position:absolute;left:24px;top:84px;text-shadow:var(--headline-ts)}
 .headline h1{font-size:30px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
 .headline p{margin-top:8px;color:var(--ink-2);font-size:14px;max-width:460px}
+/* What the camera is connected for: three choices, the chosen one filled. */
+.purpose{display:flex;gap:10px;margin-top:16px;text-shadow:none}
+.purpose button{display:flex;align-items:center;gap:10px;width:214px;padding:10px 12px;border-radius:14px;text-align:left;color:var(--ink)}
+.purpose button svg{flex:none;width:22px;height:22px;color:var(--ink-2)}
+.purpose button span{display:flex;flex-direction:column;gap:2px;min-width:0}
+.purpose button b{font-size:13.5px;font-weight:600}
+.purpose button small{font-size:11.5px;line-height:1.3;color:var(--ink-2)}
+.purpose button:hover:not(.on){background:var(--hov-2)}
+.purpose button.on{background:var(--sel);color:var(--sel-ink);box-shadow:var(--sel-shadow)}
+.purpose button.on svg,.purpose button.on small{color:inherit}
+.purpose button.on small{opacity:.8}
 .ways{position:absolute;left:24px;right:24px;top:67%;transform:translateY(-50%);display:grid;grid-template-columns:repeat(3,1fr);gap:14px;max-width:1240px;margin:0 auto}
 .way{padding:16px;display:flex;flex-direction:column;gap:12px}
 .way h2{font-size:15px;font-weight:600}
@@ -412,6 +423,8 @@ body{overflow:hidden}
 .cardpanel[hidden]{display:none}
 .card-head{display:flex;align-items:center;gap:6px;padding:2px 2px 8px}
 .card-head h2{flex:1;margin:0;font-size:13px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card-dest{display:flex;align-items:center;gap:8px;padding:0 2px 8px}
+.card-dest .where{flex:1;min-width:0;font-size:12px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cardpanel .sbtn{flex:none;height:26px;padding:0 12px;border-radius:9px;font-size:12px;font-weight:500;background:var(--well-2);color:var(--ink)}
 .cardpanel .sbtn:hover{background:var(--hov-2)}
 .cardpanel .sbtn:disabled{opacity:.5;cursor:default}

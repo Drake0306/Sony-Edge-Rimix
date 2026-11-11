@@ -4,7 +4,7 @@
 // settings live in their own popover.
 
 import type { Actions } from '../actions';
-import { FTP_NAME, FTP_WHAT } from '../copy';
+import { COPY_FEATURE, COPY_FEATURE_SWITCH, COPY_FEATURE_WHAT, FTP_NAME, FTP_WHAT } from '../copy';
 import { button, el, icon } from '../dom';
 import {
   bleRetry,
@@ -261,6 +261,15 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   logsRow.append(el('span', 'k', 'Logs'), showLogs);
   logsGroup.append(logsRow);
 
+  // Copying after each shot is put away unless asked for here.
+  const copyGroup = el('div', 'group');
+  copyGroup.setAttribute('role', 'list');
+  const copyOn = () => store.get().settings?.copyFeature ?? false;
+  const copyRow = switchRow(COPY_FEATURE_SWITCH, copyOn(), () => change({ copyFeature: !copyOn() }));
+  copyGroup.append(copyRow);
+  const copySwitch = copyRow.querySelector('[role="switch"]')!;
+  const copying = sect(COPY_FEATURE, copyGroup, el('p', 'sftp-what', COPY_FEATURE_WHAT));
+
   const receive = receiveSection(store, actions);
   const saveTo = saveToSection(store, actions);
   const hint = el('div', 'hint');
@@ -268,7 +277,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   hint.append(shortcutHint());
   pop.append(el('div', 'ttl', 'App settings'), sect('Appearance', theme.el), sect('Layout', layout.el),
     sect('Connection', wifi.el, bluetoothGroup, webcamGroup, logsGroup, el('div', 'sub', 'Remembered cameras'), remembered),
-    receive.el, saveTo.el, hint);
+    copying, saveTo.el, receive.el, hint);
   pop.hidden = arrow.hidden = true;
 
   const setOpen = (open: boolean) => {
@@ -305,6 +314,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     layout.sync(s?.layout);
     wifi.sync(s?.wifiJoin);
     bluetoothSwitch.setAttribute('aria-checked', String(s?.bluetooth ?? true));
+    copySwitch.setAttribute('aria-checked', String(s?.copyFeature ?? false));
   });
   const offRecent = watch(store, (s) => s.settings?.recentCameras, (list) => fillRemembered(list ?? []));
 

@@ -4,7 +4,7 @@
 
 import type { Actions } from '../actions';
 import { button, el, icon, isTyping } from '../dom';
-import type { CameraState, PropertySummary } from '../ipc';
+import type { CameraState, PropertySummary, PtpValue } from '../ipc';
 import { choicesIn, fLabel, F_STOPS, groupsOf, irisRadius, pickerFor, type Look } from '../pickers';
 import {
   findProp,
@@ -18,6 +18,7 @@ import {
   SETTING_NAMES,
   shortText,
 } from '../props';
+import { autoNow, isoAutoChoice, isoIsAuto, modeFor } from '../auto';
 import { watch, type AppStore } from '../state';
 
 const PENDING_MS = 400;
@@ -41,7 +42,12 @@ const GROUPS: Group[] = [
       isColourTemp(c) ? [PROP.whiteBalance, PROP.colourTemp, PROP.format] : [PROP.whiteBalance, PROP.format],
     chevrons: true,
   },
-  { title: 'Focus and drive', codes: () => [PROP.focus, PROP.drive], chevrons: true },
+  {
+    title: 'Focus and drive',
+    // The focus area on bodies that report one.
+    codes: (c) => (findProp(c, PROP.focusArea) ? [PROP.focus, PROP.focusArea, PROP.drive] : [PROP.focus, PROP.drive]),
+    chevrons: true,
+  },
 ];
 
 /** A dock chip or a ring segment. */
@@ -151,6 +157,63 @@ export function createSettingsPopover(
     return null;
   }
 
+  /** The settings the camera can choose by itself. */
+  const AUTO_CODES: number[] = [PROP.shutter, PROP.aperture, PROP.iso];
+  /** The ISO last set by hand, to go back to when its Auto is switched off. */
+  let isoByHand: PtpValue | null = null;
+
+  /** Whether the camera is choosing `code` by itself now. */
+  function isAuto(code: number, camera: CameraState | null): boolean {
+    if (code === PROP.iso) return isoIsAuto(findProp(camera, PROP.iso));
+    const now = autoNow(findProp(camera, PROP.mode));
+    return !!now && (code === PROP.shutter ? now.shutter : code === PROP.aperture ? now.aperture : false);
+  }
+
+  /**
+   * What switching Auto for `code` asks of the camera: its own Auto value
+   * for ISO (or back to the value set by hand), the mode that makes it so
+   * for shutter speed and aperture. Null when the camera offers neither.
+   */
+  function autoSwitch(code: number, camera: CameraState | null): { code: number; raw: PtpValue; says: string } | null {
+    if (code === PROP.iso) {
+      const iso = findProp(camera, PROP.iso);
+      if (!iso || !isUsable(iso)) return null;
+      if (!isoIsAuto(iso)) {
+        const auto = isoAutoChoice(iso);
+        return auto && { code: iso.code, raw: auto.raw, says: 'The camera chooses the ISO' };
+      }
+      // With nothing set by hand yet, the camera's lowest stop.
+      const lowest = isoStops(iso)[0];
+      const back = isoByHand ?? (lowest === undefined ? null : (nearestIso(iso, lowest)?.raw ?? null));
+      return back && { code: iso.code, raw: back, says: 'Set the ISO by hand' };
+    }
+    const mode = findProp(camera, PROP.mode);
+    const now = autoNow(mode);
+    if (!mode || !now || !isUsable(mode)) return null;
+    const which = code === PROP.shutter ? 'shutter' : 'aperture';
+    const target = modeFor(mode, { ...now, [which]: !now[which] });
+    if (!target) return null;
+    const what = which === 'shutter' ? 'shutter speed' : 'aperture';
+    return {
+      code: mode.code,
+      raw: target.raw,
+      says: now[which] ? `Set the ${what} by hand: the mode becomes ${target.label}` : `The camera chooses the ${what}: the mode becomes ${target.label}`,
+    };
+  }
+
+  function autoButton(code: number): HTMLButtonElement {
+    const b = button('autobtn', 'Auto');
+    b.setAttribute('aria-pressed', 'false');
+    b.addEventListener('click', () => {
+      const ask = autoSwitch(code, store.get().camera);
+      if (!ask) return;
+      actions.setProperty(ask.code, ask.raw);
+      markPending(code);
+      if (ask.code !== realCode(code)) markPending(PROP.mode);
+    });
+    return b;
+  }
+
   function buildRow(code: number, prop: PropertySummary | undefined, chevrons: boolean): HTMLElement {
     const name = SETTING_NAMES[code];
     const row = el('div', 'r');
@@ -158,8 +221,9 @@ export function createSettingsPopover(
     row.dataset.code = String(code);
     row.append(el('span', 'k', name));
     const kind = panelKind(code, prop);
+    const auto = AUTO_CODES.includes(code) ? [autoButton(code)] : [];
     if (!kind) {
-      row.append(el('span', 'v'), stepper(code, name, chevrons));
+      row.append(el('span', 'v'), ...auto, stepper(code, name, chevrons));
       return row;
     }
     // The value is a button: it shows the setting and unfolds its panel.
@@ -170,7 +234,7 @@ export function createSettingsPopover(
       unfolded = unfolded === code ? null : code;
       redrawPanels();
     });
-    row.append(b);
+    row.append(b, ...auto);
     // The colour temperature keeps its plus and minus beside the button; the
     // aperture's are inside its panel, so its row reads as a list to open.
     if (kind === 'kelvin') row.append(stepper(code, name, chevrons));
@@ -292,7 +356,8 @@ export function createSettingsPopover(
   }
 
   function drawFstops(code: number, prop: PropertySummary, head: HTMLButtonElement, panel: HTMLElement, open: boolean): void {
-    const usable = isUsable(prop);
+    // What the camera chooses by itself is not set by hand.
+    const usable = isUsable(prop) && !isAuto(code, store.get().camera);
     const now = 'U16' in prop.raw ? prop.raw.U16 : 0;
     // The lens's own f-stops when the camera lists them (it does not while
     // it connects), else every usual one: the lens stops where it ends.
@@ -445,11 +510,24 @@ export function createSettingsPopover(
   }
 
   function updateRow(row: HTMLElement, prop: PropertySummary | undefined): void {
-    const usable = isUsable(prop);
+    const camera = store.get().camera;
+    const rowCode = Number(row.dataset.code);
+    // What the camera chooses by itself is not set by hand; its Auto button
+    // is how it is taken back.
+    const auto = row !== isoCustom && AUTO_CODES.includes(rowCode) && isAuto(rowCode, camera);
+    const usable = isUsable(prop) && !(auto && rowCode !== PROP.iso);
     row.classList.toggle('off', !usable);
     row.setAttribute('aria-disabled', String(!usable));
     // The button that unfolds a panel stays live, to look at what there is.
-    row.querySelectorAll<HTMLButtonElement>('button:not(.pickbtn)').forEach((b) => (b.disabled = !usable));
+    row.querySelectorAll<HTMLButtonElement>('button:not(.pickbtn):not(.autobtn)').forEach((b) => (b.disabled = !usable));
+    const autoBtn = row.querySelector<HTMLButtonElement>('.autobtn');
+    if (autoBtn) {
+      const ask = autoSwitch(rowCode, camera);
+      autoBtn.setAttribute('aria-pressed', String(auto));
+      autoBtn.disabled = !ask;
+      autoBtn.title = ask?.says ?? 'Not offered by the camera in this mode';
+      autoBtn.setAttribute('aria-label', `${SETTING_NAMES[rowCode]} automatic`);
+    }
     const v = row.querySelector('.v');
     if (v) v.textContent = shortText(prop);
     if (row === isoCustom) {
@@ -470,6 +548,8 @@ export function createSettingsPopover(
   }
 
   function render(camera: CameraState | null): void {
+    const isoNow = findProp(camera, PROP.iso);
+    if (isoNow && !isoIsAuto(isoNow)) isoByHand = isoNow.raw;
     const groups = GROUPS.map((g) => ({ ...g, list: g.codes(camera) }));
     // Which rows there are, and which of them unfold what: a row's kind can
     // change when the camera starts listing values for it.

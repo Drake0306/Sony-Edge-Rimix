@@ -167,6 +167,20 @@ export const SHOTS_STAY_ON_CARD =
   'The camera is keeping pictures on its card only. On the camera, set Still Img. Save Dest. to PC+Camera.';
 /** The Save to panel's switch, and its line while it is off. */
 export const COPY_TO_COMPUTER = 'Copy to this computer';
+/** The connect screen's choice of what the camera is connected for. */
+export const PURPOSE_LABEL = 'Use the camera for';
+export const PURPOSES: { value: 'Remote' | 'Webcam' | 'Files'; icon: string; title: string; what: string }[] = [
+  { value: 'Remote', icon: 'm-photo', title: 'Remote shooting', what: 'Live view and every setting, from here.' },
+  { value: 'Webcam', icon: 'm-movie', title: 'Webcam', what: 'Its picture, sent to calls and streaming apps.' },
+  { value: 'Files', icon: 'fmt-raw', title: 'Browse files', what: 'Look through the card and import from it.' },
+];
+/** App settings: the section and switch that bring copying after each shot into view. */
+export const COPY_FEATURE = 'Copying after each shot';
+export const COPY_FEATURE_SWITCH = 'Show copying to this computer';
+export const COPY_FEATURE_WHAT =
+  'Off, the Save to panel and the last captures are put away and nothing is copied as you shoot. ' +
+  'Some cameras, the ZV-E10 among them, do not hand their pictures over Wi-Fi as they are taken. ' +
+  'Files can still be imported from the card.';
 export const STAYS_ON_CARD = "Pictures and videos stay on the camera's card.";
 
 /** The Rust side's `CANCELLED`: what a step of a connect fails with when the user cancelled it. */

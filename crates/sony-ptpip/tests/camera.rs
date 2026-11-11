@@ -1142,10 +1142,33 @@ async fn a_focus_point_first_makes_the_focus_area_a_spot() {
     stop(sim, camera).await;
 }
 
-/// In its automatic modes the camera fixes the focus area. A touch on its
-/// own screen still focuses there, so the tap is sent as that touch.
+/// What the ZV-E10 did on 2026-11-11: settled, it listed three focus areas
+/// (wide, zone, Flexible Spot: L), Rimix asked for Flexible Spot: M, which
+/// was not among them, and the tap failed. The spot the camera lists is used.
 #[tokio::test]
-async fn where_the_camera_fixes_the_focus_area_a_tap_is_sent_as_a_touch() {
+async fn a_focus_point_uses_whichever_spot_the_camera_lists() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = SimConfig {
+        focus_area: Some((1, true)),
+        focus_areas: vec![1, 2, 0x0103],
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(config, tmp.path()).await;
+    camera.focus_at(0.75, 0.25).await.unwrap();
+    assert_eq!(focus_area(&camera), 0x0103);
+    let log = sim.log.lock().unwrap().join("\n");
+    assert!(
+        log.contains(&format!("D2DC={}", (480u64 << 16) | 120)),
+        "{log}"
+    );
+    drop(log);
+    stop(sim, camera).await;
+}
+
+/// A touch sent from the computer (0xD2E4) is what the ZV-E10 refused, so
+/// it is not sent even where the camera lists that control.
+#[tokio::test]
+async fn where_the_camera_fixes_the_focus_area_no_touch_is_sent_in_its_place() {
     let tmp = tempfile::tempdir().unwrap();
     let config = SimConfig {
         focus_area: Some((1, false)),
@@ -1153,22 +1176,15 @@ async fn where_the_camera_fixes_the_focus_area_a_tap_is_sent_as_a_touch() {
         ..SimConfig::default()
     };
     let (sim, camera) = start(config, tmp.path()).await;
-    assert!(camera.state().controls.contains(&0xD2E4));
-    camera.focus_at(0.5, 0.25).await.unwrap();
+    let err = camera.focus_at(0.5, 0.25).await.unwrap_err();
+    assert!(err.to_string().contains("chooses where to focus"), "{err}");
     let log = sim.log.lock().unwrap().join("\n");
-    let touch = format!("D2E4={}", (320u64 << 16) | 120);
-    assert!(log.contains(&touch), "{log}");
-    assert!(!log.contains("D2DC="), "{log}");
-    // Then the half press, to focus at the touched point.
-    let at = log.find("D2E4=").unwrap();
-    assert!(log[at..].contains("D2C1=2"), "{log}");
+    assert!(!log.contains("D2E4="), "{log}");
     drop(log);
-    assert_eq!(focus_area(&camera), 1);
     stop(sim, camera).await;
 }
 
-/// With the area fixed and no touch control there is nothing that would
-/// move the focus: the tap fails and says why, and no half press is made
+/// With the area fixed there is nothing that would move the focus: the tap fails and says why, and no half press is made
 /// that would focus somewhere else.
 #[tokio::test]
 async fn a_tap_the_camera_cannot_follow_says_so_and_does_not_focus_elsewhere() {

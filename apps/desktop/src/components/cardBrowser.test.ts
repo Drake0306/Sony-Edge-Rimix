@@ -2,8 +2,8 @@ import { describe, expect, test, vi } from 'vitest';
 import cameraState from '../fixtures/camera-state.json';
 import cardObject from '../fixtures/card-object.json';
 import type { Actions } from '../actions';
-import type { CameraState, CardObject } from '../ipc';
-import { createStore, emptyCard, initialState, type AppState, type CardState } from '../state';
+import type { AppSettings, CameraState, CardObject } from '../ipc';
+import { createStore, defaultSettings, emptyCard, initialState, type AppState, type CardState } from '../state';
 import { dateText, mount, sizeText, sortCard, TRANSFER_MODE_TEXT } from './cardBrowser';
 
 const camera = { ...(cameraState as unknown as CameraState), model: 'ZV-E10' };
@@ -24,7 +24,15 @@ function setup(card: Partial<CardState> = {}, open = true) {
     cardOpen: open,
     card: { ...emptyCard(), mode: 'same-session', items: [jpeg, raw, clip], ...card },
   });
-  const actions = { cardRefresh: vi.fn(() => Promise.resolve()), cardDownload: vi.fn(() => Promise.resolve()) };
+  const actions = {
+    cardRefresh: vi.fn(() => Promise.resolve()),
+    cardDownload: vi.fn(() => Promise.resolve()),
+    pickFolder: vi.fn(() => Promise.resolve('/Volumes/Work/Imports' as string | null)),
+    saveSettings: vi.fn((next: AppSettings) => {
+      store.set({ settings: next });
+      return Promise.resolve();
+    }),
+  };
   const root = document.createElement('div');
   document.body.append(root);
   const unmount = mount(root, store, actions as unknown as Actions);
@@ -41,6 +49,22 @@ function setup(card: Partial<CardState> = {}, open = true) {
 
 const buttonIn = (el: HTMLElement, text: string) =>
   [...el.querySelectorAll('button')].find((b) => b.textContent === text) ?? null;
+
+
+describe('where imports go', () => {
+  test('the card browser says the folder and lets it be changed there', async () => {
+    const t = setup();
+    t.store.set({ settings: { ...defaultSettings('/Users/you/Pictures/Rimix'), destinationMode: 'CustomFolder' } });
+    const dest = t.root.querySelector<HTMLElement>('.card-dest')!;
+    expect(dest.querySelector('.where')!.textContent).toBe('Imports go to ~/Pictures/Rimix');
+    dest.querySelector<HTMLButtonElement>('button')!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(t.actions.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ destinationBase: '/Volumes/Work/Imports' }));
+    expect(dest.querySelector('.where')!.textContent).toBe('Imports go to /Volumes/Work/Imports');
+    t.done();
+  });
+});
 
 describe('formatting', () => {
   test('sizes read in binary units with one decimal under 10', () => {
@@ -74,7 +98,7 @@ describe('card browser', () => {
     t.done();
   });
 
-  test('renders three rows newest first and Download asks for that handle', () => {
+  test('renders three rows newest first and Import asks for that handle', () => {
     const t = setup();
     expect(t.rows().map((r) => r.querySelector('.name')!.textContent)).toEqual([
       'C0001.MP4', 'DSC00010.ARW', 'DSC00010.JPG',
@@ -85,7 +109,7 @@ describe('card browser', () => {
     expect(first.querySelector('.date')!.textContent).toBe('2026-11-10 10:20');
     expect(t.row(257).querySelector('.size')!.textContent).toBe('2.0 MB');
     expect(t.row(258).querySelector('.kind')!.getAttribute('aria-label')).toBe('Raw');
-    buttonIn(t.row(258), 'Download')!.click();
+    buttonIn(t.row(258), 'Import')!.click();
     expect(t.actions.cardDownload).toHaveBeenCalledWith(258);
     t.done();
   });
@@ -96,19 +120,19 @@ describe('card browser', () => {
     const bar = t.row(257).querySelector<HTMLElement>('[role="progressbar"]')!;
     expect(bar.getAttribute('aria-valuenow')).toBe('50');
     expect(t.row(257).querySelector('.ptext')!.textContent).toBe('1.0 MB/2.0 MB');
-    expect(buttonIn(t.row(257), 'Download')).toBeNull();
+    expect(buttonIn(t.row(257), 'Import')).toBeNull();
     // The other rows keep their button.
-    expect(buttonIn(t.row(258), 'Download')).not.toBeNull();
+    expect(buttonIn(t.row(258), 'Import')).not.toBeNull();
     t.store.set({ card: { ...t.store.get().card, downloads: {}, done: { 257: '/shots/DSC00010.JPG' } } });
     expect(t.row(257).querySelector('[role="progressbar"]')).toBeNull();
     expect(t.row(257).querySelector('.saved')!.textContent).toBe('Saved');
-    expect(buttonIn(t.row(257), 'Download')).toBeNull();
+    expect(buttonIn(t.row(257), 'Import')).toBeNull();
     t.done();
   });
 
   test('a file of 4 GiB or more cannot be downloaded', () => {
     const t = setup({ items: [{ ...clip, size_known: false, bytes: 0xffffffff }] });
-    expect(t.row(259).querySelector('.toolarge')!.textContent).toBe('Too large to download');
+    expect(t.row(259).querySelector('.toolarge')!.textContent).toBe('Too large to import');
     expect(t.row(259).querySelector('button')).toBeNull();
     t.done();
   });
@@ -116,7 +140,7 @@ describe('card browser', () => {
   test('a failed download shows its error on the row and can be tried again', () => {
     const t = setup({ failed: { 259: 'timed out' } });
     expect(t.row(259).querySelector('.row-error')!.textContent).toBe('timed out');
-    expect(buttonIn(t.row(259), 'Download')).not.toBeNull();
+    expect(buttonIn(t.row(259), 'Import')).not.toBeNull();
     expect(t.row(258).querySelector('.row-error')).toBeNull();
     t.done();
   });

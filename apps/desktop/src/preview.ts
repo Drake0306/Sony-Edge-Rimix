@@ -5,7 +5,8 @@
 //
 // Query parameters: layout=Dock|Ring, theme=Light|Dark, presets=<count>,
 // mode=<raw exposure mode>, drive=<raw drive mode>, apply=<slot to apply>, open=<chip name>, transfers=1 (files arriving), recording=1,
-// screen=connect, webcam=1, copy=0 (copying to this computer off), report=<file of docs/camera-reports>.
+// screen=connect, webcam=1, copying=1 (copying after each shot shown), copy=0 (its switch off), card=1 (the card
+// browser), settings=1 (App settings), openas=Remote|Webcam|Files, report=<file of docs/camera-reports>.
 // Never part of the built app.
 
 /// <reference types="vite/client" />
@@ -104,6 +105,8 @@ const settings: AppSettings = {
   presets: presets(num('presets', 4)),
   bluetooth: false,
   saveToComputer: q.get('copy') !== '0',
+  openAs: (q.get('openas') as AppSettings['openAs']) ?? 'Remote',
+  copyFeature: q.get('copying') === '1' || q.get('transfers') === '1' || q.has('copy') || q.get('cardonly') === '1',
   recentCameras: [{ ip: '192.168.122.1:15740', model: 'ZV-E10', lastUsed: 1, ssid: 'DIRECT-YKE1:ZV-E10', sshUser: null }],
 };
 
@@ -158,7 +161,15 @@ mockIPC(
           ? new Promise(() => {})
           : { model: 'ZV-E10', friendly_name: 'ZV-E10', ip: '192.168.122.1', ptp_port: 15740, ptp_version: null, pairing_required: null, ssh_supported: null, source: 'Gateway' };
       case 'connect': return new Promise(() => {});
-      case 'discover': case 'ble_scan': case 'card_list': case 'shoot_all': case 'apply_values': return [];
+      case 'card_list':
+        return [
+          { handle: 259, filename: 'C0007.MP4', kind: 'Video', bytes: 912_000_000, size_known: true, captured: '2026-11-11T15:31:00' },
+          { handle: 258, filename: 'DSC00412.ARW', kind: 'Raw', bytes: 24_600_000, size_known: true, captured: '2026-11-11T15:28:10' },
+          { handle: 257, filename: 'DSC00412.JPG', kind: 'Still', bytes: 6_100_000, size_known: true, captured: '2026-11-11T15:28:10' },
+          { handle: 256, filename: 'DSC00411.ARW', kind: 'Raw', bytes: 24_900_000, size_known: true, captured: '2026-11-11T15:20:42' },
+        ];
+      case 'webcam_set': return { enabled: !!a.on, url: 'http://127.0.0.1:8717/', quality: 'Full', width: 1024, height: 576, fps: 24, viewers: 0 };
+      case 'discover': case 'ble_scan': case 'shoot_all': case 'apply_values': return [];
       case 'card_mode': return 'same-session';
       case 'sftp_status': return null;
       case 'webcam_status': return { enabled: q.get('webcam') === '1', url: 'http://127.0.0.1:8717/', quality: 'Full', width: 1024, height: 576, fps: 24, viewers: q.get('webcam') === '1' ? 1 : 0 };
@@ -187,6 +198,10 @@ window.setTimeout(() => {
     void send({ CaptureProgress: { filename: 'C0007.MP4', received: 120_000_000, total: 912_000_000 } });
     void send({ CaptureSaved: { path: '/Users/you/Pictures/Rimix/DSC00411.JPG', bytes: 6_100_000, filename: 'DSC00411.JPG', camera_filename: 'DSC00411.JPG' } });
   }
+  // card=1 opens the card browser, settings=1 the App settings.
+  const rowNamed = (text: string) => [...document.querySelectorAll<HTMLElement>('.leftcol button')].find((b) => b.textContent === text);
+  if (q.get('card') === '1') rowNamed('Browse card')?.click();
+  if (q.get('settings') === '1') document.querySelector<HTMLElement>('.gear')?.click();
   const apply = num('apply', 0);
   if (apply) document.querySelectorAll<HTMLElement>('.presets button[role="radio"]')[apply - 1]?.click();
   const open = q.get('open');

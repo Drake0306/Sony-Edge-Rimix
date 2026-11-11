@@ -23,6 +23,15 @@ function mountWith(state: Partial<AppState>) {
 }
 
 describe('filmstrip', () => {
+  test('is shown only once copying after each shot is asked for', () => {
+    const { root, store, unmount } = mountWith({});
+    const film = root.querySelector<HTMLElement>('.film')!;
+    expect(film.hidden).toBe(true);
+    store.set({ settings: { copyFeature: true } as AppState['settings'] });
+    expect(film.hidden).toBe(false);
+    unmount();
+  });
+
   test('with two cameras each tile names its camera, transfers included', () => {
     const { root, unmount, labels } = mountWith({
       cameras: { [A]: { ...base, model: 'ZV-E10' }, [B]: { ...base, model: 'ILCE-7M4' } },

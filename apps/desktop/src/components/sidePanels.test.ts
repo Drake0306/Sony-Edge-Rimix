@@ -20,6 +20,8 @@ const settings: AppSettings = {
   presets: [],
   bluetooth: true,
   saveToComputer: true,
+  copyFeature: true,
+  openAs: 'Remote',
 };
 
 describe('Save to', () => {
@@ -315,5 +317,30 @@ describe('Webcam switch', () => {
       'Save to',
     ]);
     unmount();
+  });
+});
+
+describe('Copying put away', () => {
+  test('the Save to panel shows only once copying after each shot is asked for', () => {
+    const root = document.createElement('div');
+    const store = createStore<AppState>({ ...initialState(), screen: 'main', settings: { ...settings, copyFeature: false } });
+    const unmount = mount(root, store, createActions(store));
+    const saveTo = () => root.querySelectorAll<HTMLElement>('.panel')[1];
+    expect(saveTo().querySelector('.h')!.textContent).toBe('Save to');
+    expect(saveTo().hidden).toBe(true);
+    // The tools beside it stay.
+    expect(root.querySelectorAll<HTMLElement>('.panel')[0].hidden).toBe(false);
+    store.set({ settings: { ...settings, copyFeature: true } });
+    expect(saveTo().hidden).toBe(false);
+    unmount();
+  });
+
+  test('a camera keeping pictures on its card is no fault while copying is put away', () => {
+    const camera = { shots_to_computer: false } as unknown as CameraState;
+    const store = createStore({ ...initialState(), screen: 'main' as const, settings: { ...settings, copyFeature: false }, camera });
+    const section = saveToSection(store, createActions(store));
+    expect(section.el.querySelector<HTMLElement>('.save-error')!.hidden).toBe(true);
+    expect(section.el.querySelector<HTMLElement>('.save-note')!.hidden).toBe(true);
+    section.destroy();
   });
 });

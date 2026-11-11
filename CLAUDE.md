@@ -56,7 +56,7 @@ Then run `scripts/check-mac-bundle.sh ~/Downloads/Rimix-0.1.0/Rimix.app`:
 it must print three `ok` lines. A bundle that fails it cannot reach any
 camera (see "The 10:00 connect failure").
 
-## State of the code (main = merge of frames-and-aperture)
+## State of the code (main = merge of purpose-and-auto)
 
 All four spec phases are built and merged. Everything was developed against
 the simulator; only three real-camera sessions have happened, all on
@@ -433,6 +433,57 @@ What it showed, and what was fixed on branch `real-values` (merged):
   - Dev tool: `preview.html?report=<file of docs/camera-reports>` puts a
     real report behind the interface.
 
+- **Session 9 (10:02Z) and branch `purpose-and-auto` (merged).** Fifth
+  report, and the first SETTLED one (the file is now rewritten through the
+  session): `docs/camera-reports/zv-e10-fw2.01-session9.json`. Prefer it
+  to the four before it.
+  - *PHOTOS: DECIDED. The ZV-E10 does not offer its pictures over Wi-Fi.*
+    At 10:05:04 the log has `the camera took a picture shots_left=858`,
+    events 0xC20C and 0xC206 at that moment, and six seconds later `has
+    not offered it`, with 0xD215 = 0 and 0xD222 = 0x11 (card and
+    computer). No ObjectAdded, no 0xD215. So the libgphoto2 route does
+    not work on this body over Wi-Fi; more retries are pointless. Leads
+    not followed: what 0xC206 means (it came with the shot), the camera's
+    HTTP side (0xD278). Roy asked for the feature to be put away:
+    setting `copyFeature` (default OFF; "Show copying to this computer"
+    in App settings) hides the Save to panel and Last captures, and
+    `AppSettings::copies()` (feature AND its switch) is what connect and
+    `save_settings` go by, so off also puts the camera on card only.
+  - *Aperture: confirmed.* Settled, 0x5007 is enabled with 17 listed
+    f-stops (f/3.5 to f/22); direct writes are taken. Shutter speed is a
+    list of 53 too, ISO of 32 with Auto (0xFFFFFF) first.
+  - *Mode writes work, three seconds late.* 0x500E written at 10:04:08.5,
+    reported at 10:04:11.3, photo to movie included. No Macro was seen
+    this session, so the recognised-scene reading is still unproven.
+  - *Tap to focus failed: "The camera did not take the focus point".*
+    Settled, 0xD22C lists only [1 Wide, 2 Zone, 0x103 Flexible Spot: L]
+    (it listed fourteen at connect). Rimix asked for 0x0102, not listed,
+    so it fell to the remote touch (0xD2E4 with x << 16 | y), which the
+    camera refused 19 times of 19. That also explains session 8: the area
+    stayed Wide, where 0xD2DC is accepted and ignored. Now `focus_at`
+    takes the first spot the camera lists (M, S, L, expanded, then the
+    tracking forms), waits up to 3.2 s for the change, and sends no
+    touch. STILL NOT KNOWN: whether the point lands where asked; the
+    `the camera's frames after a focus point` lines will say (none were
+    written this session, every tap failed first).
+  - The focus area has names (`decode::focus_area_names`) and a row in
+    the settings popover, because a tap leaves the camera on a spot.
+  - *Auto for shutter speed, aperture, ISO* (Roy: "add an auto mode ...
+    even if you are in manual mode"). A camera has no auto value for
+    shutter or aperture: it is the mode (A chooses the shutter, S the
+    aperture, P both). `src/auto.ts`: the Auto button on those rows
+    writes the mode that makes it so, within photo, movie or S&Q; ISO's
+    writes 0xFFFFFF and goes back to the value set by hand.
+  - *What the camera is for, chosen before connecting* (`openAs`: Remote,
+    Webcam, Files; three cards on the connect screen). After a connect,
+    `openAsChosen` turns the webcam feed on, or opens the card browser.
+    The card browser says "Import" and has its own destination line.
+    Card reading in a PC Remote session is STILL UNTESTED on the ZV-E10;
+    "Browse files" is the first thing that will try it for Roy. No
+    thumbnails yet (no GetThumb in the protocol crate).
+  - Fixed on the way: a change to a movie mode read as "took a picture"
+    (shots left falls to 0); the check now takes drops of 1 to 12 only.
+
 Seen in the report and not used yet: 0xD278 is an HTTP live view stream
 URL on the camera (`http://192.168.122.1:60152/liveviewstream?...`),
 possibly a faster live view than the PTP frames; 0xD26A (1 or 2,
@@ -441,22 +492,15 @@ still a stepper.
 
 ## Next real-camera session
 
-Roy opens the new build and tries: Aperture (the list), an automatic mode
-(should stay Auto), a tap on the live view (the camera's own frame is now
-drawn, so he can see where it went), a face in front of the camera, then
-shoot. Read first: `logs/camera-ZV-E10.json` (now the settled table), the
-`focus point` and `the camera's frames after a focus point` lines, the
-`the camera's shooting mode` lines and the `live view metadata sample`
-lines. The question that matters most is still whether a picture reaches
-the Save to folder. Read the log for `the camera is
-sending new pictures to this computer` (the save destination took),
-`the camera offers a picture` and `picture saved`; or the warning that the
-camera keeps saving to its card only, in which case Roy sets Still Img.
-Save Dest. to PC+Camera on the camera once and tries again. Then record
-and stop (`recording started` / `movie saved` / the card refused), and
-"Use as a webcam". Likely follow-ups: mode values missing from the table; the card
-refused in PC Remote (then say so in the README and drop the two walks);
-the save destination write refused (the log has a warning naming it).
+Roy opens the new build and tries: a tap on the live view in P or M
+(read `focus point ... how=` and `the camera's frames after a focus
+point`: compare asked_x/asked_y with the frame's centre), the Auto
+buttons on Shutter, Aperture and ISO, Intelligent Auto on a close subject
+(`the camera's shooting mode` lines), and "Browse files" on the connect
+screen (does the card list? `card` errors in the log say). Read
+`logs/camera-ZV-E10.json` first: it is the settled table now. Copying
+after each shot is off and hidden; do not spend a session on it again
+without a new lead.
 
 If the connect screen says macOS is keeping Rimix off the local network,
 do the Local Network toggle above: it would mean the signing fix is not

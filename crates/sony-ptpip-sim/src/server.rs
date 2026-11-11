@@ -108,9 +108,14 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
     if let Some((area, changeable)) = config.focus_area {
         // The ZV-E10's list: wide, zone, centre, the flexible spots and the
         // tracking forms of each.
-        let listed = [
+        let all = [
             1u16, 2, 3, 0x101, 0x102, 0x103, 0x104, 0x201, 0x202, 0x203, 0x204, 0x205, 0x206, 0x207,
         ];
+        let listed = if config.focus_areas.is_empty() {
+            all.to_vec()
+        } else {
+            config.focus_areas.clone()
+        };
         props.push(PropertyDesc {
             code: PROP_FOCUS_AREA,
             datatype: 0x0004,
@@ -123,7 +128,7 @@ pub async fn spawn(config: SimConfig) -> SimHandle {
             default: PtpValue::U16(1),
             current: PtpValue::U16(area),
             form: Form::Enum {
-                settable: listed.map(PtpValue::U16).to_vec(),
+                settable: listed.into_iter().map(PtpValue::U16).collect(),
                 reportable: vec![],
             },
         });
