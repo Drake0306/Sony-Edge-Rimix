@@ -87,7 +87,7 @@ describe('app settings', () => {
   test('popover rows, Save to and the shortcut hint', () => {
     const { root } = setup();
     const heads = [...root.querySelectorAll('.apppop .sect .h span')].map((s) => s.textContent);
-    expect(heads).toEqual(['Appearance', 'Layout', 'Connection', 'Receive from camera', 'Save to']);
+    expect(heads).toEqual(['Appearance', 'Layout', 'Connection', 'FTP transfer from the camera', 'Save to']);
     expect(root.querySelector('.apppop .hint')!.textContent).toMatch(/^Shortcut: (⌘|Ctrl\+), opens settings$/);
   });
 
@@ -205,7 +205,8 @@ describe('app settings', () => {
     expect(root.querySelector('.apppop .remembered .r')).toBeNull();
   });
 
-  describe('Receive from camera', () => {
+  describe('FTP transfer from the camera', () => {
+
     const off: SftpStatus = {
       enabled: false, running: false, address: null, port: 2222, user: 'rimix', password: 'abc123def456',
       fingerprint: null, error: null,
@@ -221,7 +222,7 @@ describe('app settings', () => {
     afterEach(() => vi.mocked(invoke).mockImplementation(() => Promise.resolve() as Promise<never>));
 
     const section = (root: HTMLElement) =>
-      [...root.querySelectorAll('.apppop .sect')].find((s) => s.querySelector('.h span')?.textContent === 'Receive from camera')!;
+      [...root.querySelectorAll('.apppop .sect')].find((s) => s.querySelector('.h span')?.textContent === 'FTP transfer from the camera')!;
     const rows = (root: HTMLElement) =>
       Object.fromEntries(
         [...section(root).querySelectorAll('.r')].map((r) => [r.querySelector('.k')?.textContent, r.querySelector('.v')?.textContent]),
@@ -232,12 +233,18 @@ describe('app settings', () => {
       await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('sftp_status'));
     };
 
+    test('says it is a separate, optional way, not the switch that copies pictures', async () => {
+      const { root } = setup();
+      await open();
+      expect(section(root).querySelector('.sftp-what')!.textContent).toContain('Copy to this computer');
+    });
+
     test('is off with only its switch until switched on', async () => {
       const { root, store } = setup();
       await open();
       await vi.waitFor(() => expect(store.get().sftp).toEqual(off));
       expect(toggle(root).getAttribute('aria-checked')).toBe('false');
-      expect(toggle(root).getAttribute('aria-label')).toBe('Receive from camera');
+      expect(toggle(root).getAttribute('aria-label')).toBe('FTP transfer from the camera');
       expect(Object.keys(rows(root))).not.toContain('Address');
       expect(section(root).querySelector('.hint')).toBeNull();
     });

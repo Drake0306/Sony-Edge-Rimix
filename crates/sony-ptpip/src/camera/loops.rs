@@ -21,7 +21,8 @@ use crate::error::Error;
 use crate::liveview::next_frame;
 use crate::ptp::codes::{
     EV_SONY_DEVICE_PROP_CHANGED, EV_SONY_OBJECT_ADDED, HANDLE_CAPTURED_STILL, OP_GET_OBJECT_INFO,
-    PROP_CAPTURED_READY, PROP_MOVIE_REC_STATE, PROP_STILL_DESTINATION,
+    PROP_CAPTURED_READY, PROP_FILE_FORMAT, PROP_MOVIE_REC_STATE, PROP_PC_SAVE_FORMAT,
+    PROP_SHOTS_LEFT, PROP_STILL_DESTINATION,
 };
 use crate::ptp::parse_object_info;
 use crate::ptp::PtpValue;
@@ -50,6 +51,9 @@ pub(super) fn live_view_wait(consecutive_failures: u32) -> Duration {
 const FPS_WINDOW: Duration = Duration::from_secs(1);
 /// How often the capture loop looks for waiting shots in the snapshot.
 const CAPTURE_POLL: Duration = Duration::from_millis(250);
+/// How long after a picture is taken the camera is given to offer it
+/// before the log says it did not.
+const OFFER_WAIT: Duration = Duration::from_secs(6);
 /// How often the save destination is looked at, and so the wait between
 /// two requests to change it.
 const DELIVERY_CHECK: Duration = Duration::from_millis(1500);
@@ -180,7 +184,12 @@ async fn event_loop(inner: Arc<Inner>, mut events: broadcast::Receiver<PtpEvent>
                     }
                     dirty = true;
                 }
-                Ok(_) => {}
+                // Anything else the camera says is rare and worth keeping:
+                // it may be how this body announces a picture.
+                Ok(e) => {
+                    tracing::info!(code = %format_args!("{:#06x}", e.code), params = ?e.params, "camera event");
+                    dirty = true;
+                }
                 // Missed events may have been property changes.
                 Err(RecvError::Lagged(_)) => dirty = true,
                 Err(RecvError::Closed) => return "event channel closed".into(),
@@ -215,6 +224,8 @@ async fn live_view_loop(inner: Arc<Inner>) -> String {
     let mut window_start = Instant::now();
     let mut frames = 0u32;
     let mut consecutive_failures = 0u32;
+    let mut meta_samples = 0u32;
+    let mut last_meta_len = usize::MAX;
     loop {
         let frame = {
             let mut guard = inner.conn.lock().await;
@@ -232,6 +243,27 @@ async fn live_view_loop(inner: Arc<Inner>) -> String {
         };
         match frame {
             Some(frame) => {
+                // The first metadata of a session, and each new length
+                // after it (frames coming and going), up to a few: the real
+                // layout is what the frame parser has to be checked against.
+                if meta_samples < 4 && frame.raw_meta.len() != last_meta_len {
+                    last_meta_len = frame.raw_meta.len();
+                    meta_samples += 1;
+                    let hex: String = frame
+                        .raw_meta
+                        .iter()
+                        .take(400)
+                        .map(|b| format!("{b:02x}"))
+                        .collect();
+                    tracing::info!(
+                        bytes = frame.raw_meta.len(),
+                        focus = frame.focus_frames.len(),
+                        faces = frame.face_frames.len(),
+                        tracking = frame.tracking_frames.len(),
+                        hex = %hex,
+                        "live view metadata sample"
+                    );
+                }
                 consecutive_failures = 0;
                 *lock(&inner.frame) = Some(Arc::new(frame));
                 frames += 1;
@@ -263,6 +295,9 @@ async fn capture_loop(inner: Arc<Inner>) -> String {
     let mut tick = interval(CAPTURE_POLL);
     tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
     let mut last_waiting: Option<u64> = None;
+    let mut last_left: Option<u64> = None;
+    // When the camera last took a picture it has not yet offered.
+    let mut taken_at: Option<Instant> = None;
     // The last failure said, so one that repeats every two seconds is said once.
     let mut last_error = String::new();
     loop {
@@ -283,6 +318,32 @@ async fn capture_loop(inner: Arc<Inner>) -> String {
                 }
                 last_waiting = waiting;
             }
+            // A picture taken shows as one shot fewer left on the card, however
+            // the shutter was pressed. If the camera then offers nothing,
+            // that is said, with what it reports about where pictures go.
+            let left = lock(&inner.snapshot)
+                .prop(PROP_SHOTS_LEFT)
+                .and_then(|p| p.current.as_u64());
+            if let (Some(before), Some(now)) = (last_left, left) {
+                if now < before {
+                    tracing::info!(shots_left = now, "the camera took a picture");
+                    taken_at = Some(Instant::now());
+                }
+            }
+            last_left = left;
+            if let Some(at) = taken_at.filter(|at| at.elapsed() >= OFFER_WAIT) {
+                let snap = lock(&inner.snapshot);
+                let value = |code| snap.prop(code).and_then(|p| p.current.as_u64());
+                tracing::warn!(
+                    waited_s = at.elapsed().as_secs(),
+                    waiting_0xd215 = ?value(PROP_CAPTURED_READY),
+                    save_destination_0xd222 = ?value(PROP_STILL_DESTINATION),
+                    pc_save_format_0xd269 = ?value(PROP_PC_SAVE_FORMAT),
+                    file_format_0xd253 = ?value(PROP_FILE_FORMAT),
+                    "the camera took a picture and has not offered it to this computer"
+                );
+                taken_at = None;
+            }
             let announced = inner.object_added.swap(false, Ordering::SeqCst);
             let ready = match captured_ready(&lock(&inner.snapshot).props) {
                 Ok(n) => n,
@@ -298,6 +359,8 @@ async fn capture_loop(inner: Arc<Inner>) -> String {
             let Some(conn) = guard.as_mut() else {
                 return "connection closed".into();
             };
+            // Offered: whatever was taken is on its way.
+            taken_at = None;
             match receive_next(&inner, conn).await {
                 Ok(()) => {
                     // Forget the fetched shot now, so a failed read below

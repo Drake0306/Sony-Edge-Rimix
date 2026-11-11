@@ -170,8 +170,9 @@ export function createSettingsPopover(
       redrawPanels();
     });
     row.append(b);
-    // Values with an order keep their plus and minus beside the button.
-    if (kind !== 'list') row.append(stepper(code, name, chevrons));
+    // The colour temperature keeps its plus and minus beside the button; the
+    // aperture's are inside its panel, so its row reads as a list to open.
+    if (kind === 'kelvin') row.append(stepper(code, name, chevrons));
     return row;
   }
 
@@ -190,7 +191,17 @@ export function createSettingsPopover(
       const grid = el('div', 'fgrid');
       grid.setAttribute('role', 'radiogroup');
       grid.setAttribute('aria-label', 'Aperture');
-      panel.append(grid, el('p', 'note', 'The lens sets how wide and how narrow it goes; Rimix stops there.'));
+      // One step at a time, for when the lens's own values are not in the grid.
+      const nudge = el('div', 'fnudge');
+      for (const [delta, text] of [[-1, 'One step wider'], [1, 'One step narrower']] as const) {
+        const b = button('pathbtn', text);
+        b.addEventListener('click', () => {
+          actions.stepProperty(realCode(code), delta);
+          markPending(code);
+        });
+        nudge.append(b);
+      }
+      panel.append(grid, nudge, el('p', 'note', 'The lens sets how wide and how narrow it goes; Rimix stops there.'));
     } else {
       buildKelvin(panel);
     }
@@ -285,6 +296,7 @@ export function createSettingsPopover(
     const key = JSON.stringify([now, open, usable]);
     if (drawn.get(code) === key) return;
     drawn.set(code, key);
+    panel.querySelectorAll<HTMLButtonElement>('.fnudge button').forEach((b) => (b.disabled = !usable));
     head.replaceChildren(iris(now || 400), el('span', 'mn', shortText(prop)), chevron());
     head.setAttribute('aria-label', `Aperture, ${shortText(prop)}. ${open ? 'Hide' : 'Show'} the f-stops`);
     if (!open) return;

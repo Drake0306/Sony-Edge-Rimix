@@ -8,6 +8,8 @@ import type { Actions } from '../actions';
 import {
   ALLOW_LOCAL_NETWORK,
   BLE_UNAVAILABLE,
+  CONNECT_STEPS,
+  CONNECT_TITLES,
   bleCameraName,
   bleNearbyText,
   fingerprintChangedText,
@@ -243,7 +245,55 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   const foot = el('div', 'foot');
   foot.append(note, recent);
 
-  const parts = [backdrop, vignette, status, headline, ways, foot];
+  // While a connect runs, the whole screen is covered: what is happening,
+  // which step it is at, and a way to stop.
+  const veil = el('div', 'veil');
+  veil.setAttribute('role', 'dialog');
+  veil.setAttribute('aria-modal', 'true');
+  veil.setAttribute('aria-labelledby', 'veil-title');
+  veil.hidden = true;
+  const veilCard = el('div', 'vcard glass');
+  const spinner = el('span', 'spinner');
+  spinner.setAttribute('aria-hidden', 'true');
+  const veilTitle = el('h2');
+  veilTitle.id = 'veil-title';
+  const veilDetail = el('p', 'cdetail');
+  veilDetail.setAttribute('role', 'status');
+  const veilSteps = el('ol', 'csteps');
+  const stepItems = CONNECT_STEPS.map(([phase, text]) => {
+    const li = el('li', '', text);
+    veilSteps.append(li);
+    return { phase, li };
+  });
+  const stopConnect = button('sbtn', 'Cancel');
+  stopConnect.addEventListener('click', () => {
+    stopConnect.disabled = true;
+    void actions.cancelConnect();
+  });
+  veilCard.append(spinner, veilTitle, veilDetail, veilSteps, stopConnect);
+  veil.append(veilCard);
+  /** Whether this connect began by joining a network: one by address has a single step. */
+  let stepped = false;
+  const showVeil = (connecting: AppState['connecting']) => {
+    veil.hidden = connecting === null;
+    if (!connecting) {
+      stepped = false;
+      stopConnect.disabled = false;
+      return;
+    }
+    if (connecting.phase !== 'connecting') stepped = true;
+    veilTitle.textContent = CONNECT_TITLES[connecting.phase];
+    veilDetail.textContent = connecting.text;
+    veilSteps.hidden = !stepped;
+    const at = stepItems.findIndex((s) => s.phase === connecting.phase);
+    stepItems.forEach(({ li }, i) => {
+      li.dataset.state = i < at ? 'done' : i === at ? 'now' : 'todo';
+      if (i === at) li.setAttribute('aria-current', 'step');
+      else li.removeAttribute('aria-current');
+    });
+  };
+
+  const parts = [backdrop, vignette, status, headline, ways, foot, veil];
   root.append(...parts);
 
   // Every Connect button, Use this text and the recent rows wait while a connect runs.
@@ -493,6 +543,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       quietword.textContent =
         count === 0 ? 'No camera connected' : `${count} ${count === 1 ? 'camera' : 'cameras'} connected`;
     }),
+    watch(store, (s) => s.connecting, showVeil),
     // Progress while connecting, otherwise the last error.
     watch(store, (s) => s.connecting ?? s.error, (_, s) => {
       message.textContent = s.connecting?.text ?? s.error ?? '';

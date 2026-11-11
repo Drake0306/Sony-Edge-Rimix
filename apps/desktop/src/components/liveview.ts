@@ -6,7 +6,7 @@ import { el } from '../dom';
 import { liveViewFrame, liveViewMeta, type LiveViewMeta } from '../ipc';
 import { watch, type AppStore } from '../state';
 import { WAVEFORM_COLUMNS, WAVEFORM_ROWS, falseColour, waveform } from '../scopes';
-import { colours, corners, createFrameSwap, histogramPath, luminance, makeStripes } from './liveviewParts';
+import { colours, corners, createFrameSwap, histogramPath, luminance, makeStripes, rounded } from './liveviewParts';
 
 const FRAME_MS = 33; // at most 30 fps
 const META_MS = 100;
@@ -21,7 +21,25 @@ const LEVEL_SVG =
 const HIST_SVG =
   '<svg viewBox="0 0 120 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 L120 40 Z"/></svg>';
 
-export function mount(root: HTMLElement, store: AppStore, _actions: Actions): () => void {
+/** How long the mark of a tap stays on the picture. */
+const TAP_MARK_MS = 900;
+
+/**
+ * Where a click at `(px, py)` inside the scene falls on the picture drawn in
+ * `box` (0 to 1 across and down), or null when it is on the bars beside it.
+ */
+export function pointOnPicture(
+  box: { x: number; y: number; w: number; h: number },
+  px: number,
+  py: number,
+): { x: number; y: number } | null {
+  if (box.w <= 0 || box.h <= 0) return null;
+  const x = (px - box.x) / box.w;
+  const y = (py - box.y) / box.h;
+  return x < 0 || x > 1 || y < 0 || y > 1 ? null : { x, y };
+}
+
+export function mount(root: HTMLElement, store: AppStore, actions: Actions): () => void {
   const scene = el('div', 'scene');
   const img = el('img', 'frame');
   img.alt = 'Live view';
@@ -77,7 +95,31 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
   let stripes: CanvasPattern | null = null;
   let stripesKey = '';
 
-  let meta: LiveViewMeta = { focus_frames: [], level_deg: null, fps: 0 };
+  let meta: LiveViewMeta = { focus_frames: [], face_frames: [], tracking_frames: [], level_deg: null, fps: 0 };
+  // A tap on the picture focuses there, as on the camera's own screen.
+  const tapMark = el('span', 'tapmark');
+  tapMark.setAttribute('aria-hidden', 'true');
+  tapMark.hidden = true;
+  root.append(tapMark);
+  let tapTimer = 0;
+  const onTap = (e: MouseEvent) => {
+    const { camera, feed } = store.get();
+    if (!camera?.connected || feed?.enabled || !img.naturalWidth) return;
+    const r = scene.getBoundingClientRect();
+    const at = pointOnPicture(box(), e.clientX - r.left, e.clientY - r.top);
+    if (!at) return;
+    actions.focusAt(at.x, at.y);
+    Object.assign(tapMark.style, { left: `${e.clientX - r.left}px`, top: `${e.clientY - r.top}px` });
+    tapMark.hidden = false;
+    // Restart the mark's animation for a second tap.
+    tapMark.classList.remove('go');
+    void tapMark.offsetWidth;
+    tapMark.classList.add('go');
+    window.clearTimeout(tapTimer);
+    tapTimer = window.setTimeout(() => (tapMark.hidden = true), TAP_MARK_MS);
+  };
+  scene.addEventListener('click', onTap);
+  scene.title = 'Click to focus there';
   let lum: Float32Array | null = null;
   let raf = 0;
   let last = -Infinity;
@@ -123,7 +165,24 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
       }
     }
     let locked: { x: number; y: number; w: number } | null = null;
-    for (const f of meta.focus_frames) {
+    const showFrames = store.get().overlays.frames;
+    const place = (f: LiveViewMeta['focus_frames'][number]) => {
+      const w = f.w * b.w;
+      const h = f.h * b.h;
+      return { x: b.x + f.cx * b.w - w / 2, y: b.y + f.cy * b.h - h / 2, w, h };
+    };
+    if (showFrames) {
+      // A face is ringed with a rounded frame; the tracked subject with a dashed one.
+      for (const f of meta.face_frames ?? []) {
+        const r = place(f);
+        rounded(ctx, r.x, r.y, r.w, r.h, f.state === 2 ? palette.lock : palette.idle, palette.shadow, false);
+      }
+      for (const f of meta.tracking_frames ?? []) {
+        const r = place(f);
+        rounded(ctx, r.x, r.y, r.w, r.h, palette.lock, palette.shadow, true);
+      }
+    }
+    for (const f of showFrames ? meta.focus_frames : []) {
       const w = f.w * b.w;
       const h = f.h * b.h;
       const x = b.x + f.cx * b.w - w / 2;
@@ -233,7 +292,8 @@ export function mount(root: HTMLElement, store: AppStore, _actions: Actions): ()
     window.removeEventListener('resize', draw);
     off();
     swap.dispose();
-    [scene, fcCanvas, thirds, canvas, label, level, hist, wave].forEach((e) => e.remove());
+    window.clearTimeout(tapTimer);
+    [scene, fcCanvas, thirds, canvas, label, level, hist, wave, tapMark].forEach((e) => e.remove());
   };
 }
 

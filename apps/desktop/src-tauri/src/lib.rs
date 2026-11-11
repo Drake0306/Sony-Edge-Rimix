@@ -68,6 +68,8 @@ pub fn run() {
             commands::ble_handoff,
             commands::ble_shoot,
             commands::ble_retry,
+            commands::cancel_connect,
+            commands::focus_at,
             commands::webcam_set,
             commands::webcam_set_quality,
             commands::webcam_status,

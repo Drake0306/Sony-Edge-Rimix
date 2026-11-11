@@ -462,3 +462,36 @@ html[data-layout="ring"] .feedpanel{left:calc((100% - 432px + 278px) / 2);top:50
 .feedpanel .steps{margin:0;padding-left:18px;font-size:12.5px;line-height:1.5;color:var(--ink)}
 .feedpanel .steps li + li{margin-top:3px}
 .feedpanel .stop{display:block;width:100%;height:32px;margin-top:16px;font-size:12.5px}
+
+/* ---------- the cover while connecting ---------- */
+.veil{position:absolute;inset:0;z-index:60;display:grid;place-items:center;padding:24px;background:var(--veil-bg,rgba(12,14,18,.38));-webkit-backdrop-filter:blur(22px) saturate(1.1);backdrop-filter:blur(22px) saturate(1.1)}
+.veil[hidden]{display:none}
+.vcard{width:min(420px,100%);padding:28px 28px 22px;border-radius:24px;text-align:center}
+.vcard h2{margin:16px 0 6px;font-size:21px;font-weight:650;line-height:1.25;text-wrap:balance}
+.vcard .cdetail{margin:0;font-size:13.5px;line-height:1.45;color:var(--ink-2);overflow-wrap:anywhere}
+.spinner{display:inline-block;width:38px;height:38px;border-radius:50%;border:3px solid var(--hair);border-top-color:var(--ink);animation:veil-spin .9s linear infinite}
+@keyframes veil-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spinner{animation-duration:2.4s}}
+.csteps{display:flex;flex-direction:column;gap:7px;margin:20px auto 0;padding:0;width:fit-content;list-style:none;text-align:left;font-size:13.5px}
+.csteps[hidden]{display:none}
+.csteps li{display:flex;align-items:center;gap:10px;color:var(--ink-3)}
+.csteps li::before{content:"";flex:none;width:9px;height:9px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--ink-3)}
+.csteps li[data-state="done"]{color:var(--ink-2)}
+.csteps li[data-state="done"]::before{background:var(--ink-2);box-shadow:none}
+.csteps li[data-state="now"]{color:var(--ink);font-weight:600}
+.csteps li[data-state="now"]::before{background:var(--ink);box-shadow:0 0 0 4px var(--hov)}
+.vcard .sbtn{margin-top:22px;height:32px;min-width:120px;padding:0 18px;border-radius:10px;font-size:13px;font-weight:500;background:var(--well-2);color:var(--ink);box-shadow:inset 0 0 0 .5px var(--group-ring)}
+.vcard .sbtn:hover{background:var(--hov-2)}
+.vcard .sbtn:disabled{opacity:.5;cursor:default}
+
+/* ---------- tap to focus ---------- */
+.scene{cursor:crosshair}
+.tapmark{position:absolute;z-index:4;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:8px;box-shadow:0 0 0 2px var(--lock),0 0 0 3.5px rgba(0,0,0,.35);pointer-events:none;opacity:0}
+.tapmark[hidden]{display:none}
+.tapmark.go{animation:tap-mark .9s ease-out}
+@keyframes tap-mark{0%{opacity:1;transform:scale(1.5)}25%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}}
+.screen.webcam-on .tapmark{display:none}
+.screen.webcam-on .scene{cursor:default}
+
+/* ---------- app settings: what FTP transfer is ---------- */
+.apppop .sftp-what{margin:0 0 7px;padding:0 4px;font-size:11px;line-height:1.4;color:var(--ink-2)}

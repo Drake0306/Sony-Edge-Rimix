@@ -168,3 +168,21 @@ export const SHOTS_STAY_ON_CARD =
 /** The Save to panel's switch, and its line while it is off. */
 export const COPY_TO_COMPUTER = 'Copy to this computer';
 export const STAYS_ON_CARD = "Pictures and videos stay on the camera's card.";
+
+/** The Rust side's `CANCELLED`: what a step of a connect fails with when the user cancelled it. */
+export const CANCELLED = 'cancelled';
+/** The connecting cover's headline for each step, and the steps as a list. */
+export const CONNECT_TITLES = {
+  joining: "Joining the camera's Wi-Fi",
+  finding: 'Looking for the camera',
+  connecting: 'Connecting',
+} as const;
+export const CONNECT_STEPS: [keyof typeof CONNECT_TITLES, string][] = [
+  ['joining', "Join the camera's Wi-Fi"],
+  ['finding', 'Find the camera'],
+  ['connecting', 'Connect'],
+];
+/** App settings: the camera pushing files itself, as opposed to Rimix copying them. */
+export const FTP_NAME = 'FTP transfer from the camera';
+export const FTP_WHAT =
+  'Optional, and separate from "Copy to this computer" in the Save to panel. Here the camera sends files itself with its FTP Transfer function, if it has one, and you type the details below into the camera. Leave it off unless you have set that up.';

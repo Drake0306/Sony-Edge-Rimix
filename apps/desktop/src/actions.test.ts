@@ -26,6 +26,8 @@ vi.mock('./ipc', () => ({
   cardDownload: vi.fn(),
   cardMode: vi.fn(),
   bleHandoff: vi.fn(),
+  cancelConnect: vi.fn(() => Promise.resolve()),
+  focusAt: vi.fn(() => Promise.resolve()),
 }));
 
 const camera = cameraState as unknown as CameraState;
@@ -131,6 +133,18 @@ describe('connect over Wi-Fi', () => {
     expect(store.get().error).toMatch(/Privacy & Security, Local Network/);
     expect(store.get().error).not.toMatch(/PC Remote Function/);
     expect(ipc.connect).not.toHaveBeenCalled();
+  });
+
+  test('a cancelled connect frees the screen and is not an error', async () => {
+    vi.mocked(ipc.joinNetwork).mockRejectedValue('cancelled');
+    const store = storeWith('Automatic');
+    const actions = createActions(store);
+    expect(await actions.connectWithWifi({ ssid: SSID, password: 'x' })).toBe(false);
+    expect(store.get().connecting).toBeNull();
+    expect(store.get().error).toBeNull();
+    // Cancelling asks the app to stop whichever step is running.
+    await actions.cancelConnect();
+    expect(ipc.cancelConnect).toHaveBeenCalled();
   });
 
   test('connectWithWifi explains when no camera answers and frees the screen', async () => {

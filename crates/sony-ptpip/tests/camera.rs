@@ -1053,3 +1053,41 @@ async fn a_range_setting_reports_its_ends_and_step() {
     assert!(iso.range.is_none());
     stop(sim, camera).await;
 }
+
+/// Tap to focus: the point goes to the camera on its 640 by 480 grid, then
+/// the shutter is half pressed there.
+#[tokio::test]
+async fn focusing_at_a_point_sends_it_on_the_cameras_grid_then_focuses() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (sim, camera) = start(SimConfig::default(), tmp.path()).await;
+    // The middle of the upper quarter: x 0.5, y 0.25.
+    camera.focus_at(0.5, 0.25).await.unwrap();
+    let log = sim.log.lock().unwrap().join("\n");
+    let point = (320u64 << 16) | 120;
+    assert!(log.contains(&format!("D2DC={point}")), "{log}");
+    // The half press comes after the point.
+    let at = log.find("D2DC=").unwrap();
+    assert!(log[at..].contains("D2C1=2"), "{log}");
+    drop(log);
+    // Outside the picture is pulled to its edge, never sent as it is.
+    camera.focus_at(7.0, -3.0).await.unwrap();
+    let log = sim.log.lock().unwrap().join("\n");
+    assert!(log.contains(&format!("D2DC={}", 639u64 << 16)), "{log}");
+    drop(log);
+    stop(sim, camera).await;
+}
+
+#[tokio::test]
+async fn the_state_lists_the_controls_the_camera_says_it_has() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (sim, camera) = start(SimConfig::default(), tmp.path()).await;
+    // Whatever the camera reports, it reaches the state (and so the report).
+    let state = camera.state();
+    assert_eq!(state.controls, camera.state().controls);
+    assert!(
+        state.controls.iter().all(|c| *c >= 0xD000),
+        "{:x?}",
+        state.controls
+    );
+    stop(sim, camera).await;
+}

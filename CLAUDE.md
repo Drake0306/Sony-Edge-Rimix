@@ -56,7 +56,7 @@ Then run `scripts/check-mac-bundle.sh ~/Downloads/Rimix-0.1.0/Rimix.app`:
 it must print three `ok` lines. A bundle that fails it cannot reach any
 camera (see "The 10:00 connect failure").
 
-## State of the code (main = merge of controls-and-capture)
+## State of the code (main = merge of focus-and-connect)
 
 All four spec phases are built and merged. Everything was developed against
 the simulator; only three real-camera sessions have happened, all on
@@ -332,6 +332,44 @@ What it showed, and what was fixed on branch `real-values` (merged):
     stops). *Colour temperature* has a kelvin scale; `PropertySummary`
     carries `range`. *Drive, Focus, White balance, Format* use the shared
     picker (`src/pickers.ts`); *Aperture* a grid of f-stops.
+
+- **Session 7 (08:08Z) and branch `focus-and-connect` (merged).** Third
+  report: `docs/camera-reports/zv-e10-fw2.01-session7.json`.
+  - *Photos: the fault is before the pickup.* With the 13:21 build, which
+    logs every change of 0xD215 and every ObjectAdded event, the session
+    logged NEITHER, with 0xD222 = 0x11 confirmed at connect. So either no
+    still was taken in that session (the report cannot say: it is written
+    at connect; shots left went 863 to 861 over the session before), or
+    the ZV-E10 over Wi-Fi does not raise 0xD215 for Rimix at all. The
+    handshake and shutter sequence match libgphoto2's. The capture loop
+    now watches shots left (0xD249): any picture taken logs `the camera
+    took a picture`, and if nothing is offered within 6 s a warning gives
+    0xD215, 0xD222, 0xD269 and 0xD253 as they stand. Every non-property
+    PTP event is logged (`camera event code=...`). THE NEXT LOG DECIDES:
+    took-a-picture followed by an offer means the earlier fixes work;
+    followed by the warning means the camera never offers over Wi-Fi and
+    the transfer has to be approached another way (the camera's HTTP
+    side, 0xD278, is the lead).
+  - *Aperture "still a toggle":* it was the new row, but with plus and
+    minus beside it it read as the old control. The row is now a list to
+    open like Drive; single steps are inside its panel.
+  - *Tap to focus:* `Camera::focus_at` sets Flexible Spot: M (0xD22C =
+    0x0102) when the area ignores a point, sends 0xD2DC (x << 16 | y on a
+    640 by 480 grid, as libgphoto2's `_put_Sony_SpotFocusArea`) and half
+    presses. Whether the ZV-E10 accepts 0xD2DC is untested; the report
+    now lists the camera's control codes (`controls`), which says.
+  - *Face and tracking frames:* live view metadata is read as up to three
+    blocks (focus, face, tracking) of the same shape. Roy saw no frames
+    at all on the camera, so the real layout differs from what Phase 1
+    assumed; the log now carries `live view metadata sample` lines (hex,
+    up to four a session) to decode it from. Rimix has no switch for the
+    camera's Face/Eye AF or human/animal choice: no known property code.
+  - *Two "save" settings:* "Receive from camera" (SFTP) is now "FTP
+    transfer from the camera", with a line saying it is separate from
+    "Copy to this computer".
+  - *Connecting:* a cover over the connect screen with the step and a
+    Cancel (`cancel_connect`; `AppState::cancellable` wraps join, find
+    and connect).
 
 Seen in the report and not used yet: 0xD278 is an HTTP live view stream
 URL on the camera (`http://192.168.122.1:60152/liveviewstream?...`),

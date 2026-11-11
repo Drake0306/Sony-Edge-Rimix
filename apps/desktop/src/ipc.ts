@@ -194,6 +194,10 @@ export interface FocusFrame {
 
 export interface LiveViewMeta {
   focus_frames: FocusFrame[];
+  /** The faces (or animal faces) the camera has found. */
+  face_frames?: FocusFrame[];
+  /** The subject the camera is tracking. */
+  tracking_frames?: FocusFrame[];
   level_deg: number | null;
   fps: number;
 }
@@ -414,3 +418,10 @@ export interface FeedStatus {
 export const webcamSet = (enabled: boolean) => invoke<FeedStatus>('webcam_set', { enabled });
 export const webcamSetQuality = (quality: FeedQuality) => invoke<FeedStatus>('webcam_set_quality', { quality });
 export const webcamStatus = () => invoke<FeedStatus>('webcam_status');
+
+/** Focuses at a point of the live view: `x` and `y` from 0 to 1 across and down the picture. */
+export const focusAt = (x: number, y: number, cameraId: CameraId | null = null) =>
+  invoke<void>('focus_at', forCamera({ x, y }, cameraId));
+
+/** Stops the connect in progress; its step then fails with "cancelled". */
+export const cancelConnect = () => invoke<void>('cancel_connect');
