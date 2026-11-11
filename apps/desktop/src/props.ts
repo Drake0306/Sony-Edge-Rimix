@@ -39,8 +39,18 @@ const WB_COLOUR_TEMP = [0x8012, 0x8007];
 /** The ISO raw value meaning Auto; larger values carry noise reduction flags. */
 const ISO_AUTO = 0xffffff;
 
-export const findProp = (camera: CameraState | null, code: number): PropertySummary | undefined =>
-  camera?.properties.find((p) => p.code === code);
+/** Where bodies from about 2020 on keep the file format, instead of the standard 0x5004. */
+const FILE_FORMAT_NEW = 0xd253;
+
+/**
+ * The camera's property `code`. Asking for Format finds it under either
+ * code a body may use; the summary's own `code` says which, and is the one
+ * to set or step.
+ */
+export const findProp = (camera: CameraState | null, code: number): PropertySummary | undefined => {
+  const find = (c: number) => camera?.properties.find((p) => p.code === c);
+  return code === PROP.format ? (find(PROP.format) ?? find(FILE_FORMAT_NEW)) : find(code);
+};
 
 export const sameRaw = (a: PtpValue, b: PtpValue): boolean => JSON.stringify(a) === JSON.stringify(b);
 
@@ -63,8 +73,23 @@ export function chipValue(camera: CameraState | null, code: number): string {
   return findProp(camera, code)?.short ?? '—';
 }
 
-export const isUsable = (p: PropertySummary | undefined): boolean =>
-  !!p && p.writable && p.enabled === 'On';
+/**
+ * Whether a setting can be changed now. Shutter speed and aperture on
+ * bodies that list no values for them are only ever nudged, and such a
+ * body may mark them "display only" while still taking the nudge, so for
+ * those anything but "off" counts.
+ */
+export const isUsable = (p: PropertySummary | undefined): boolean => {
+  if (!p || !p.writable) return false;
+  const nudged = (p.code === PROP.aperture || p.code === PROP.shutter) && p.choices.length === 0;
+  return nudged ? p.enabled !== 'Off' : p.enabled === 'On';
+};
+
+/** The ends and step of the colour temperature, in kelvin; Sony's own when the camera does not say. */
+export function kelvinRange(p: PropertySummary | undefined): { min: number; max: number; step: number } {
+  const r = p?.range;
+  return r && r.max > r.min && r.step > 0 ? r : { min: 2500, max: 9900, step: 100 };
+}
 
 const u32Of = (raw: PtpValue): number | null => ('U32' in raw ? raw.U32 : null);
 

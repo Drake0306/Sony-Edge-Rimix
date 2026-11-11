@@ -36,8 +36,25 @@ const MODES: [number, string, string][] = [
 const DRIVES: [number, string, string][] = [
   [0x00000001, 'Single', 'Single'], [0x00018012, 'Continuous Lo', 'Cont. Lo'], [0x00018015, 'Continuous Mid', 'Cont. Mid'],
   [0x00010002, 'Continuous Hi', 'Cont. Hi'], [0x00018010, 'Continuous Hi+', 'Cont. Hi+'], [0x00038004, 'Self-timer 10 s', 'Timer 10 s'],
-  [0x00048337, 'Bracket 0.3 EV, 3 shots, continuous', 'BRK C 0.3 ×3'], [0x00068028, 'White balance bracket Hi', 'WB BRK Hi'],
+  [0x00038003, 'Self-timer 5 s', 'Timer 5 s'], [0x00038005, 'Self-timer 2 s', 'Timer 2 s'],
+  [0x00088008, 'Self-timer 10 s, 3 shots', 'Timer 10 s ×3'], [0x00088009, 'Self-timer 10 s, 5 shots', 'Timer 10 s ×5'],
+  [0x00048337, 'Bracket 0.3 EV, 3 shots, continuous', 'BRK C 0.3 ×3'], [0x00048537, 'Bracket 0.3 EV, 5 shots, continuous', 'BRK C 0.3 ×5'],
+  [0x00048311, 'Bracket 1.0 EV, 3 shots, continuous', 'BRK C 1.0 ×3'], [0x00058336, 'Bracket 0.3 EV, 3 shots, single', 'BRK S 0.3 ×3'],
+  [0x00058320, 'Bracket 2.0 EV, 3 shots, single', 'BRK S 2.0 ×3'], [0x00068028, 'White balance bracket Hi', 'WB BRK Hi'],
+  [0x00068018, 'White balance bracket Lo', 'WB BRK Lo'], [0x00078029, 'DRO bracket Hi', 'DRO BRK Hi'], [0x00078019, 'DRO bracket Lo', 'DRO BRK Lo'],
 ];
+const FOCUS: [number, string, string][] = [
+  [0x0002, 'Single-shot AF', 'AF-S'], [0x8005, 'Automatic AF', 'AF-A'], [0x8004, 'Continuous AF', 'AF-C'],
+  [0x8006, 'Direct Manual Focus', 'DMF'], [0x0001, 'Manual Focus', 'MF'],
+];
+const WBS: [number, string, string][] = [
+  [0x0002, 'Auto', 'Auto'], [0x0004, 'Daylight', 'Daylight'], [0x8011, 'Shade', 'Shade'], [0x8010, 'Cloudy', 'Cloudy'],
+  [0x0006, 'Incandescent', 'Incandescent'], [0x8001, 'Fluorescent warm white', 'Fluor. warm'], [0x8002, 'Fluorescent cool white', 'Fluor. cool'],
+  [0x8003, 'Fluorescent day white', 'Fluor. day'], [0x8004, 'Fluorescent daylight', 'Fluor. light'], [0x0007, 'Flash', 'Flash'],
+  [0x8030, 'Underwater auto', 'Underwater'], [0x8012, 'Colour temp', 'Colour temp'], [0x8020, 'Custom 1', 'Custom 1'],
+  [0x8021, 'Custom 2', 'Custom 2'], [0x8022, 'Custom 3', 'Custom 3'],
+];
+const FORMATS: [number, string, string][] = [[1, 'RAW', 'RAW'], [2, 'RAW+JPEG', 'RAW+JPEG'], [3, 'JPEG', 'JPEG']];
 const ISOS = [100, 125, 160, 200, 250, 320, 400, 500, 640, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6400, 8000, 10000, 12800, 16000, 20000, 25600, 32000];
 
 function prop(code: number, raw: PtpValue, label: string, short: string, choices: [PtpValue, string, string][] = []): PropertySummary {
@@ -55,13 +72,21 @@ function camera(): CameraState {
   const replaced = new Map<number, PropertySummary>([
     [0x500e, pick(MODES, num('mode', 0x00010002), 0x500e)],
     [0x5013, pick(DRIVES, num('drive', 0x00018015), 0x5013)],
+    [0x500a, { ...pick(FOCUS, num('focus', 0x8004), 0x500a), raw: { U16: num('focus', 0x8004) }, choices: FOCUS.map(([m, l, s]) => ({ raw: { U16: m }, label: l, short: s })) }],
+    [0x5005, { ...pick(WBS, num('wb', 0x8012), 0x5005), raw: { U16: num('wb', 0x8012) }, choices: WBS.map(([m, l, s]) => ({ raw: { U16: m }, label: l, short: s })) }],
+    [0x5007, { code: 0x5007, label: 'f/5.6', short: 'f/5.6', raw: { U16: 560 }, writable: true, enabled: 'DisplayOnly', choices: [] }],
+    [0xd20f, { code: 0xd20f, label: `${num('kelvin', 5500)}`, short: `${num('kelvin', 5500)}`, raw: { U16: num('kelvin', 5500) }, writable: true, enabled: 'On', choices: [], range: { min: 2500, max: 9900, step: 100 } }],
     [0xd21e, prop(0xd21e, u32(iso), `ISO ${iso}`, String(iso), [[u32(0xffffff), 'ISO Auto', 'Auto'], ...ISOS.map((i): [PtpValue, string, string] => [u32(i), `ISO ${i}`, String(i)])])],
   ]);
   return {
     ...base,
     recording: q.get('recording') === '1',
     shots_to_computer: q.get('cardonly') === '1' ? false : true,
-    properties: base.properties.map((p) => replaced.get(p.code) ?? p),
+    properties: base.properties.map((p) =>
+      p.code === 0xd253
+        ? { ...pick(FORMATS, num('format', 1), 0xd253), raw: { U8: num('format', 1) }, choices: FORMATS.map(([m, l, s]) => ({ raw: { U8: m }, label: l, short: s })) }
+        : (replaced.get(p.code) ?? p),
+    ),
   } as CameraState;
 }
 
@@ -143,6 +168,14 @@ window.setTimeout(() => {
   if (open) {
     const chip = [...document.querySelectorAll<HTMLElement>('.chip')].find((c) => c.querySelector('small')?.textContent === open);
     chip?.click();
+    // unfold=<setting name> then unfolds another row of the popover, tab=<title> picks a tab in it.
+    const unfold = q.get('unfold');
+    if (unfold) {
+      const row = [...document.querySelectorAll<HTMLElement>('.pop .r')].find((r) => r.querySelector('.k')?.textContent === unfold);
+      row?.querySelector<HTMLElement>('.pickbtn')?.click();
+    }
+    const tab = q.get('tab');
+    if (tab) [...document.querySelectorAll<HTMLElement>('.pop [role="tab"]')].find((t) => t.textContent === tab)?.click();
     // In the ring layout the settings are segments of the ring.
     const seg = [...document.querySelectorAll<SVGElement>('.ring .seg')].find((g) => g.textContent?.includes(open));
     seg?.dispatchEvent(new MouseEvent('click', { bubbles: true }));

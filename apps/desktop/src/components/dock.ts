@@ -4,7 +4,7 @@
 import type { Actions } from '../actions';
 import { button, el } from '../dom';
 import * as interval from '../interval';
-import { chipValue, CHIP_CODES, findProp, SETTING_NAMES } from '../props';
+import { chipValue, CHIP_CODES, findProp, SETTING_NAMES, isUsable } from '../props';
 import { cameraCount, watch, type AppState, type AppStore } from '../state';
 import { presetsControl } from './presetsControl';
 import { createSettingsPopover, stepOnArrow } from './settingsPopover';
@@ -93,7 +93,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
       for (const { code, b } of bound) {
         const prop = findProp(camera, code);
         b.querySelector('b')!.textContent = chipValue(camera, code);
-        b.classList.toggle('off', !prop || prop.enabled !== 'On');
+        b.classList.toggle('off', !isUsable(prop));
         b.setAttribute('aria-label', `${SETTING_NAMES[code]}, ${chipValue(camera, code)}`);
       }
       record.classList.toggle('recording', !!camera?.recording);

@@ -5,7 +5,7 @@
 
 import type { Actions } from '../actions';
 import { el } from '../dom';
-import { chipValue, CHIP_CODES, findProp, PROP, SETTING_NAMES } from '../props';
+import { chipValue, CHIP_CODES, findProp, PROP, SETTING_NAMES, isUsable } from '../props';
 import { watch, type AppStore } from '../state';
 import { liveStatusText } from './dock';
 import { presetsControl } from './presetsControl';
@@ -100,7 +100,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
         const prop = findProp(camera, code);
         const value = segmentValue(camera, code);
         g.querySelector('.v')!.textContent = value;
-        g.classList.toggle('off', !prop || prop.enabled !== 'On');
+        g.classList.toggle('off', !isUsable(prop));
         g.setAttribute('aria-label', `${SETTING_NAMES[code]}, ${value}`);
       }
       record.classList.toggle('recording', !!camera?.recording);

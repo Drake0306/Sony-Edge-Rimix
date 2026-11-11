@@ -49,6 +49,8 @@ export interface PropertySummary {
   writable: boolean;
   enabled: Enabled;
   choices: Choice[];
+  /** The ends and step of a range-form property (colour temperature); null or absent otherwise. */
+  range?: { min: number; max: number; step: number } | null;
 }
 
 export interface CameraState {

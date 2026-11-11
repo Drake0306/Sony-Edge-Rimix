@@ -81,29 +81,50 @@ svg{display:block}
 .switch[aria-checked="true"]:hover{background:var(--sel)}
 .switch:disabled,.switch[title]{cursor:default}
 
-/* ---------- the mode picker ---------- */
-/* The Mode row's own button: the mode in use, and the way to unfold the list. */
-.r .modebtn{display:flex;align-items:center;gap:7px;min-width:0;height:22px;margin-right:1px;padding:0 5px 0 6px;border-radius:7px}
-.r .modebtn:hover{background:var(--hov)}
-.r .modebtn .mn{min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.r .modebtn .chev{flex:none;width:9px;height:9px;color:var(--ink-3);transform:rotate(90deg);transition:transform .15s}
-.r.unfolded .modebtn .chev{transform:rotate(-90deg)}
+/* ---------- the pickers: Mode, Drive, Focus, White balance, Format, Aperture, Colour temp ---------- */
+/* A row's own button: the value in use, and the way to unfold its panel. */
+.r .pickbtn{display:flex;align-items:center;gap:7px;min-width:0;height:22px;margin-right:1px;padding:0 5px 0 6px;border-radius:7px}
+.r .pickbtn:hover{background:var(--hov)}
+.r .pickbtn .mn{min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.r .pickbtn .chev{flex:none;width:9px;height:9px;color:var(--ink-3);transform:rotate(90deg);transition:transform .15s}
+.r.unfolded .pickbtn .chev{transform:rotate(-90deg)}
+.r .pickbtn + .step{margin-left:-2px}
 .mi{flex:none;width:17px;height:17px;color:var(--ink-2)}
-/* The dial cap: the letter a mode has on a camera's mode dial. */
-.cap{flex:none;display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:10px;font-size:11px;font-weight:700;line-height:1;color:var(--ink);box-shadow:inset 0 0 0 1.25px var(--ink-3)}
+/* The badge: the letter a mode has on a mode dial, or a value's short form. */
+.cap{flex:none;display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:10px;font-size:11px;font-weight:700;line-height:1;color:var(--ink);box-shadow:inset 0 0 0 1.25px var(--ink-3);font-variant-numeric:tabular-nums}
 .cap.wide{padding:0 6px;font-size:9.5px;letter-spacing:.03em}
-.modepick{padding:6px 6px 7px;border-top:.5px solid var(--hair);background:var(--well)}
-.modepick[hidden]{display:none}
-.modepick .tabs{display:flex;width:100%;margin-bottom:5px}
-.modepick .tabs[hidden]{display:none}
-.modepick .tabs button{flex:1 1 0;min-width:0;height:24px;padding:0 4px;font-size:11.5px}
-.modelist{display:flex;flex-direction:column;gap:1px}
-.mopt{display:flex;align-items:center;gap:9px;width:100%;height:28px;padding:0 6px 0 7px;border-radius:8px;text-align:left}
-.mopt .mn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mopt:hover{background:var(--hov)}
-.mopt.on{background:var(--sel);color:var(--sel-ink);font-weight:600;box-shadow:var(--sel-shadow)}
-.mopt.on .mi{color:var(--sel-ink)}
-.mopt.on .cap{color:var(--sel);background:var(--sel-ink);box-shadow:none}
-.mopt:disabled{opacity:.45;cursor:default}
-.mopt:disabled:hover{background:none}
-.mopt.on:disabled:hover{background:var(--sel)}
+.pick{padding:6px 6px 7px;border-top:.5px solid var(--hair);background:var(--well)}
+.pick[hidden]{display:none}
+.pick .tabs{display:flex;width:100%;margin-bottom:5px}
+.pick .tabs[hidden]{display:none}
+.pick .tabs button{flex:1 1 auto;min-width:0;height:24px;padding:0 5px;font-size:11px}
+.picklist{display:flex;flex-direction:column;gap:1px}
+.popt{display:flex;align-items:center;gap:9px;width:100%;height:28px;padding:0 6px 0 7px;border-radius:8px;text-align:left}
+.popt .mn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.popt:hover{background:var(--hov)}
+.popt.on{background:var(--sel);color:var(--sel-ink);font-weight:600;box-shadow:var(--sel-shadow)}
+.popt.on .mi{color:var(--sel-ink)}
+.popt.on .cap{color:var(--sel);background:var(--sel-ink);box-shadow:none}
+.popt:disabled,.fstop:disabled{opacity:.45;cursor:default}
+.popt:disabled:hover,.fstop:disabled:hover{background:none}
+.popt.on:disabled:hover,.fstop.on:disabled:hover{background:var(--sel)}
+.pick .note{margin:6px 2px 0;font-size:11px;line-height:1.35;color:var(--ink-2)}
+/* Aperture: the f-stops, each with an iris as open as it is. */
+.fgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:2px}
+.fstop{display:flex;align-items:center;gap:5px;height:26px;padding:0 5px;border-radius:8px;font-size:12px;font-variant-numeric:tabular-nums}
+.fstop:hover{background:var(--hov)}
+.fstop.on{background:var(--sel);color:var(--sel-ink);font-weight:600;box-shadow:var(--sel-shadow)}
+.iris .ring{fill:none;stroke:currentColor;stroke-width:1.5}
+.iris .hole{fill:currentColor}
+.fstop.on .mi{color:var(--sel-ink)}
+/* Colour temperature: a strip from warm light to cool, with the value's place marked on it. */
+.kelvin{--warm-to-cool:linear-gradient(90deg,#ff8a1f 0%,#ffb163 16%,#ffd3a1 32%,#fff1e2 47%,#f1f4ff 58%,#d5e2ff 74%,#b3cbff 88%,#9bbcff 100%)}
+.kscale{-webkit-appearance:none;appearance:none;display:block;width:100%;height:22px;margin:2px 0 0;border-radius:11px;background:var(--warm-to-cool);box-shadow:inset 0 0 0 .5px var(--group-ring);cursor:ew-resize}
+.kscale::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:10px;height:26px;border-radius:5px;background:#fff;box-shadow:0 0 0 1.5px #1c1d1f,0 1px 4px rgba(0,0,0,.4)}
+.kscale::-moz-range-thumb{width:10px;height:26px;border:0;border-radius:5px;background:#fff;box-shadow:0 0 0 1.5px #1c1d1f,0 1px 4px rgba(0,0,0,.4)}
+.kscale:focus-visible{outline:none;box-shadow:var(--focus)}
+.kscale:disabled{opacity:.45;cursor:default}
+.kends{display:flex;justify-content:space-between;align-items:baseline;margin:5px 2px 2px;font-size:11px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.kends .know{font-size:12.5px;font-weight:700;color:var(--ink)}
+.ktype{padding:0 0 0 5px!important;border-top:0!important}
+.kswatch{flex:none;width:17px;height:11px;border-radius:3px;box-shadow:inset 0 0 0 .5px var(--group-ring);background:linear-gradient(90deg,#ff8a1f 0%,#ffb163 16%,#ffd3a1 32%,#fff1e2 47%,#f1f4ff 58%,#d5e2ff 74%,#b3cbff 88%,#9bbcff 100%);background-size:1000% 100%;background-position:var(--at,50%) 0}

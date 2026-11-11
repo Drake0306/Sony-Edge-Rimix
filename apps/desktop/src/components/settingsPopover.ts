@@ -5,8 +5,19 @@
 import type { Actions } from '../actions';
 import { button, el, icon, isTyping } from '../dom';
 import type { CameraState, PropertySummary } from '../ipc';
-import { findProp, isColourTemp, isoStops, isUsable, nearestIso, PROP, sameRaw, SETTING_NAMES, shortText } from '../props';
-import { FAMILIES, familiesOf, modeInfo, modeName, modesIn, type ModeFamily } from '../modes';
+import { choicesIn, fLabel, F_STOPS, groupsOf, irisRadius, pickerFor, type Look } from '../pickers';
+import {
+  findProp,
+  isColourTemp,
+  isoStops,
+  isUsable,
+  kelvinRange,
+  nearestIso,
+  PROP,
+  sameRaw,
+  SETTING_NAMES,
+  shortText,
+} from '../props';
 import { watch, type AppStore } from '../state';
 
 const PENDING_MS = 400;
@@ -88,12 +99,13 @@ export function createSettingsPopover(
   const rows = new Map<number, HTMLElement>();
   /** The typing row under ISO; it shares ISO's property but is not its row. */
   let isoCustom: HTMLElement | null = null;
-  /** The mode picker under the Mode row, whether it is unfolded, and the tab chosen by hand. */
-  let modePick: HTMLElement | null = null;
-  let modeOpen = false;
-  let modeTab: ModeFamily | null = null;
-  /** What the picker last drew, so it is rebuilt only when that changes. */
-  let modeKey = '';
+  /** The panel that unfolds under a row: a list of values, the f-stops, or the kelvin scale. */
+  const panels = new Map<number, HTMLElement>();
+  /** What each panel last drew, so it is rebuilt only when that changes. */
+  const drawn = new Map<number, string>();
+  /** The row unfolded now (one at a time), and the tab chosen by hand in each list. */
+  let unfolded: number | null = null;
+  const tabChosen = new Map<number, string>();
   const pending = new Map<number, number>();
 
   function markPending(code: number): void {
@@ -108,6 +120,9 @@ export function createSettingsPopover(
     );
   }
 
+  /** The code the camera really keeps a setting under (Format has two). */
+  const realCode = (code: number) => findProp(store.get().camera, code)?.code ?? code;
+
   function stepper(code: number, name: string, chevrons: boolean): HTMLElement {
     const step = el('div', 'step');
     const [down, up] = chevrons ? ['Previous', 'Next'] : ['Decrease', 'Increase'];
@@ -118,12 +133,21 @@ export function createSettingsPopover(
       const b = button('', undefined, `${word} ${name.toLowerCase()}`);
       b.append(icon(glyph, '', '0 0 10 10'));
       b.addEventListener('click', () => {
-        actions.stepProperty(code, delta);
+        actions.stepProperty(realCode(code), delta);
         markPending(code);
       });
       step.append(b);
     }
     return step;
+  }
+
+  /** Which kind of panel a row unfolds, if any. */
+  function panelKind(code: number, prop: PropertySummary | undefined): 'list' | 'fstops' | 'kelvin' | null {
+    if (!prop) return null;
+    if (pickerFor(prop.code) && prop.choices.length > 0) return 'list';
+    if (code === PROP.aperture && prop.choices.length === 0) return 'fstops';
+    if (code === PROP.colourTemp) return 'kelvin';
+    return null;
   }
 
   function buildRow(code: number, prop: PropertySummary | undefined, chevrons: boolean): HTMLElement {
@@ -132,97 +156,238 @@ export function createSettingsPopover(
     row.setAttribute('role', 'listitem');
     row.dataset.code = String(code);
     row.append(el('span', 'k', name));
-    if (code === PROP.mode && prop && prop.choices.length > 0) {
-      // Mode is chosen from a list, not stepped through: see `drawMode`.
-      const b = button('modebtn');
-      b.setAttribute('aria-expanded', 'false');
-      b.setAttribute('aria-controls', 'modepick');
-      b.append(icon('m-photo', 'mi', '0 0 20 20'), el('span', 'mn'), el('span', 'cap'), icon('chr', 'chev', '0 0 10 10'));
-      b.addEventListener('click', () => {
-        modeOpen = !modeOpen;
-        modeTab = null;
-        drawMode(findProp(store.get().camera, PROP.mode));
-      });
-      row.append(b);
-    } else {
+    const kind = panelKind(code, prop);
+    if (!kind) {
       row.append(el('span', 'v'), stepper(code, name, chevrons));
+      return row;
     }
+    // The value is a button: it shows the setting and unfolds its panel.
+    const b = button('pickbtn');
+    b.setAttribute('aria-expanded', 'false');
+    b.setAttribute('aria-controls', `panel-${code}`);
+    b.addEventListener('click', () => {
+      unfolded = unfolded === code ? null : code;
+      redrawPanels();
+    });
+    row.append(b);
+    // Values with an order keep their plus and minus beside the button.
+    if (kind !== 'list') row.append(stepper(code, name, chevrons));
     return row;
   }
 
-  /** The list of modes under the Mode row: tabs for the kinds of shooting, then the modes of the tab showing. */
-  function buildModePick(): HTMLElement {
-    const pick = el('div', 'modepick');
-    pick.id = 'modepick';
-    const tabs = el('div', 'segc tabs');
-    tabs.setAttribute('role', 'tablist');
-    tabs.setAttribute('aria-label', 'Kind of shooting');
-    const list = el('div', 'modelist');
-    list.setAttribute('role', 'radiogroup');
-    list.setAttribute('aria-label', 'Shooting mode');
-    pick.append(tabs, list);
-    pick.hidden = true;
-    return pick;
+  function buildPanel(code: number, kind: 'list' | 'fstops' | 'kelvin'): HTMLElement {
+    const panel = el('div', `pick ${kind}`);
+    panel.id = `panel-${code}`;
+    panel.dataset.code = String(code);
+    panel.hidden = true;
+    if (kind === 'list') {
+      const tabs = el('div', 'segc tabs');
+      tabs.setAttribute('role', 'tablist');
+      const list = el('div', 'picklist');
+      list.setAttribute('role', 'radiogroup');
+      panel.append(tabs, list);
+    } else if (kind === 'fstops') {
+      const grid = el('div', 'fgrid');
+      grid.setAttribute('role', 'radiogroup');
+      grid.setAttribute('aria-label', 'Aperture');
+      panel.append(grid, el('p', 'note', 'The lens sets how wide and how narrow it goes; Rimix stops there.'));
+    } else {
+      buildKelvin(panel);
+    }
+    return panel;
   }
 
-  /** A pictogram, a name and a dial cap: what a mode looks like in the row and in the list. */
-  function modeParts(raw: PropertySummary['raw'], name: string): HTMLElement[] {
-    const info = modeInfo(raw);
-    const cap = el('span', 'cap', info.badge);
-    if (info.badge.length > 1) cap.classList.add('wide');
-    return [icon(info.icon, 'mi', '0 0 20 20') as unknown as HTMLElement, el('span', 'mn', name), cap];
+  /** A pictogram, a name and a badge: how a value looks in its row and in its list. */
+  function lookParts(look: Look): HTMLElement[] {
+    const parts = [icon(look.icon, 'mi', '0 0 20 20') as unknown as HTMLElement, el('span', 'mn', look.name)];
+    if (look.badge) {
+      const cap = el('span', 'cap', look.badge);
+      if (look.badge.length > 1) cap.classList.add('wide');
+      parts.push(cap);
+    }
+    return parts;
   }
 
-  function drawMode(prop: PropertySummary | undefined): void {
-    const row = rows.get(PROP.mode);
-    const head = row?.querySelector<HTMLButtonElement>('.modebtn');
-    if (!row || !head || !modePick || !prop) return;
+  const chevron = () => icon('chr', 'chev', '0 0 10 10') as unknown as HTMLElement;
+
+  /** An iris drawn as wide open as the f-number is. */
+  function iris(hundredths: number): HTMLElement {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 20 20');
+    svg.setAttribute('class', 'mi iris');
+    svg.setAttribute('aria-hidden', 'true');
+    const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    const hole = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    for (const [c, r, cls] of [[ring, 8, 'ring'], [hole, irisRadius(hundredths), 'hole']] as const) {
+      c.setAttribute('cx', '10');
+      c.setAttribute('cy', '10');
+      c.setAttribute('r', String(r));
+      c.setAttribute('class', cls);
+    }
+    svg.append(ring, hole);
+    return svg as unknown as HTMLElement;
+  }
+
+  function drawList(code: number, prop: PropertySummary, head: HTMLButtonElement, panel: HTMLElement, open: boolean): void {
+    const spec = pickerFor(prop.code)!;
     const usable = isUsable(prop);
-    const here = modeInfo(prop.raw);
-    const families = familiesOf(prop.choices);
-    const tab = modeTab && families.includes(modeTab) ? modeTab : families.includes(here.family) ? here.family : families[0];
-    const key = JSON.stringify([prop.raw, prop.label, prop.choices.map((c) => c.raw), tab, modeOpen, usable]);
-    if (key === modeKey) return;
-    modeKey = key;
+    const groups = groupsOf(spec, prop.choices);
+    const here = spec.groupOf({ raw: prop.raw, label: prop.label, short: prop.short });
+    const chosen = tabChosen.get(code);
+    const ids = groups.map(([id]) => id);
+    const tab = chosen && ids.includes(chosen) ? chosen : ids.includes(here) ? here : ids[0];
+    const key = JSON.stringify([prop.raw, prop.label, prop.choices.map((c) => c.raw), tab, open, usable]);
+    if (drawn.get(code) === key) return;
+    drawn.set(code, key);
 
-    const name = prop.label.replace(/ \((Movie|S&Q|High frame rate)\)$/, '');
-    head.replaceChildren(...modeParts(prop.raw, name), icon('chr', 'chev', '0 0 10 10'));
+    const current = spec.look({ raw: prop.raw, label: prop.label, short: prop.short });
+    head.replaceChildren(...lookParts(current), chevron());
     head.title = prop.label;
-    head.setAttribute('aria-expanded', String(modeOpen));
-    head.setAttribute('aria-label', `Mode, ${prop.label}. ${modeOpen ? 'Hide' : 'Show'} the list of modes`);
-    row.classList.toggle('unfolded', modeOpen);
-    modePick.hidden = !modeOpen;
-    if (!modeOpen) return;
+    head.setAttribute('aria-label', `${SETTING_NAMES[code]}, ${prop.label}. ${open ? 'Hide' : 'Show'} the list`);
+    if (!open) return;
 
-    const [tabs, list] = [modePick.children[0] as HTMLElement, modePick.children[1] as HTMLElement];
-    tabs.hidden = families.length < 2;
+    const [tabs, list] = [panel.children[0] as HTMLElement, panel.children[1] as HTMLElement];
+    tabs.setAttribute('aria-label', `Kind of ${spec.title.toLowerCase()}`);
+    list.setAttribute('aria-label', spec.title);
+    tabs.hidden = groups.length < 2;
     tabs.replaceChildren(
-      ...FAMILIES.filter(([f]) => families.includes(f)).map(([family, title]) => {
-        const b = button(family === tab ? 'on' : '', title);
+      ...groups.map(([id, title]) => {
+        const b = button(id === tab ? 'on' : '', title);
         b.setAttribute('role', 'tab');
-        b.setAttribute('aria-selected', String(family === tab));
+        b.setAttribute('aria-selected', String(id === tab));
         b.addEventListener('click', () => {
-          modeTab = family;
-          drawMode(findProp(store.get().camera, PROP.mode));
+          tabChosen.set(code, id);
+          redrawPanels();
         });
         return b;
       }),
     );
     list.replaceChildren(
-      ...modesIn(prop.choices, tab).map((choice) => {
+      ...choicesIn(spec, prop.choices, tab).map((choice) => {
         const on = sameRaw(choice.raw, prop.raw);
-        const b = button(on ? 'mopt on' : 'mopt');
+        const b = button(on ? 'popt on' : 'popt');
         b.setAttribute('role', 'radio');
         b.setAttribute('aria-checked', String(on));
         b.disabled = !usable;
-        b.append(...modeParts(choice.raw, modeName(choice)));
+        b.append(...lookParts(spec.look(choice)));
         b.addEventListener('click', () => {
-          actions.setProperty(PROP.mode, choice.raw);
-          markPending(PROP.mode);
+          actions.setProperty(prop.code, choice.raw);
+          markPending(code);
         });
         return b;
       }),
     );
+  }
+
+  function drawFstops(code: number, prop: PropertySummary, head: HTMLButtonElement, panel: HTMLElement, open: boolean): void {
+    const usable = isUsable(prop);
+    const now = 'U16' in prop.raw ? prop.raw.U16 : 0;
+    const key = JSON.stringify([now, open, usable]);
+    if (drawn.get(code) === key) return;
+    drawn.set(code, key);
+    head.replaceChildren(iris(now || 400), el('span', 'mn', shortText(prop)), chevron());
+    head.setAttribute('aria-label', `Aperture, ${shortText(prop)}. ${open ? 'Hide' : 'Show'} the f-stops`);
+    if (!open) return;
+    (panel.children[0] as HTMLElement).replaceChildren(
+      ...F_STOPS.map((f) => {
+        const b = button(f === now ? 'fstop on' : 'fstop');
+        b.setAttribute('role', 'radio');
+        b.setAttribute('aria-checked', String(f === now));
+        b.disabled = !usable;
+        b.append(iris(f), el('span', '', fLabel(f)));
+        b.addEventListener('click', () => {
+          actions.setProperty(prop.code, { U16: f });
+          markPending(code);
+        });
+        return b;
+      }),
+    );
+  }
+
+  /** The kelvin scale: a strip from warm to cool to drag along, and a box to type a value into. */
+  function buildKelvin(panel: HTMLElement): void {
+    const scale = el('input', 'kscale');
+    scale.type = 'range';
+    scale.setAttribute('aria-label', 'Colour temperature');
+    const ends = el('div', 'kends');
+    ends.append(el('span', 'kmin'), el('span', 'know'), el('span', 'kmax'));
+    const typed = el('div', 'r custom ktype');
+    const input = el('input');
+    input.type = 'number';
+    input.inputMode = 'numeric';
+    input.setAttribute('aria-label', 'Colour temperature in kelvin');
+    const range = el('span', 'range');
+    typed.append(el('span', 'k dim', 'Kelvin'), input, range);
+    panel.append(scale, ends, typed);
+
+    const set = (value: number) => {
+      const prop = findProp(store.get().camera, PROP.colourTemp);
+      if (!prop || !isUsable(prop) || !Number.isFinite(value)) return;
+      const { min, max, step } = kelvinRange(prop);
+      // Onto the camera's own steps, inside its range.
+      const kelvin = Math.min(max, Math.max(min, min + Math.round((value - min) / step) * step));
+      input.value = String(kelvin);
+      scale.value = String(kelvin);
+      range.textContent = kelvin === value ? `${min} to ${max}` : `Nearest the camera has: ${kelvin}`;
+      actions.setProperty(prop.code, { U16: kelvin });
+      markPending(PROP.colourTemp);
+    };
+    // While dragging only the number follows; the camera is told on release.
+    scale.addEventListener('input', () => {
+      (ends.children[1] as HTMLElement).textContent = `${scale.value}K`;
+      input.value = scale.value;
+    });
+    scale.addEventListener('change', () => set(Number(scale.value)));
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') set(Number(input.value));
+    });
+    input.addEventListener('change', () => set(Number(input.value)));
+  }
+
+  function drawKelvin(code: number, prop: PropertySummary, head: HTMLButtonElement, panel: HTMLElement, open: boolean): void {
+    const usable = isUsable(prop);
+    const now = 'U16' in prop.raw ? prop.raw.U16 : 0;
+    const { min, max, step } = kelvinRange(prop);
+    const key = JSON.stringify([now, open, usable, min, max, step]);
+    if (drawn.get(code) === key) return;
+    drawn.set(code, key);
+    const swatch = el('span', 'kswatch');
+    swatch.style.setProperty('--at', `${max > min ? ((now - min) / (max - min)) * 100 : 50}%`);
+    head.replaceChildren(swatch, el('span', 'mn', shortText(prop)), chevron());
+    head.setAttribute('aria-label', `Colour temperature, ${shortText(prop)}. ${open ? 'Hide' : 'Show'} the scale`);
+    if (!open) return;
+    const scale = panel.querySelector<HTMLInputElement>('.kscale')!;
+    const input = panel.querySelector<HTMLInputElement>('.ktype input')!;
+    for (const field of [scale, input]) {
+      field.min = String(min);
+      field.max = String(max);
+      field.step = String(step);
+      field.value = String(now);
+      field.disabled = !usable;
+    }
+    panel.querySelector('.kmin')!.textContent = `${min}K`;
+    panel.querySelector('.know')!.textContent = `${now}K`;
+    panel.querySelector('.kmax')!.textContent = `${max}K`;
+    panel.querySelector('.ktype .range')!.textContent = `${min} to ${max}`;
+  }
+
+  /** Draws every row that has a panel: its button always, its panel while it is the one unfolded. */
+  function redrawPanels(): void {
+    const camera = store.get().camera;
+    for (const [code, panel] of panels) {
+      const prop = findProp(camera, code);
+      const row = rows.get(code);
+      const head = row?.querySelector<HTMLButtonElement>('.pickbtn');
+      if (!prop || !row || !head) continue;
+      const open = unfolded === code;
+      head.setAttribute('aria-expanded', String(open));
+      row.classList.toggle('unfolded', open);
+      panel.hidden = !open;
+      if (panel.classList.contains('list')) drawList(code, prop, head, panel, open);
+      else if (panel.classList.contains('fstops')) drawFstops(code, prop, head, panel, open);
+      else drawKelvin(code, prop, head, panel, open);
+    }
   }
 
   /**
@@ -264,11 +429,12 @@ export function createSettingsPopover(
     const usable = isUsable(prop);
     row.classList.toggle('off', !usable);
     row.setAttribute('aria-disabled', String(!usable));
-    row.querySelectorAll<HTMLButtonElement>('button:not(.modebtn)').forEach((b) => (b.disabled = !usable));
+    // The button that unfolds a panel stays live, to look at what there is.
+    row.querySelectorAll<HTMLButtonElement>('button:not(.pickbtn)').forEach((b) => (b.disabled = !usable));
     const v = row.querySelector('.v');
     if (v) v.textContent = shortText(prop);
-    const custom = row.querySelector<HTMLInputElement>('input');
-    if (custom) {
+    if (row === isoCustom) {
+      const custom = row.querySelector<HTMLInputElement>('input')!;
       const stops = isoStops(prop);
       const [min, max] = [stops[0], stops[stops.length - 1]];
       custom.disabled = !usable || stops.length === 0;
@@ -277,11 +443,6 @@ export function createSettingsPopover(
       const range = row.querySelector('.range')!;
       range.textContent = row.dataset.note || (stops.length ? `${min} to ${max}` : '');
     }
-    row.querySelectorAll<HTMLButtonElement>('.mini button').forEach((b, i) => {
-      const on = !!prop && !!prop.choices[i] && sameRaw(prop.choices[i].raw, prop.raw);
-      b.classList.toggle('on', on);
-      b.setAttribute('aria-checked', String(on));
-    });
     const code = Number(row.dataset.code);
     row.classList.toggle('active', code === activeCode);
     if (code === activeCode) row.setAttribute('aria-current', 'true');
@@ -291,10 +452,16 @@ export function createSettingsPopover(
 
   function render(camera: CameraState | null): void {
     const groups = GROUPS.map((g) => ({ ...g, list: g.codes(camera) }));
-    const key = JSON.stringify([groups.map((g) => g.list), (findProp(camera, PROP.mode)?.choices.length ?? 0) > 0]);
+    // Which rows there are, and which of them unfold what: a row's kind can
+    // change when the camera starts listing values for it.
+    const kinds = groups.map((g) => g.list.map((code) => [code, panelKind(code, findProp(camera, code))]));
+    const key = JSON.stringify(kinds);
     if (key !== layoutKey) {
       layoutKey = key;
       rows.clear();
+      panels.clear();
+      drawn.clear();
+      isoCustom = null;
       body.replaceChildren(
         ...groups.map((g) => {
           const sect = el('div', 'sect');
@@ -303,17 +470,19 @@ export function createSettingsPopover(
           const group = el('div', 'group');
           group.setAttribute('role', 'list');
           for (const code of g.list) {
-            const row = buildRow(code, findProp(camera, code), g.chevrons);
+            const prop = findProp(camera, code);
+            const row = buildRow(code, prop, g.chevrons);
             rows.set(code, row);
             group.append(row);
+            const kind = panelKind(code, prop);
+            if (kind) {
+              const panel = buildPanel(code, kind);
+              panels.set(code, panel);
+              group.append(panel);
+            }
             if (code === PROP.iso) {
               isoCustom = customIsoRow();
               group.append(isoCustom);
-            }
-            if (code === PROP.mode) {
-              modePick = buildModePick();
-              modeKey = '';
-              group.append(modePick);
             }
           }
           sect.append(h, group);
@@ -323,7 +492,7 @@ export function createSettingsPopover(
     }
     for (const [code, row] of rows) updateRow(row, findProp(camera, code));
     if (isoCustom) updateRow(isoCustom, findProp(camera, PROP.iso));
-    drawMode(findProp(camera, PROP.mode));
+    redrawPanels();
   }
 
   const unwatch = watch(store, (s) => s.camera, (camera) => render(camera));
@@ -349,9 +518,10 @@ export function createSettingsPopover(
     chip.classList.add(onClass);
     chip.setAttribute(stateAttr, 'true');
     from.textContent = `opened from ${label}`;
-    modeOpen = code === PROP.mode;
-    modeTab = null;
-    modeKey = '';
+    // Opened from a chip whose setting has a panel, that panel is unfolded.
+    unfolded = code;
+    tabChosen.clear();
+    drawn.clear();
     render(store.get().camera);
     place();
   }
@@ -388,6 +558,6 @@ export function stepOnArrow(
   }
   if (!isUsable(findProp(store.get().camera, code))) return false;
   e.preventDefault();
-  actions.stepProperty(code, delta);
+  actions.stepProperty(findProp(store.get().camera, code)?.code ?? code, delta);
   return true;
 }
