@@ -1,10 +1,11 @@
 # Rimix: hand-off notes for the next session
 
 Written 2026-11-11 at Roy's request after the second real-camera test went
-badly. Read this before touching anything. The user is Roy; the camera is a
-Sony ZV-E10 (firmware 2.00) on a Mac running macOS 27. Roy's words at the
-end of the last session: "it connected before, now it did not even connect
-properly". That regression is open and is the first thing to fix.
+badly; updated the same day once the "did not even connect" regression was
+understood and fixed (see "The 10:00 connect failure" below). Read this
+before touching anything. The user is Roy; the camera is a Sony ZV-E10
+(firmware 2.00) on a Mac running macOS 27. The fix is verified on this Mac
+without the camera; Roy has not yet retested with the camera.
 
 ## Rules that bind every session
 
@@ -49,8 +50,11 @@ Release build on this Mac:
 `cargo build --release -p rimix-desktop --features tauri/custom-protocol`
 then `CI=true pnpm -C apps/desktop exec tauri build`, plus
 `cargo build --release -p rimix-cli`; copy into `~/Downloads/Rimix-0.1.0/`.
+Then run `scripts/check-mac-bundle.sh ~/Downloads/Rimix-0.1.0/Rimix.app`:
+it must print three `ok` lines. A bundle that fails it cannot reach any
+camera (see "The 10:00 connect failure").
 
-## State of the code (main = 599220b, pushed)
+## State of the code (main = merge of fix-local-network)
 
 All four spec phases are built and merged. Everything was developed against
 the simulator; only three real-camera sessions have happened, all on
@@ -90,122 +94,133 @@ would now time out after 5 s and the log would show
 `WARN ... operation timed out op="0x9209"`. The 10:00 local log has no such
 line, so the regression below is not that, but keep it in mind.
 
-## THE OPEN BUG (happening now, 2026-11-11 10:00 local, 04:29Z to 04:30Z)
+## The 10:00 connect failure (2026-11-11, 04:29Z): solved, was macOS
 
-With the 09:53 build, Roy pressed connect and got:
+Symptom: with the 09:53 build Roy got "Joined DIRECT-YKE1:ZV-E10 but no
+camera answered", having connected an hour earlier with the previous build.
 
-> Joined DIRECT-YKE1:ZV-E10 but no camera answered. On the camera, open
-> Menu, Network, PC Remote Function, and stay on that screen.
+**Cause.** macOS Local Network privacy was dropping every packet Rimix.app
+sent to the local network (SSDP and TCP to port 15740 alike) with
+`EHOSTUNREACH`, "No route to host". Nothing was wrong with the join, the
+camera, DHCP, routing or the PTP code. The builds were only linker-signed:
+code-signing identifier `rimix_desktop-c38e19902c842888`, Info.plist not
+bound. macOS stores the Local Network permission for `com.rimix.desktop`;
+a process whose signing identifier is something else is not reliably
+matched to it once the app is rebuilt and replaced (most likely it only
+matches through a per-binary UUID that goes stale; that part is inferred,
+the experiment below is not). macOS then blocks the app while System
+Settings (and `nehelper`) still say "allowed", and shows no prompt.
 
-Roy says this connection worked an hour earlier with the previous build
-(session 3 above), camera 1 cm away.
+**Evidence** (`/usr/bin/log show`, around 09:59 to 10:00 local):
+- kernel: `tcp drop outgoing [...:15740] ... process: rimix-desktop ...
+  reason: NECP`, `error: 65`.
+- UserEventAgent: `Got local network blocked notification: pid: 16101`,
+  38 times in the session; nehelper each time: `Local network allowed by
+  preference for Rimix (com.rimix.desktop)`.
+- The block was there from the app's first second, while the Mac was
+  still on the home network. It needs no camera to reproduce.
+- Controlled test on the home network, same binary each time: linker
+  signature = blocked 3 of 3 searches; throwaway identifier with a new
+  UUID = blocked 3 of 3; signed as a bundle (identifier
+  `com.rimix.desktop`) = allowed, also with a never-seen UUID. The CLI,
+  run from a terminal, was never blocked (it runs under the terminal's
+  permission).
 
-### What the log proves (`rimix.log.2026-11-11`, 04:29:22Z to 04:30:41Z)
+**Why it worked at 03:47Z.** That build was blocked too for its first 26 s
+(same kernel drops). It was let through from the Wi-Fi switch at 09:17:49
+local, which coincided with `nesessionmanager` restarting (presumably
+reinstalling the kernel's rules). At 09:59 no such restart happened.
+Luck, not code.
 
-- The app started at 04:29:22Z. From the first second, SSDP discovery
-  failed every round with `No route to host (os error 65)`, before any
-  join was attempted. That error for a multicast send means the Mac was
-  on an interface with no usable route: most likely still on the camera's
-  Wi-Fi Direct network from the previous session, or on no network.
-- Join at 04:29:52.084Z: `networksetup -setairportnetwork en0
-  DIRECT-YKE1:ZV-E10 [password]` printed nothing (that is success for
-  networksetup). 50 ms later `getairportnetwork` said "not associated"
-  (macOS 27 always says that, the SSID is hidden) and `ipconfig getifaddr
-  en0` printed `192.168.0.4`. The join code treats "any IPv4 address" as
-  joined, so it returned success 60 ms after the join command. A DHCP
-  lease from the camera cannot arrive in 60 ms, so 192.168.0.4 was already
-  on en0 before the join.
-- `192.168.0.4` is the address en0 had after EVERY join today (03:18,
-  03:26, 03:47, 04:29, 04:30), including the one that worked. The camera is
-  at 192.168.122.1. Those are different /24s. On this Mac's home network
-  en0 is 192.168.31.179, so 192.168.0.4 is not the home address either.
-  Unknown: whether the ZV-E10 hands out 192.168.0.x leases with a default
-  route via 192.168.122.1, or whether 192.168.0.4 is a stale/self-assigned
-  address.
-- After the join the app does NOT connect to the stored address. It calls
-  `waitForCamera(FIND_MS = 30 s)` (`apps/desktop/src/actions.ts`
-  `connectWithWifi`), which runs SSDP and a probe of the default gateway
-  (`crates/sony-ptpip/src/discovery/probe.rs`: `route -n get default`,
-  then TCP to that gateway on 15740) in 1.5 s rounds. SSDP kept failing
-  with `No route to host`. The gateway probe logged nothing, which means
-  `route -n get default` returned no `gateway:` line or the TCP connect
-  failed quietly: there was no default route through the camera. After
-  30 s the UI showed "no camera answered". Roy retried twice (04:30:17
-  and 04:30:31), same result. At 04:30:41 SSDP changed to `Network is
-  unreachable (os error 51)`: en0 had lost its address entirely. The log
-  ends there.
-- No PTP/IP traffic was attempted at all in this session. The new polling
-  code never ran. The failure is entirely in Wi-Fi join / routing /
-  discovery, before the protocol layer.
-- In session 3 (03:47Z) the same sequence worked: SSDP also failed with
-  `No route to host` at 03:47:43 and 03:47:48, then the join at 03:47:50
-  reported 192.168.0.4, and by 03:47:58 the camera was connected (first
-  timeout line). So that time the gateway probe or SSDP succeeded within
-  8 s, meaning the Mac did get a route to 192.168.122.1 shortly after the
-  join. This time it never did in 50 s.
+**Things the earlier notes got wrong** (kept so nobody re-derives them):
+- The join was real. The camera's DHCP gives this Mac `192.168.0.4`,
+  netmask `255.255.0.0`, router and DHCP server `192.168.122.1`. The /16
+  puts the camera on-link. The address appears about 40 ms after link-up
+  because macOS reuses its remembered lease (INIT-REBOOT), so "any IPv4
+  address means joined" was not the bug.
+- The Mac was on the home network, not stuck on the camera's, when the
+  app started. SSDP `No route to host` (65) there was the block.
+  `Network is unreachable` (51) is the genuine "no address yet" error.
 
-### Ranked hypotheses for the next session
+**Fix (branch `fix-local-network`, merged):**
+- `tauri.conf.json`: `bundle.macOS.signingIdentity` is `-`, so the bundler
+  signs the app ad hoc as a bundle (identifier `com.rimix.desktop`,
+  hardened runtime, the entitlements in `Entitlements.plist`). In CI the
+  `APPLE_SIGNING_IDENTITY` secret still overrides it.
+- `Info.plist`: `NSLocalNetworkUsageDescription`.
+- `scripts/check-mac-bundle.sh`: fails on a bundle signed the old way.
+- The app now says so when it is blocked instead of blaming the camera:
+  `sony_ptpip::discovery::discover_report` flags a search the system
+  refused (SSDP send fails with 65 while a default route exists); the
+  `discover` and `wait_for_camera` commands return
+  `LOCAL_NETWORK_BLOCKED`; the connect screen's Nearby list and the
+  connect error then point at System Settings, Privacy & Security, Local
+  Network. The log line is `the system refused the SSDP search`.
 
-1. **macOS never actually associated with the camera this time.** The
-   camera may not have been on the PC Remote / Wi-Fi Direct screen, or it
-   still held the previous session's link (the earlier app instance was
-   killed without a PTP CloseSession; Sony bodies keep one Wi-Fi Direct
-   client). `networksetup` prints nothing on failure to associate in some
-   macOS versions, and our success rule (any IPv4 on en0) is satisfied by
-   a stale address, so the app said "Joined" without evidence. Fix
-   direction: treat a join as successful only when the address CHANGES or
-   a default gateway appears, with a bound (say 20 s), and otherwise say
-   "could not join" rather than "joined but no camera".
-2. **The address rule is wrong even when association succeeds.** Waiting
-   for "an IPv4 address" returns before DHCP finishes. Then `waitForCamera`
-   has 30 s, which was enough at 03:47 and not at 04:29. Fix direction:
-   after the join, wait for `route -n get default` to show a gateway on
-   en0 (the camera is the gateway on Wi-Fi Direct) before discovery; and
-   fall back to a direct TCP probe of the remembered address
-   (192.168.122.1:15740 in `recentCameras`) during the find step, not only
-   the gateway.
-3. **Camera-side state.** After the 03:47 session's 30 forced reconnects,
-   the ZV-E10 may have been left in a bad state until power-cycled. Roy
-   should power the camera off and on before the next test. Not a code
-   fix, but rules out noise.
-4. Not the cause: the 0x9209 change (no PTP traffic happened), the
-   handshake fixes, the QR/SSID composition (the SSID is right).
+**Verified on this Mac, 10:39 local:** the new build, copied over the old
+one in `~/Downloads/Rimix-0.1.0/` (the exact step that failed before), was
+not blocked on its first search: 0 block notifications, gateway SYN sent,
+SSDP devices fetched. A deliberately mis-signed copy of it logged the new
+warning. 419 Rust and 306 TS tests, clippy, fmt and tsc pass.
 
-### Diagnostic recipe for the next session
+**Not verified:** anything with the camera. Roy must retest. If the app
+is ever blocked again, the manual cure is System Settings, Privacy &
+Security, Local Network: turn Rimix off and on, then reopen it.
 
-Ask Roy to put the camera on Menu > Network > PC Remote Function (Wi-Fi
-Direct Info screen), power-cycled, then run, in order, and send the output:
+To check for this block in future, run while the app is open:
 
 ```
-networksetup -setairportnetwork en0 "DIRECT-YKE1:ZV-E10" "<password>"   # Roy types the password himself; never paste it into the chat
+/usr/bin/log show --last 2m --info --debug --predicate 'eventMessage CONTAINS "local network blocked notification" OR (process == "kernel" AND eventMessage CONTAINS "rimix-desktop" AND eventMessage CONTAINS "reason: NECP")'
+```
+
+Note `log` alone is a zsh builtin; use `/usr/bin/log`.
+
+Side effects of ad-hoc signing to know about: macOS asks for webcam
+permission again on each new build (its record is tied to the exact
+binary; this was already so). A stable self-signed or Developer ID
+certificate would end that; not done, it needs Roy's keychain.
+
+## Next real-camera session
+
+1. Power-cycle the camera, open Menu > Network > PC Remote Function
+   (Wi-Fi Direct Info), start Rimix from `~/Downloads/Rimix-0.1.0/`,
+   connect.
+2. The open question is now fix 3 (parameterless 0x9209 polling), which
+   has still never run against the camera. If the connect times out, look
+   for `WARN ... operation timed out op="0x9209"` in the app log. If the
+   session comes up, watch for `camera connection lost` lines: there
+   should be none.
+3. If the connect screen says macOS is keeping Rimix off the local
+   network, do the Local Network toggle above and say so in the report:
+   it would mean the signing fix is not sufficient on its own.
+
+Diagnostic commands if it still fails (Roy types the password himself;
+never paste it into the chat):
+
+```
+networksetup -setairportnetwork en0 "DIRECT-YKE1:ZV-E10" "<password>"
 sleep 8
 ifconfig en0 | grep "inet "
 route -n get default
-ipconfig getsummary en0 | grep -iE "yiaddr|router|lease|SSID"
 nc -z -w 3 192.168.122.1 15740 && echo PTP_PORT_OPEN
 ~/Downloads/Rimix-0.1.0/rimix discover
 RUST_LOG=debug ~/Downloads/Rimix-0.1.0/rimix watch 192.168.122.1 --exit-after 20 2>&1 | tail -80
 tail -60 ~/Library/Application\ Support/Rimix/logs/rimix.log.$(date +%F)
 ```
 
-Those answer, in order: did association happen, what address and gateway
-the camera gives, whether the PTP port is reachable, whether discovery
-finds it, and whether the new parameterless 0x9209 polling works (look for
-`operation timed out op=` lines). The `watch` output also settles the
-caveat on fix 3.
-
-If the camera is reachable from this Mac while a session is running, a
-`tcpdump -i en0 -w` capture of port 15740 is the fastest way to compare
-against libgphoto2's exchange.
+The CLI is not subject to the app's Local Network block, so if the CLI
+connects and the app does not, suspect the block first.
 
 ### Other open items
 
-- The desktop app only shows the camera's response on the connect screen;
-  it does not yet surface "which step failed" (join vs find vs handshake)
-  with the underlying detail. Adding the detail to the error text or a
-  "show log" button would have saved an hour today.
+- The join code still treats "any IPv4 address" as joined. It was not the
+  cause here and the camera's lease does arrive that fast, but a join to
+  a network whose DHCP is slow would report success early. Low priority.
+- Other connect failures still do not say which step failed (join vs find
+  vs handshake) with the underlying detail; only the Local Network case
+  is now named.
 - Never verified on hardware: card browsing in PC Remote mode, BLE
   handoff, SFTP push from the camera, SSH Access Authentication, Windows
   join. `docs/camera-testing.md` steps 9 to 11 collect these.
 - `project-sony-edge-rimix-goal.md` in Claude's memory directory holds the
-  same history in short form; update it when the bug is understood.
+  same history in short form.
