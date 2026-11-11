@@ -5,8 +5,8 @@ use super::{CameraState, Choice, PropertySummary};
 use crate::capture::DEST_COMPUTER;
 use crate::error::Error;
 use crate::ptp::codes::{
-    PROP_BATTERY, PROP_FOCUS_FOUND, PROP_MOVIE_REC_STATE, PROP_STILL_DESTINATION,
-    PROP_WHITE_BALANCE,
+    PROP_BATTERY, PROP_EXPOSURE_PROGRAM, PROP_FOCUS_FOUND, PROP_MOVIE_REC_STATE,
+    PROP_STILL_DESTINATION, PROP_WHITE_BALANCE,
 };
 use crate::ptp::PtpValue;
 use crate::quirks::quirks_for;
@@ -26,6 +26,12 @@ pub(super) struct Snapshot {
     pub props: Vec<PropertyDesc>,
     pub live_view_fps: f32,
     pub last_shot_at: Option<u64>,
+    /// The last shooting mode reported that is one the camera lists: see
+    /// [`Snapshot::mode_shown`].
+    listed_mode: Option<u64>,
+    /// Mode values reported that the camera does not list, each said in
+    /// the log once.
+    unlisted_modes: Vec<u64>,
 }
 
 impl Snapshot {
@@ -52,7 +58,68 @@ impl Snapshot {
                 }
             }
         }
+        self.note_mode();
         changed
+    }
+
+    /// Remembers the mode while it is one the camera lists, and says once
+    /// in the log when it reports one it does not list.
+    fn note_mode(&mut self) {
+        let Some((current, listed)) = self.mode_and_list() else {
+            return;
+        };
+        if listed.contains(&current) {
+            // Also when it is another family's: a remembered Superior Auto
+            // must not come back after the camera has been somewhere else.
+            self.listed_mode = Some(current);
+        } else if !self.unlisted_modes.contains(&current) {
+            self.unlisted_modes.push(current);
+            let shown = self.mode_shown().and_then(|v| v.as_u64());
+            tracing::info!(
+                reported = %format_args!("{current:#010x}"),
+                shown_as = %format_args!("{:#010x}", shown.unwrap_or(current)),
+                "the camera reports a shooting mode it does not list (a scene it recognised in an automatic mode)"
+            );
+        }
+    }
+
+    /// The mode's current value and the values the camera lists for it.
+    fn mode_and_list(&self) -> Option<(u64, Vec<u64>)> {
+        let desc = self.prop(PROP_EXPOSURE_PROGRAM)?;
+        let Form::Enum { settable, .. } = &desc.form else {
+            return None;
+        };
+        let listed = settable.iter().filter_map(PtpValue::as_u64).collect();
+        Some((desc.current.as_u64()?, listed))
+    }
+
+    /// The shooting mode to show instead of the one reported, when the
+    /// camera reports one it does not list.
+    ///
+    /// In Intelligent Auto (and Superior Auto, and movie Intelligent Auto)
+    /// the camera recognises the scene and puts it in the mode value: the
+    /// automatic mode's family number in the upper 16 bits, the scene's code
+    /// in the lower (`0x0004_8015` for Auto seeing a close subject, where
+    /// the Macro scene mode itself is `0x0005_8015`). The mode has not
+    /// changed, so the listed mode of that family is shown: the one last
+    /// seen while the camera stayed in the family, else its automatic one.
+    fn mode_shown(&self) -> Option<PtpValue> {
+        let (current, listed) = self.mode_and_list()?;
+        // Bodies that send 16 bits have no family to go by.
+        if listed.contains(&current) || current <= 0xFFFF {
+            return None;
+        }
+        let family = current >> 16;
+        let in_family = |v: &u64| v >> 16 == family;
+        let pick = self
+            .listed_mode
+            .filter(|m| in_family(m) && listed.contains(m))
+            .or_else(|| {
+                let auto = |v: &&u64| matches!(**v & 0xFFFF, 0x8000 | 0x8054 | 0x805D);
+                listed.iter().filter(|v| in_family(v)).find(auto).copied()
+            })
+            .or_else(|| listed.iter().find(|v| in_family(v)).copied())?;
+        same_type(&self.prop(PROP_EXPOSURE_PROGRAM)?.current, pick as i64)
     }
 
     pub fn to_state(&self) -> CameraState {
@@ -69,7 +136,18 @@ impl Snapshot {
                 .filter(|&v| v <= 100),
             recording: number(PROP_MOVIE_REC_STATE).is_some_and(|v| v != 0),
             focus_found: number(PROP_FOCUS_FOUND).is_some_and(|v| v != 0),
-            properties: self.props.iter().map(|p| summary(p, colour_temp)).collect(),
+            properties: self
+                .props
+                .iter()
+                .map(|p| match self.mode_shown() {
+                    Some(shown) if p.code == PROP_EXPOSURE_PROGRAM => {
+                        let mut as_shown = p.clone();
+                        as_shown.current = shown;
+                        summary(&as_shown, colour_temp)
+                    }
+                    _ => summary(p, colour_temp),
+                })
+                .collect(),
             live_view_fps: self.live_view_fps,
             last_shot_at: self.last_shot_at,
             shots_to_computer: number(PROP_STILL_DESTINATION).map(|v| v & DEST_COMPUTER != 0),
@@ -409,5 +487,90 @@ mod tests {
         assert_eq!(iso_after(0x00FF_FFFF, -1), 0x00FF_FFFF);
         // A value off the list (the camera in an odd state) still moves.
         assert_eq!(iso_after(140, 1), 200);
+    }
+
+    /// The real ZV-E10's mode list, shortened.
+    fn mode(current: u32) -> PropertyDesc {
+        let listed = [
+            0x0001_0002u32,
+            0x0000_0001,
+            0x0007_8050,
+            0x0007_8054,
+            0x0009_8059,
+            0x0004_8000,
+            0x0004_8001,
+            0x0005_8015,
+            0x0005_8011,
+        ];
+        PropertyDesc {
+            code: PROP_EXPOSURE_PROGRAM,
+            datatype: 0x0006,
+            ..desc(
+                PtpValue::U32(current),
+                Form::Enum {
+                    settable: listed.map(PtpValue::U32).to_vec(),
+                    reportable: vec![],
+                },
+            )
+        }
+    }
+
+    fn shown(snap: &Snapshot) -> (PtpValue, String) {
+        let state = snap.to_state();
+        let p = state
+            .properties
+            .iter()
+            .find(|p| p.code == PROP_EXPOSURE_PROGRAM)
+            .unwrap();
+        (p.raw.clone(), p.label.clone())
+    }
+
+    /// In Intelligent Auto the camera recognises the scene and reports it in
+    /// the mode value: Auto's family number with the scene's code under it.
+    /// Roy saw the mode jump to Macro whenever the camera looked at
+    /// something close. The mode is still Intelligent Auto.
+    #[test]
+    fn a_scene_the_camera_recognises_in_auto_does_not_change_the_mode_shown() {
+        let mut snap = Snapshot::default();
+        snap.merge(vec![mode(0x0004_8000)]);
+        assert_eq!(
+            shown(&snap),
+            (PtpValue::U32(0x0004_8000), "Intelligent Auto".into())
+        );
+        // Auto family, Macro's code: recognised, not chosen.
+        snap.merge(vec![mode(0x0004_8015)]);
+        assert_eq!(
+            shown(&snap),
+            (PtpValue::U32(0x0004_8000), "Intelligent Auto".into())
+        );
+        // The same in Superior Auto stays Superior Auto.
+        snap.merge(vec![mode(0x0004_8001)]);
+        snap.merge(vec![mode(0x0004_8011)]);
+        assert_eq!(
+            shown(&snap),
+            (PtpValue::U32(0x0004_8001), "Superior Auto".into())
+        );
+    }
+
+    #[test]
+    fn the_same_holds_in_movie_auto_and_a_chosen_scene_is_still_a_scene() {
+        let mut snap = Snapshot::default();
+        // Straight into a recognised scene, with nothing seen before it.
+        snap.merge(vec![mode(0x0007_8015)]);
+        assert_eq!(
+            shown(&snap),
+            (
+                PtpValue::U32(0x0007_8054),
+                "Intelligent Auto (Movie)".into()
+            )
+        );
+        // Macro chosen from Scene Selection is one of the camera's own modes.
+        snap.merge(vec![mode(0x0005_8015)]);
+        assert_eq!(shown(&snap), (PtpValue::U32(0x0005_8015), "Macro".into()));
+        // Leaving Auto and coming back does not show a stale Superior Auto.
+        snap.merge(vec![mode(0x0004_8001)]);
+        snap.merge(vec![mode(0x0001_0002)]);
+        snap.merge(vec![mode(0x0004_8013)]);
+        assert_eq!(shown(&snap).1, "Intelligent Auto");
     }
 }
