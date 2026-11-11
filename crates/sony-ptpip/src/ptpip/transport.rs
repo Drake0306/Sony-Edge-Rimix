@@ -110,6 +110,17 @@ async fn with_timeout<T>(
         .map_err(|_| Error::Timeout)?
 }
 
+/// Like [`with_timeout`] when `idle` is set; without it, nothing is limited.
+async fn limited<T>(
+    idle: Option<Duration>,
+    fut: impl Future<Output = Result<T, Error>>,
+) -> Result<T, Error> {
+    match idle {
+        Some(limit) => with_timeout(limit, fut).await,
+        None => fut.await,
+    }
+}
+
 async fn tcp_connect(addr: SocketAddr, limit: Duration) -> Result<TcpStream, Error> {
     let s = with_timeout(limit, async { Ok(TcpStream::connect(addr).await?) }).await?;
     s.set_nodelay(true)?;
@@ -279,7 +290,24 @@ impl PtpIpConnection {
         let result = with_timeout(limit, async {
             self.send_request(DATA_PHASE_NONE_OR_IN, op, tid, params)
                 .await?;
-            let p = recv(&mut self.reader).await?;
+            let p = match recv(&mut self.reader).await? {
+                // Some cameras send data for operations that are documented
+                // without it; read it so the stream stays at a frame boundary.
+                Packet::StartData {
+                    tid: rtid,
+                    total_len,
+                } if rtid == tid => {
+                    let data = self
+                        .read_data_phase(tid, total_len, None, &mut |_| {})
+                        .await?;
+                    tracing::warn!(
+                        "operation {op:#06x} sent an unexpected data phase ({} bytes); accepted",
+                        data.len()
+                    );
+                    recv(&mut self.reader).await?
+                }
+                p => p,
+            };
             response(op, tid, p)
         })
         .await;
@@ -350,15 +378,6 @@ impl PtpIpConnection {
         idle: Option<Duration>,
         on_data: &mut (dyn FnMut(u64) + Send),
     ) -> Result<(Vec<u8>, Vec<u32>), Error> {
-        async fn limited<T>(
-            idle: Option<Duration>,
-            fut: impl Future<Output = Result<T, Error>>,
-        ) -> Result<T, Error> {
-            match idle {
-                Some(limit) => with_timeout(limit, fut).await,
-                None => fut.await,
-            }
-        }
         limited(
             idle,
             self.send_request(DATA_PHASE_NONE_OR_IN, op, tid, params),
@@ -380,6 +399,21 @@ impl PtpIpConnection {
                 )))
             }
         };
+        let data = self.read_data_phase(tid, total_len, idle, on_data).await?;
+        let p = limited(idle, recv(&mut self.reader)).await?;
+        Ok((data, response(op, tid, p)?))
+    }
+
+    /// Reads the Data and EndData packets that follow a StartData announcing
+    /// `total_len` bytes, and checks the length. `idle` limits each packet
+    /// wait as in [`data_in_phase`](Self::data_in_phase).
+    async fn read_data_phase(
+        &mut self,
+        tid: u32,
+        total_len: u64,
+        idle: Option<Duration>,
+        on_data: &mut (dyn FnMut(u64) + Send),
+    ) -> Result<Vec<u8>, Error> {
         let mut data = Vec::new();
         loop {
             match limited(idle, recv(&mut self.reader)).await? {
@@ -407,8 +441,7 @@ impl PtpIpConnection {
                 data.len()
             )));
         }
-        let p = limited(idle, recv(&mut self.reader)).await?;
-        Ok((data, response(op, tid, p)?))
+        Ok(data)
     }
 
     /// Runs a transaction with a data phase to the camera; returns the

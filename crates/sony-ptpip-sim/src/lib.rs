@@ -91,6 +91,15 @@ pub struct SimConfig {
     /// bytes of card data (GetPartialObject or GetObject) have been sent.
     #[serde(default)]
     pub drop_during_card_download_at: Option<u64>,
+    /// Answer each accepted SDIO_Connect phase (0x9201) with 8 bytes of
+    /// data before the response, as the ZV-E10 does; `false` sends a bare
+    /// response.
+    #[serde(default = "default_true")]
+    pub sdio_connect_data: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for SimConfig {
@@ -117,6 +126,7 @@ impl Default for SimConfig {
             card: card::default_card(),
             card_info_fails_for: None,
             drop_during_card_download_at: None,
+            sdio_connect_data: true,
         }
     }
 }

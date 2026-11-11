@@ -614,6 +614,9 @@ async fn handle_packet<W: AsyncWriteExt + Unpin>(
         OP_SDIO_CONNECT => {
             if params.first() == Some(&(*handshake_phase as u32 + 1)) {
                 *handshake_phase += 1;
+                if shared.config.sdio_connect_data {
+                    send_data_in(ctx.w, tid, &[0u8; 8]).await?;
+                }
                 RC_OK
             } else {
                 RC_INVALID_PARAMETER

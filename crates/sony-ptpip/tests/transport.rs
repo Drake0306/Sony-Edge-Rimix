@@ -231,3 +231,29 @@ async fn probe_request_gets_a_probe_response() {
     conn.close().await.unwrap();
     shutdown(sim).await;
 }
+
+#[tokio::test]
+async fn command_accepts_an_unexpected_data_phase() {
+    // The simulator answers each SDIO_Connect phase with 8 bytes of data;
+    // a no-data command reads past it and returns the response.
+    let (sim, mut conn, _) = start().await;
+    assert_eq!(
+        conn.command(OP_SDIO_CONNECT, &[1, 0, 0]).await.unwrap(),
+        Vec::<u32>::new()
+    );
+    assert_eq!(
+        conn.command(OP_SDIO_CONNECT, &[2, 0, 0]).await.unwrap(),
+        Vec::<u32>::new()
+    );
+    assert!(!conn.is_disconnected());
+    // The stream stayed at a frame boundary: a data-in operation and the
+    // last phase still work.
+    let (info, _) = conn
+        .command_data_in(OP_SDIO_GET_EXT_DEVICE_INFO, &[0x012C])
+        .await
+        .unwrap();
+    assert!(!info.is_empty());
+    conn.command(OP_SDIO_CONNECT, &[3, 0, 0]).await.unwrap();
+    conn.close().await.unwrap();
+    shutdown(sim).await;
+}

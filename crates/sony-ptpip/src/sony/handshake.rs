@@ -44,12 +44,26 @@ pub fn parse_ext_device_info(buf: &[u8]) -> Result<ExtDeviceInfo, Error> {
 /// Runs the three-phase Sony SDIO handshake and returns the camera's
 /// extension info. Sony operations are refused until this completes.
 pub async fn sdio_connect(conn: &mut PtpIpConnection) -> Result<ExtDeviceInfo, Error> {
-    conn.command(OP_SDIO_CONNECT, &[1, 0, 0]).await?;
-    conn.command(OP_SDIO_CONNECT, &[2, 0, 0]).await?;
+    connect_phase(conn, 1).await?;
+    connect_phase(conn, 2).await?;
     let (data, _) = conn
         .command_data_in(OP_SDIO_GET_EXT_DEVICE_INFO, &[PROTOCOL_VERSION])
         .await?;
     let info = parse_ext_device_info(&data)?;
-    conn.command(OP_SDIO_CONNECT, &[3, 0, 0]).await?;
+    connect_phase(conn, 3).await?;
     Ok(info)
+}
+
+/// Sends one SDIO_Connect (0x9201) phase. Cameras such as the ZV-E10 answer
+/// it with a data phase before the response, others with none; both are
+/// accepted.
+async fn connect_phase(conn: &mut PtpIpConnection, phase: u32) -> Result<(), Error> {
+    let (data, _) = conn
+        .command_data_in(OP_SDIO_CONNECT, &[phase, 0, 0])
+        .await?;
+    if !data.is_empty() {
+        let hex: String = data.iter().map(|b| format!("{b:02x}")).collect();
+        tracing::debug!(phase, data = %hex, "SDIO_Connect answered with data");
+    }
+    Ok(())
 }

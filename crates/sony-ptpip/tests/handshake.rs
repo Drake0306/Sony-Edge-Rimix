@@ -66,3 +66,33 @@ async fn sony_ops_before_handshake_are_denied() {
     conn.close().await.unwrap();
     sim.events.send(SimCommand::Shutdown).await.unwrap();
 }
+
+async fn handshake_with(sdio_connect_data: bool) {
+    let sim = spawn(SimConfig {
+        sdio_connect_data,
+        ..SimConfig::default()
+    })
+    .await;
+    let (mut conn, _) = PtpIpConnection::connect(sim.addr, opts()).await.unwrap();
+    let info = sdio_connect(&mut conn).await.unwrap();
+    assert_eq!(info.protocol_version, 0x012C);
+    // The stream is still aligned: the next transaction succeeds.
+    let (blob, _) = conn
+        .command_data_in(OP_SDIO_GET_ALL_EXT_DEVICE_PROP_INFO, &[0])
+        .await
+        .unwrap();
+    assert!(!blob.is_empty());
+    conn.close().await.unwrap();
+    sim.events.send(SimCommand::Shutdown).await.unwrap();
+}
+
+#[tokio::test]
+async fn handshake_accepts_data_from_sdio_connect() {
+    // The ZV-E10 answers every SDIO_Connect phase with 8 bytes of data.
+    handshake_with(true).await;
+}
+
+#[tokio::test]
+async fn handshake_accepts_sdio_connect_without_data() {
+    handshake_with(false).await;
+}
