@@ -67,6 +67,13 @@ svg{display:block}
 .r.row-btn .k{flex:1}
 .r.row-btn .v{font-weight:400;color:var(--ink-2);min-width:0}
 .r .k.dim{color:var(--ink-2)}
+.r.custom input{width:92px;height:20px;border:0;border-radius:7px;background:var(--input-bg);box-shadow:inset 0 0 0 .5px var(--input-ring);padding:0 7px;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;text-align:right;-moz-appearance:textfield}
+.r.custom input::-webkit-outer-spin-button,.r.custom input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.r.custom input::placeholder{font-weight:400;color:var(--ink-3)}
+.r.custom input:hover{background:var(--input-hov)}
+.r.custom input:focus-visible{box-shadow:var(--focus)}
+.r.custom .range{min-width:0;font-size:11px;color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.r.custom .k{flex:1}
 .spacer14{width:14px;margin-right:6px;flex:none}
 .sprite{position:absolute}
 .switch[aria-checked="true"]{background:var(--sel)}
