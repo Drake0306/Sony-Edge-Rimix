@@ -157,13 +157,30 @@ pub fn parse_addr(ip: &str) -> Result<SocketAddr, String> {
 }
 
 pub async fn discover(timeout_ms: u64) -> Result<Vec<DiscoveredCamera>, String> {
-    sony_ptpip::discover(Duration::from_millis(timeout_ms))
+    let found = sony_ptpip::discovery::discover_report(Duration::from_millis(timeout_ms))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    nearby(found)
+}
+
+/// One search's cameras for the connect screen. An empty search that the
+/// system itself refused is [`LOCAL_NETWORK_BLOCKED`], so the screen can
+/// say why nothing is listed.
+fn nearby(found: sony_ptpip::discovery::Discovery) -> Result<Vec<DiscoveredCamera>, String> {
+    if found.cameras.is_empty() && found.blocked {
+        Err(LOCAL_NETWORK_BLOCKED.to_string())
+    } else {
+        Ok(found.cameras)
+    }
 }
 
 /// The error [`wait_for_camera`] gives when nothing answered in time.
 pub const NO_CAMERA: &str = "No camera answered on this network";
+
+/// The error [`discover`] and [`wait_for_camera`] give instead when the
+/// operating system is keeping Rimix off the local network, so no camera
+/// could have answered.
+pub const LOCAL_NETWORK_BLOCKED: &str = "This computer is blocking Rimix from the local network";
 
 /// Joins the Wi-Fi network `ssid`, waiting until it is up.
 pub async fn join_network(
@@ -192,7 +209,30 @@ pub async fn current_network(state: &AppState) -> Result<Option<String>, String>
 /// Waits up to `timeout` for a camera to answer. `RIMIX_CAMERA_ADDR`
 /// (`host:port`, port 15740 by default) stands in for one during development.
 pub async fn wait_for_camera(timeout: Duration) -> Result<DiscoveredCamera, String> {
-    wait_for_camera_with(sony_ptpip::discover, timeout).await
+    let found = wait_for_camera_with(sony_ptpip::discover, timeout).await;
+    if found.as_ref().is_err_and(|e| e == NO_CAMERA) {
+        let blocked = sony_ptpip::discovery::local_network_blocked().await;
+        if blocked {
+            tracing::warn!(
+                "no camera answered because the system refuses Rimix the local network; \
+                 see System Settings, Privacy & Security, Local Network"
+            );
+        }
+        return explain_no_camera(found, blocked);
+    }
+    found
+}
+
+/// Turns "nothing answered" into [`LOCAL_NETWORK_BLOCKED`] when the system
+/// was refusing the local network (`blocked`); anything else is unchanged.
+fn explain_no_camera(
+    found: Result<DiscoveredCamera, String>,
+    blocked: bool,
+) -> Result<DiscoveredCamera, String> {
+    match found {
+        Err(e) if blocked && e == NO_CAMERA => Err(LOCAL_NETWORK_BLOCKED.to_string()),
+        other => other,
+    }
 }
 
 /// How long one discovery round listens, and so how often it repeats.
@@ -1640,6 +1680,39 @@ mod tests {
         .unwrap_err();
         assert_eq!(err, NO_CAMERA);
         assert!(calls.load(std::sync::atomic::Ordering::SeqCst) < 5);
+    }
+
+    #[test]
+    fn a_silent_network_is_blamed_on_the_system_only_when_it_blocks() {
+        let silent = || Err::<DiscoveredCamera, String>(NO_CAMERA.to_string());
+        assert_eq!(
+            explain_no_camera(silent(), true).unwrap_err(),
+            LOCAL_NETWORK_BLOCKED
+        );
+        assert_eq!(explain_no_camera(silent(), false).unwrap_err(), NO_CAMERA);
+        // Other failures and a found camera pass through untouched.
+        let other = Err::<DiscoveredCamera, String>("Not an IP address: x".to_string());
+        assert_eq!(
+            explain_no_camera(other, true).unwrap_err(),
+            "Not an IP address: x"
+        );
+        let found = Ok(camera("ZV-E10", DiscoverySource::Ssdp));
+        assert_eq!(explain_no_camera(found, true).unwrap().model, "ZV-E10");
+    }
+
+    #[test]
+    fn an_empty_blocked_search_is_an_error_and_any_camera_is_a_list() {
+        let found = |cameras: Vec<DiscoveredCamera>, blocked| sony_ptpip::discovery::Discovery {
+            cameras,
+            blocked,
+        };
+        assert_eq!(
+            nearby(found(Vec::new(), true)).unwrap_err(),
+            LOCAL_NETWORK_BLOCKED
+        );
+        assert_eq!(nearby(found(Vec::new(), false)).unwrap(), Vec::new());
+        let one = vec![camera("ZV-E10", DiscoverySource::Gateway)];
+        assert_eq!(nearby(found(one.clone(), true)).unwrap(), one);
     }
 
     #[tokio::test]

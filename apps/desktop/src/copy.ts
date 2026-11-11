@@ -91,12 +91,23 @@ const NO_WIFI = 'This computer has no Wi-Fi';
 /** How the Rust side's `WifiError::NotVisible` starts. */
 const CANT_SEE = "This computer can't see the network";
 
+/** The Rust side's `LOCAL_NETWORK_BLOCKED`: the error when the system keeps Rimix off the local network. */
+const LOCAL_NETWORK_BLOCKED = 'This computer is blocking Rimix from the local network';
+export const isLocalNetworkBlocked = (err: string) => err === LOCAL_NETWORK_BLOCKED;
+/** What to do about it; also the Nearby card's line while it lasts. */
+export const ALLOW_LOCAL_NETWORK =
+  'macOS is keeping Rimix off the local network, so it cannot reach the camera. Open System Settings, Privacy & Security, Local Network, turn Rimix on (if it is on, turn it off and on again), then quit and reopen Rimix.';
+
 /**
  * The connect screen's message when joining the camera's network or finding
  * the camera on it fails. `wait` is finding it after the user was asked to
  * join the network themselves.
  */
 export function wifiErrorMessage(step: 'join' | 'find' | 'wait', ssid: string, detail: string): string {
+  if (step !== 'join' && detail === LOCAL_NETWORK_BLOCKED) {
+    const lead = ALLOW_LOCAL_NETWORK[0].toLowerCase() + ALLOW_LOCAL_NETWORK.slice(1);
+    return step === 'find' ? `Joined ${ssid}, but ${lead}` : ALLOW_LOCAL_NETWORK;
+  }
   if (step === 'wait') {
     return `No camera answered on ${ssid}. Check this computer is on that network, then on the camera open Menu, Network, PC Remote Function, and stay on that screen.`;
   }

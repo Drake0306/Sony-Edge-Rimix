@@ -637,6 +637,29 @@ describe('Bluetooth in Nearby', () => {
     expect(root.querySelector('.devices')!.textContent).toContain(UNAVAILABLE);
   });
 
+  test('a system that blocks the local network is said in the list until a search works again', async () => {
+    const BLOCKED = /^macOS is keeping Rimix off the local network.*Privacy & Security, Local Network/;
+    const said = () => [...root.querySelectorAll('.devices p')].filter((p) => BLOCKED.test(p.textContent ?? ''));
+    let discoverAnswer: () => Promise<unknown> = () =>
+      Promise.reject('This computer is blocking Rimix from the local network');
+    vi.mocked(invoke).mockImplementation((cmd: string) =>
+      cmd === 'ble_scan' ? bleAnswer() : cmd === 'discover' ? discoverAnswer() : Promise.resolve([]),
+    );
+    bleAnswer = () => Promise.resolve([]);
+    setup();
+    await flush();
+    expect(said()).toHaveLength(1);
+    expect(root.querySelector('.devices')!.textContent).not.toContain('Looking for cameras');
+    // Any other failure keeps saying it: nothing has shown the block is gone.
+    discoverAnswer = () => Promise.reject('I/O error: something else');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(said()).toHaveLength(1);
+    discoverAnswer = () => Promise.resolve([a7]);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(said()).toHaveLength(0);
+    expect(rows().map((r) => r.querySelector('.t b')!.textContent)).toEqual(['ILCE-7M4']);
+  });
+
   test('another error leaves the list as it was and scans again later', async () => {
     setup();
     await flush();

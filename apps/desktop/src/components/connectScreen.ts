@@ -6,12 +6,14 @@
 
 import type { Actions } from '../actions';
 import {
+  ALLOW_LOCAL_NETWORK,
   BLE_UNAVAILABLE,
   bleCameraName,
   bleNearbyText,
   fingerprintChangedText,
   fingerprintText,
   isBleUnavailable,
+  isLocalNetworkBlocked,
   JOIN_VIA_BLUETOOTH,
   NOT_A_WIFI_CODE,
   PAIRING_OFF,
@@ -97,7 +99,8 @@ function submitButton(): HTMLButtonElement {
 
 /** Calls `fn` now and whenever what the Nearby card shows changes. */
 function watchNearby(store: AppStore, fn: (s: AppState) => void): () => void {
-  const pick = (s: AppState) => [s.nearby, s.bleNearby, s.bleFailed, s.bleUnavailable] as const;
+  const pick = (s: AppState) =>
+    [s.nearby, s.bleNearby, s.bleFailed, s.bleUnavailable, s.localNetworkBlocked] as const;
   let last = pick(store.get());
   fn(store.get());
   return store.subscribe((s) => {
@@ -445,7 +448,8 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   const nearbyRows = (s: AppState): HTMLElement[] => {
     const rows: HTMLElement[] = s.nearby.map(ssdpRow);
     for (const found of s.bleNearby) rows.push(...bleRow(found, s.bleFailed[found.address]));
-    if (rows.length === 0) rows.push(el('p', 'looking', 'Looking for cameras on this network'));
+    if (s.localNetworkBlocked) rows.push(el('p', 'looking netblocked', ALLOW_LOCAL_NETWORK));
+    else if (rows.length === 0) rows.push(el('p', 'looking', 'Looking for cameras on this network'));
     if (s.bleUnavailable) rows.push(el('p', 'looking bleoff', BLE_UNAVAILABLE));
     return rows;
   };
@@ -557,9 +561,14 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     const started = Date.now();
     try {
       const found = await discover(DISCOVER_MS);
-      if (!stopped) store.set({ nearby: found });
-    } catch {
-      // Discovery is best effort; the other ways always work.
+      if (!stopped) store.set({ nearby: found, localNetworkBlocked: false });
+    } catch (e) {
+      // Discovery is best effort; the other ways always work. The one
+      // failure worth saying is the system refusing it, since then the
+      // other ways cannot reach a camera either.
+      if (!stopped && isLocalNetworkBlocked(e instanceof Error ? e.message : String(e))) {
+        store.set({ nearby: [], localNetworkBlocked: true });
+      }
     }
     if (!stopped) timer = window.setTimeout(scan, Math.max(0, REFRESH_MS - (Date.now() - started)));
   };

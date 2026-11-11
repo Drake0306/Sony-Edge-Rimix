@@ -120,6 +120,16 @@ describe('Wi-Fi connect copy', () => {
     );
   });
 
+  test('a system that keeps Rimix off the local network points at its privacy setting', () => {
+    const blocked = 'This computer is blocking Rimix from the local network';
+    expect(wifiErrorMessage('find', ssid, blocked)).toBe(
+      'Joined DIRECT-abc1:ZV-E10, but macOS is keeping Rimix off the local network, so it cannot reach the camera. Open System Settings, Privacy & Security, Local Network, turn Rimix on (if it is on, turn it off and on again), then quit and reopen Rimix.',
+    );
+    expect(wifiErrorMessage('wait', ssid, blocked)).toBe(
+      'macOS is keeping Rimix off the local network, so it cannot reach the camera. Open System Settings, Privacy & Security, Local Network, turn Rimix on (if it is on, turn it off and on again), then quit and reopen Rimix.',
+    );
+  });
+
   test('text that is not a Wi-Fi code', () => {
     expect(NOT_A_WIFI_CODE).toBe(
       "This code isn't a camera Wi-Fi code. Check the text below, or type the name and password.",

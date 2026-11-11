@@ -95,6 +95,8 @@ export interface AppState {
   bleFailed: Record<string, string>;
   /** True once Bluetooth turned out to be off or not allowed; the connect screen stops scanning. */
   bleUnavailable: boolean;
+  /** The system refused the last search for cameras: see `ALLOW_LOCAL_NETWORK`. */
+  localNetworkBlocked: boolean;
   /** Newest first, at most six. */
   captures: CaptureItem[];
   /** Files on their way from a camera, keyed by `${cameraId}/${camera filename}`. */
@@ -168,6 +170,7 @@ export const initialState = (): AppState => ({
   bleNearby: [],
   bleFailed: {},
   bleUnavailable: false,
+  localNetworkBlocked: false,
   captures: [],
   transfers: {},
   saveError: null,

@@ -123,6 +123,16 @@ describe('connect over Wi-Fi', () => {
     expect(store.get().screen).toBe('main');
   });
 
+  test('connectWithWifi names the Local Network setting when the system blocks Rimix', async () => {
+    vi.mocked(ipc.waitForCamera).mockRejectedValue('This computer is blocking Rimix from the local network');
+    const store = storeWith('Automatic');
+    expect(await createActions(store).connectWithWifi({ ssid: SSID, password: 'x' })).toBe(false);
+    expect(store.get().connecting).toBeNull();
+    expect(store.get().error).toMatch(/Privacy & Security, Local Network/);
+    expect(store.get().error).not.toMatch(/PC Remote Function/);
+    expect(ipc.connect).not.toHaveBeenCalled();
+  });
+
   test('connectWithWifi explains when no camera answers and frees the screen', async () => {
     vi.mocked(ipc.waitForCamera).mockRejectedValue('No camera answered on this network');
     const store = storeWith('Automatic');
