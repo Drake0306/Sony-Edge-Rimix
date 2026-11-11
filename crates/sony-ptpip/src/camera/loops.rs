@@ -37,6 +37,8 @@ const PROP_REFRESH: Duration = Duration::from_millis(100);
 const PROP_POLL: Duration = Duration::from_millis(250);
 /// Wait before asking for another live view frame when none was ready.
 const NO_FRAME_WAIT: Duration = Duration::from_millis(15);
+/// The most pictures one look at the shots left can find taken.
+const BURST: u64 = 12;
 /// Most live view metadata samples put in the log in one session.
 const META_SAMPLES: usize = 16;
 /// Wait before the next live view request after `consecutive_failures`
@@ -338,7 +340,10 @@ async fn capture_loop(inner: Arc<Inner>) -> String {
                 .prop(PROP_SHOTS_LEFT)
                 .and_then(|p| p.current.as_u64());
             if let (Some(before), Some(now)) = (last_left, left) {
-                if now < before {
+                // One picture, or a short burst: the count also falls to
+                // nothing when the camera goes to a movie mode, and by
+                // more when the picture size is changed.
+                if now < before && before - now <= BURST {
                     tracing::info!(shots_left = now, "the camera took a picture");
                     taken_at = Some(Instant::now());
                 }

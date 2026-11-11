@@ -24,6 +24,19 @@ pub enum Layout {
     Ring,
 }
 
+/// What a camera is connected for, chosen on the connect screen: the
+/// screen it opens on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum OpenAs {
+    /// Remote shooting: live view and the controls.
+    #[default]
+    Remote,
+    /// The live view sent to other apps as a webcam.
+    Webcam,
+    /// The files on the camera's card, to look through and import.
+    Files,
+}
+
 /// Whether the app joins a camera's Wi-Fi network by itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum WifiJoin {
@@ -150,6 +163,13 @@ pub struct AppSettings {
     /// Whether new pictures and movies are copied to this computer. Off,
     /// they stay on the camera's card and the camera is told so.
     pub save_to_computer: bool,
+    /// Whether copying after each shot is offered at all: its panel, its
+    /// switch and the last captures. Off unless asked for, since the
+    /// ZV-E10 does not offer its pictures over Wi-Fi; off, nothing is
+    /// copied whatever [`AppSettings::save_to_computer`] says.
+    pub copy_feature: bool,
+    /// What the next camera is connected for.
+    pub open_as: OpenAs,
 }
 
 impl Default for AppSettings {
@@ -167,7 +187,17 @@ impl Default for AppSettings {
             sftp: SftpSettings::default(),
             bluetooth: true,
             save_to_computer: true,
+            copy_feature: false,
+            open_as: OpenAs::default(),
         }
+    }
+}
+
+impl AppSettings {
+    /// Whether new pictures are to be copied to this computer: the feature
+    /// is shown and its switch is on.
+    pub fn copies(&self) -> bool {
+        self.copy_feature && self.save_to_computer
     }
 }
 
@@ -570,6 +600,40 @@ mod tests {
         assert_eq!(s.sftp.port, 2222);
         assert_eq!(s.sftp.user, "rimix");
         assert_eq!(s.sftp.password, "");
+    }
+
+    /// Roy, 2026-11-11: the ZV-E10 takes a picture and never offers it over
+    /// Wi-Fi, so everything about copying is put away until it is asked for.
+    #[test]
+    fn copying_is_put_away_until_it_is_asked_for() {
+        let s = AppSettings::default();
+        assert!(!s.copy_feature);
+        assert!(!s.copies(), "the switch alone copies nothing");
+        // A file from before, with copying switched on, is put away too.
+        let s: AppSettings = serde_json::from_str(r#"{"saveToComputer":true}"#).unwrap();
+        assert!(!s.copies());
+        let s: AppSettings =
+            serde_json::from_str(r#"{"copyFeature":true,"saveToComputer":true}"#).unwrap();
+        assert!(s.copies());
+        // Shown, its own switch still decides.
+        let s: AppSettings =
+            serde_json::from_str(r#"{"copyFeature":true,"saveToComputer":false}"#).unwrap();
+        assert!(!s.copies());
+        assert!(serde_json::to_string(&s)
+            .unwrap()
+            .contains(r#""copyFeature":true"#));
+    }
+
+    #[test]
+    fn what_the_camera_is_opened_for_is_remembered() {
+        assert_eq!(AppSettings::default().open_as, OpenAs::Remote);
+        let s: AppSettings = serde_json::from_str(r#"{"openAs":"Files"}"#).unwrap();
+        assert_eq!(s.open_as, OpenAs::Files);
+        assert!(serde_json::to_string(&s)
+            .unwrap()
+            .contains(r#""openAs":"Files""#));
+        let s: AppSettings = serde_json::from_str(r#"{"openAs":"Webcam"}"#).unwrap();
+        assert_eq!(s.open_as, OpenAs::Webcam);
     }
 
     #[test]

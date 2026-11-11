@@ -22,6 +22,8 @@ import {
   PAIRING_OPEN,
   WEBCAM_OFF,
   webcamErrorMessage,
+  PURPOSE_LABEL,
+  PURPOSES,
 } from '../copy';
 import { button, el, icon } from '../dom';
 import { bleScan, discover, type DiscoveredCamera, type Found, type SshLogin } from '../ipc';
@@ -144,10 +146,29 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   const confirmRow = el('div', 'row');
   confirmRow.append(matches, cancel);
   confirm.append(confirmText, confirmRow);
+  // What the camera is connected for: the screen it opens on. Chosen here,
+  // before any of the three ways in, and remembered.
+  const purpose = el('div', 'purpose');
+  purpose.setAttribute('role', 'radiogroup');
+  purpose.setAttribute('aria-label', PURPOSE_LABEL);
+  const purposeButtons = PURPOSES.map(({ value, icon: glyph, title, what }) => {
+    const b = button('glass');
+    b.setAttribute('role', 'radio');
+    const text = el('span');
+    text.append(el('b', '', title), el('small', '', what));
+    b.append(icon(glyph, '', '0 0 20 20'), text);
+    b.addEventListener('click', () => {
+      const s = store.get().settings;
+      if (s && s.openAs !== value) void actions.saveSettings({ ...s, openAs: value });
+    });
+    purpose.append(b);
+    return { value, b };
+  });
   headline.append(
     back,
     el('h1', '', 'Connect a camera'),
-    el('p', '', 'Three ways in. Pick whichever is nearest to hand.'),
+    el('p', '', 'Say what it is for, then pick whichever of the three ways in is nearest to hand.'),
+    purpose,
     message,
     confirm,
   );
@@ -295,6 +316,13 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
 
   const parts = [backdrop, vignette, status, headline, ways, foot, veil];
   root.append(...parts);
+
+  const offPurpose = watch(store, (st) => st.settings?.openAs ?? 'Remote', (openAs) => {
+    for (const { value, b } of purposeButtons) {
+      b.classList.toggle('on', value === openAs);
+      b.setAttribute('aria-checked', String(value === openAs));
+    }
+  });
 
   // Every Connect button, Use this text and the recent rows wait while a connect runs.
   const applyBusy = () => {
@@ -631,6 +659,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     window.clearTimeout(timer);
     window.clearTimeout(rescanTimer);
     scanner.stop();
+    offPurpose();
     offs.forEach((off) => off());
     parts.forEach((p) => p.remove());
   };

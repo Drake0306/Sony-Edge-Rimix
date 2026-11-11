@@ -30,6 +30,8 @@ const settings: AppSettings = {
   presets: [],
   bluetooth: true,
   saveToComputer: true,
+  copyFeature: false,
+  openAs: 'Remote',
 };
 
 const mounted: (() => void)[] = [];
@@ -87,7 +89,7 @@ describe('app settings', () => {
   test('popover rows, Save to and the shortcut hint', () => {
     const { root } = setup();
     const heads = [...root.querySelectorAll('.apppop .sect .h span')].map((s) => s.textContent);
-    expect(heads).toEqual(['Appearance', 'Layout', 'Connection', 'FTP transfer from the camera', 'Save to']);
+    expect(heads).toEqual(['Appearance', 'Layout', 'Connection', 'Copying after each shot', 'Save to', 'FTP transfer from the camera']);
     expect(root.querySelector('.apppop .hint')!.textContent).toMatch(/^Shortcut: (⌘|Ctrl\+), opens settings$/);
   });
 
@@ -319,6 +321,30 @@ describe('app settings', () => {
       expect(invoke).toHaveBeenCalledWith('sftp_set_enabled', { enabled: false });
       await vi.waitFor(() => expect(Object.keys(rows(root))).not.toContain('Address'));
     });
+  });
+});
+
+describe('Copying after each shot', () => {
+  beforeEach(() => vi.mocked(invoke).mockClear());
+
+  const copy = (root: HTMLElement) =>
+    root.querySelector<HTMLButtonElement>('.apppop [role="switch"][aria-label="Show copying to this computer"]')!;
+
+  test('is put away by default, and its switch brings it into view', () => {
+    const { root, store } = setup();
+    expect(copy(root).getAttribute('aria-checked')).toBe('false');
+    // Where files go is still there (for imports from the card); the
+    // switch that copies as you shoot is not.
+    const saveTo = [...root.querySelectorAll<HTMLElement>('.apppop .sect')].find((s) => s.querySelector('.h')!.textContent === 'Save to')!;
+    const copySwitch = () => saveTo.querySelector<HTMLElement>('[aria-label="Copy to this computer"]')!.closest<HTMLElement>('.group')!;
+    expect(copySwitch().hidden).toBe(true);
+    expect(saveTo.querySelector('.path')).not.toBeNull();
+
+    copy(root).click();
+    expect(invoke).toHaveBeenCalledWith('save_settings', { settings: { ...settings, copyFeature: true } });
+    expect(store.get().settings?.copyFeature).toBe(true);
+    expect(copy(root).getAttribute('aria-checked')).toBe('true');
+    expect(copySwitch().hidden).toBe(false);
   });
 });
 

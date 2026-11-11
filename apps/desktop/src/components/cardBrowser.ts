@@ -1,12 +1,14 @@
 // The card browser: a wide glass panel, opened from the Cameras panel's
 // Browse card row, listing the active camera's card newest first. Each file
-// can be downloaded into the Save to folder; its row shows the progress,
-// then Saved (the file also lands in the filmstrip).
+// can be imported into the folder named at the top of the panel; its row
+// shows the progress, then Saved (the file also lands in the last captures,
+// when those are shown).
 
 import type { Actions } from '../actions';
 import { button, el } from '../dom';
 import type { CardKind, CardObject } from '../ipc';
 import { watch, type AppState, type AppStore, type CardState } from '../state';
+import { destinationText } from './sidePanels';
 
 export const TRANSFER_MODE_TEXT = 'This camera needs its own transfer mode for card browsing; not available yet';
 
@@ -82,10 +84,21 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   const refresh = button('sbtn', 'Refresh');
   const close = button('sbtn', 'Close');
   head.append(title, refresh, close);
+  // Where imports land, with a way to change it here: the Save to panel is
+  // put away unless copying after each shot is asked for.
+  const dest = el('div', 'card-dest');
+  const where = el('span', 'where');
+  const choose = button('sbtn', 'Choose folder');
+  dest.append(where, choose);
+  choose.addEventListener('click', async () => {
+    const folder = await actions.pickFolder();
+    const s = store.get().settings;
+    if (folder && s) void actions.saveSettings({ ...s, destinationBase: folder });
+  });
   const body = el('div', 'card-body');
   const list = el('ul', 'card-list');
   list.setAttribute('aria-label', 'Files on the card');
-  panel.append(head, body);
+  panel.append(head, dest, body);
   root.append(panel);
 
   refresh.addEventListener('click', () => void actions.cardRefresh());
@@ -104,12 +117,12 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     row.shown = key;
     const parts: HTMLElement[] = [];
     if (!obj.size_known) {
-      parts.push(el('span', 'toolarge', 'Too large to download'));
+      parts.push(el('span', 'toolarge', 'Too large to import'));
     } else if (progress) {
       const pct = progress.total > 0 ? Math.min(100, Math.round((progress.received / progress.total) * 100)) : 0;
       const bar = el('span', 'bar');
       bar.setAttribute('role', 'progressbar');
-      bar.setAttribute('aria-label', `Downloading ${obj.filename}`);
+      bar.setAttribute('aria-label', `Importing ${obj.filename}`);
       bar.setAttribute('aria-valuemin', '0');
       bar.setAttribute('aria-valuemax', '100');
       bar.setAttribute('aria-valuenow', String(pct));
@@ -120,8 +133,8 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
     } else if (saved) {
       parts.push(el('span', 'saved', 'Saved'));
     } else {
-      const b = button('sbtn', 'Download');
-      b.setAttribute('aria-label', `Download ${obj.filename}`);
+      const b = button('sbtn', 'Import');
+      b.setAttribute('aria-label', `Import ${obj.filename}`);
       b.addEventListener('click', () => void actions.cardDownload(obj.handle));
       parts.push(b);
     }
@@ -192,6 +205,10 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   const offCard = watch(store, (s) => (s.cardOpen ? s.card : null), (_, s) => {
     if (s.cardOpen) render(s);
   });
+  const offDest = watch(store, (s) => s.settings, (s) => {
+    where.textContent = s ? `Imports go to ${destinationText(s)}` : '';
+    where.title = s?.destinationBase ?? '';
+  });
   const offModel = watch(store, (s) => s.camera?.model ?? '', (model) => {
     title.textContent = model ? `Browse card · ${model}` : 'Browse card';
   });
@@ -208,6 +225,7 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   return () => {
     offOpen();
     offCard();
+    offDest();
     offModel();
     document.removeEventListener('keydown', onKey);
     panel.remove();

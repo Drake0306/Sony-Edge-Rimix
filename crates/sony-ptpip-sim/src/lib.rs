@@ -146,6 +146,11 @@ pub struct SimConfig {
     /// fixes the area and refuses a change.
     #[serde(default)]
     pub focus_area: Option<(u16, bool)>,
+    /// The focus areas the camera lists, when not all fourteen: once
+    /// settled, the ZV-E10 listed only wide, zone and Flexible Spot: L
+    /// (`[1, 2, 0x103]`).
+    #[serde(default)]
+    pub focus_areas: Vec<u16>,
     /// List the remote touch control (0xD2E4) among the camera's controls,
     /// as the ZV-E10 does.
     #[serde(default)]
@@ -190,6 +195,7 @@ impl Default for SimConfig {
             card_denied: false,
             host_image_size: None,
             focus_area: None,
+            focus_areas: Vec::new(),
             remote_touch: false,
         }
     }

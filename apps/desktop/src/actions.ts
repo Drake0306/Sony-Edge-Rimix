@@ -16,7 +16,7 @@ import {
   wifiErrorMessage,
 } from './copy';
 import { sameAddress } from './address';
-import type { AppSettings, FeedQuality, FeedStatus, Found, Preset, PtpValue, RecentCamera, SshLogin } from './ipc';
+import type { AppSettings, FeedQuality, FeedStatus, Found, OpenAs, Preset, PtpValue, RecentCamera, SshLogin } from './ipc';
 import { start, type IntervalPlan } from './interval';
 import { describeFailures, upsertPreset } from './presets';
 import type { WifiCredentials } from './qr/payload';
@@ -230,6 +230,17 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     return patch;
   }
 
+  /**
+   * Opens a camera just connected on what it was connected for: its picture
+   * sent to other apps for a webcam, the card for its files, and for
+   * anything else the picture taken back if a webcam had it.
+   */
+  function openAsChosen(openAs: OpenAs): void {
+    const webcam = openAs === 'Webcam';
+    if (webcam !== (store.get().feed?.enabled ?? false)) void feedThen(ipc.webcamSet(webcam));
+    if (openAs === 'Files') store.set({ cardOpen: true });
+  }
+
   /** `name` is what the progress line calls the camera. */
   async function connectTo(ip: string, ssid: string | null, name: string, ssh: SshLogin | null): Promise<boolean> {
     const login =
@@ -279,6 +290,7 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
         // Presets belong to a camera; none is active on the new one yet.
         activePreset: null,
       });
+      openAsChosen(settings?.openAs ?? 'Remote');
       return true;
     } catch (e) {
       const hostKey = login ? parseHostKey(message(e)) : null;

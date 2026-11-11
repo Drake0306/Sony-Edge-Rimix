@@ -71,6 +71,10 @@ pub fn label_for(code: u16, value: &PtpValue) -> Option<Labeled> {
                 short: focus_mode_label(raw),
             })
         }
+        PROP_FOCUS_AREA => {
+            let (label, short) = focus_area_names(u16v()?);
+            Some(Labeled { label, short })
+        }
         PROP_FILE_FORMAT => {
             let name = match value.as_u64()? {
                 1 => "RAW",
@@ -330,6 +334,34 @@ pub fn focus_mode_name(raw: u16) -> String {
         _ => return unknown(raw),
     }
     .to_string()
+}
+
+/// The focus area and its short form: where in the picture autofocus
+/// looks. The values are libgphoto2's `sony_focusarea`; the names are the
+/// ZV-E10 Help Guide's, which calls the 0x02xx forms Tracking.
+pub fn focus_area_names(raw: u16) -> (String, String) {
+    let (tracking, name, short) = match raw {
+        0x0001 => (false, "Wide", "Wide"),
+        0x0002 => (false, "Zone", "Zone"),
+        0x0003 => (false, "Center", "Center"),
+        0x0101 => (false, "Flexible Spot: S", "Spot S"),
+        0x0102 => (false, "Flexible Spot: M", "Spot M"),
+        0x0103 => (false, "Flexible Spot: L", "Spot L"),
+        0x0104 => (false, "Expand Flexible Spot", "Expand"),
+        0x0201 => (true, "Wide", "Wide"),
+        0x0202 => (true, "Zone", "Zone"),
+        0x0203 => (true, "Center", "Center"),
+        0x0204 => (true, "Flexible Spot: S", "Spot S"),
+        0x0205 => (true, "Flexible Spot: M", "Spot M"),
+        0x0206 => (true, "Flexible Spot: L", "Spot L"),
+        0x0207 => (true, "Expand Flexible Spot", "Expand"),
+        _ => return (unknown(raw), unknown(raw)),
+    };
+    if tracking {
+        (format!("Tracking: {name}"), format!("Trk {short}"))
+    } else {
+        (name.to_string(), short.to_string())
+    }
 }
 
 pub fn focus_mode_label(raw: u16) -> String {
@@ -781,6 +813,35 @@ mod tests {
                 drive_short(raw)
             );
         }
+    }
+
+    #[test]
+    fn focus_areas_have_names() {
+        let named = |raw: u16| {
+            let l = label_for(PROP_FOCUS_AREA, &PtpValue::U16(raw)).unwrap();
+            (l.label, l.short)
+        };
+        let both = |a: &str, b: &str| (a.to_string(), b.to_string());
+        // What the ZV-E10 listed once settled.
+        assert_eq!(named(1), both("Wide", "Wide"));
+        assert_eq!(named(2), both("Zone", "Zone"));
+        assert_eq!(named(0x0103), both("Flexible Spot: L", "Spot L"));
+        // And the rest of its list as it connects.
+        assert_eq!(named(3), both("Center", "Center"));
+        assert_eq!(named(0x0101), both("Flexible Spot: S", "Spot S"));
+        assert_eq!(named(0x0104), both("Expand Flexible Spot", "Expand"));
+        assert_eq!(named(0x0201), both("Tracking: Wide", "Trk Wide"));
+        assert_eq!(named(0x0203), both("Tracking: Center", "Trk Center"));
+        assert_eq!(
+            named(0x0205),
+            both("Tracking: Flexible Spot: M", "Trk Spot M")
+        );
+        assert_eq!(
+            named(0x0207),
+            both("Tracking: Expand Flexible Spot", "Trk Expand")
+        );
+        assert_eq!(named(0x0105).0, "Unknown (0x0105)");
+        assert_eq!(named(0x0300).0, "Unknown (0x0300)");
     }
 
     #[test]

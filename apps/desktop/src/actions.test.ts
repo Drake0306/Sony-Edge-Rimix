@@ -28,6 +28,7 @@ vi.mock('./ipc', () => ({
   bleHandoff: vi.fn(),
   cancelConnect: vi.fn(() => Promise.resolve()),
   focusAt: vi.fn(() => Promise.resolve()),
+  webcamSet: vi.fn(),
 }));
 
 const camera = cameraState as unknown as CameraState;
@@ -68,6 +69,47 @@ beforeEach(() => {
   vi.mocked(ipc.waitForCamera).mockReset().mockResolvedValue(found);
   vi.mocked(ipc.disconnect).mockReset().mockResolvedValue();
   vi.mocked(ipc.bleHandoff).mockReset().mockResolvedValue({ ssid: SSID, password: '12345678' });
+});
+
+// Roy, 2026-11-11: choose before connecting whether the camera is for
+// remote shooting, a webcam, or looking through its files.
+describe('what the camera was connected for', () => {
+  const feed = (enabled: boolean) => ({ enabled, url: 'http://127.0.0.1:8717/', stream_url: null, quality: 'Full' as const, width: null, height: null, viewers: 0 });
+  const connectAs = async (openAs: AppSettings['openAs'], state: Partial<AppState> = {}) => {
+    const settings = { ...defaultSettings('/tmp'), openAs };
+    vi.mocked(ipc.getSettings).mockResolvedValue(settings);
+    vi.mocked(ipc.webcamSet).mockReset().mockImplementation((on: boolean) => Promise.resolve(feed(on)));
+    const store = createStore({ ...initialState(), settings, ...state });
+    expect(await createActions(store).connect('10.0.0.5')).toBe(true);
+    await Promise.resolve();
+    return store;
+  };
+
+  test('remote shooting opens on the live view and the controls', async () => {
+    const store = await connectAs('Remote');
+    expect(store.get().screen).toBe('main');
+    expect(store.get().cardOpen).toBe(false);
+    expect(ipc.webcamSet).not.toHaveBeenCalled();
+  });
+
+  test('a webcam opens with its picture going to other apps', async () => {
+    const store = await connectAs('Webcam');
+    expect(ipc.webcamSet).toHaveBeenCalledWith(true);
+    expect(store.get().feed?.enabled).toBe(true);
+    expect(store.get().cardOpen).toBe(false);
+  });
+
+  test('browsing files opens on the card', async () => {
+    const store = await connectAs('Files');
+    expect(store.get().cardOpen).toBe(true);
+    expect(ipc.webcamSet).not.toHaveBeenCalled();
+  });
+
+  test('anything but a webcam takes the picture back from other apps', async () => {
+    const store = await connectAs('Remote', { feed: feed(true) });
+    expect(ipc.webcamSet).toHaveBeenCalledWith(false);
+    expect(store.get().feed?.enabled).toBe(false);
+  });
 });
 
 describe('connect from the main screen', () => {

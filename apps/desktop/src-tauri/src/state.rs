@@ -518,7 +518,7 @@ pub(crate) async fn connect_via(
     }
     let (destination, save_here) = {
         let s = lock(&state.settings);
-        (s.destination(), s.save_to_computer)
+        (s.destination(), s.copies())
     };
     let before_reconnect = ssid.map(|name| rejoin_hook(state.wifi.clone(), name.to_string(), addr));
     let camera = Camera::connect(CameraConfig {
@@ -951,10 +951,10 @@ pub async fn save_settings(state: &AppState, mut s: AppSettings) -> Result<(), S
         let mut current = lock(&state.settings);
         s.sftp = current.sftp.clone();
         let moved = current.destination() != s.destination();
-        let switched = current.save_to_computer != s.save_to_computer;
+        let switched = current.copies() != s.copies();
         settings::save(&state.settings_path, &s)
             .map_err(|e| format!("Cannot save settings: {e}"))?;
-        let (destination, save_here) = (s.destination(), s.save_to_computer);
+        let (destination, save_here) = (s.destination(), s.copies());
         *current = s;
         (moved, destination, save_here, switched)
     };
@@ -1048,6 +1048,9 @@ mod tests {
         let settings = AppSettings {
             destination_base: dir.join("shots"),
             destination_mode: DestinationMode::CustomFolder,
+            // Most of these tests are about copying, which is put away
+            // unless asked for.
+            copy_feature: true,
             ..AppSettings::default()
         };
         settings::save(&path, &settings).unwrap();
@@ -1708,6 +1711,45 @@ mod tests {
         })
         .await
         .expect("the camera is set to its card alone");
+        stop(sim, &state).await;
+    }
+
+    #[tokio::test]
+    async fn with_copying_put_away_the_camera_keeps_pictures_on_its_card() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sim = spawn(SimConfig::default()).await;
+        let state = app_state(tmp.path());
+        // As a new install is: the switch on, the feature put away.
+        {
+            let mut s = lock(&state.settings);
+            s.copy_feature = false;
+            assert!(s.save_to_computer);
+        }
+        connect(&state, &sim.addr.to_string(), None, None, true)
+            .await
+            .unwrap();
+        let sending = |want: bool| {
+            let state = &state;
+            async move {
+                timeout(WAIT, async {
+                    while get_state(state, None)
+                        .await
+                        .and_then(|s| s.shots_to_computer)
+                        != Some(want)
+                    {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                })
+                .await
+                .unwrap_or_else(|_| panic!("the camera never reported sending = {want}"));
+            }
+        };
+        sending(false).await;
+        // Asking for the feature starts the copying its switch already wants.
+        let mut s = get_settings(&state);
+        s.copy_feature = true;
+        save_settings(&state, s).await.unwrap();
+        sending(true).await;
         stop(sim, &state).await;
     }
 

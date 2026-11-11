@@ -21,6 +21,10 @@ function fakeActions(): Actions {
     forgetCamera: vi.fn(() => Promise.resolve()),
     joinViaBluetooth: vi.fn(() => Promise.resolve(true)),
     cancelConnect: vi.fn(() => Promise.resolve()),
+    saveSettings: vi.fn((next: AppSettings) => {
+      store.set({ settings: next });
+      return Promise.resolve();
+    }),
   } as unknown as Actions;
 }
 
@@ -41,6 +45,30 @@ function setup(settings: Partial<AppSettings> = {}, webcam = true) {
 const message = () => root.querySelector<HTMLElement>('.headline .message')!;
 const byText = (text: string) =>
   [...root.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === text)!;
+
+
+describe('what the camera is for', () => {
+  const choices = () => [...root.querySelectorAll<HTMLButtonElement>('.purpose [role="radio"]')];
+
+  test('is asked before connecting: remote shooting, a webcam, or its files', () => {
+    setup();
+    expect(root.querySelector('.purpose')!.getAttribute('aria-label')).toBe('Use the camera for');
+    expect(choices().map((b) => b.querySelector('b')!.textContent)).toEqual(['Remote shooting', 'Webcam', 'Browse files']);
+    // Each says in a line what it opens.
+    expect(choices().every((b) => b.querySelector('small')!.textContent!.length > 10)).toBe(true);
+    expect(choices().map((b) => b.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false']);
+  });
+
+  test('the choice is saved, and shown as chosen the next time', () => {
+    setup();
+    choices()[2].click();
+    expect(actions.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ openAs: 'Files' }));
+    expect(choices().map((b) => b.getAttribute('aria-checked'))).toEqual(['false', 'false', 'true']);
+    unmount();
+    setup({ openAs: 'Webcam' });
+    expect(choices().map((b) => b.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false']);
+  });
+});
 
 describe('connect screen', () => {
   beforeEach(() => setup());

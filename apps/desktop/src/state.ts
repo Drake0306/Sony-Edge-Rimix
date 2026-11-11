@@ -217,7 +217,12 @@ export const defaultSettings = (destinationBase = ''): AppSettings => ({
   presets: [],
   bluetooth: true,
   saveToComputer: true,
+  copyFeature: false,
+  openAs: 'Remote',
 });
+
+/** Whether copying after each shot is shown: its panel and the last captures. */
+export const copyShown = (s: AppState): boolean => s.settings?.copyFeature ?? false;
 
 /**
  * The store after a Bluetooth scan heard `found`: failures are forgotten

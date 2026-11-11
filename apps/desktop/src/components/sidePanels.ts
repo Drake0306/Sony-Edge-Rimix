@@ -6,7 +6,7 @@ import type { Actions } from '../actions';
 import { COPY_TO_COMPUTER, SHOTS_STAY_ON_CARD, STAYS_ON_CARD } from '../copy';
 import { button, el, icon } from '../dom';
 import type { AppSettings, DestinationMode, RecentCamera } from '../ipc';
-import { watch, type AppState, type AppStore, type SaveError } from '../state';
+import { copyShown, watch, type AppState, type AppStore, type SaveError } from '../state';
 import * as intervalTimer from './intervalTimer';
 
 const MODES: [DestinationMode, string][] = [
@@ -84,18 +84,25 @@ export function saveToSection(store: AppStore, actions: Actions): { el: HTMLElem
   // its shots to itself is said. With the switch off that is as intended.
   const showFailure = () => {
     const { saveError, camera } = store.get();
-    const kept = isOn() && camera?.shots_to_computer === false;
+    const kept = copyShown(store.get()) && isOn() && camera?.shots_to_computer === false;
     const text = saveError ? saveErrorText(saveError) : kept ? SHOTS_STAY_ON_CARD : '';
     failure.hidden = text === '';
     failure.textContent = text;
   };
   const offSwitch = watch(store, (s) => s.settings?.saveToComputer ?? true, (on) => {
     copying.replaceChildren(switchRow(COPY_TO_COMPUTER, on, () => save({ saveToComputer: !isOn() })));
-    note.hidden = on;
+    note.hidden = on || !copyShown(store.get());
     showFailure();
   });
   const offError = watch(store, (s) => s.saveError, showFailure);
   const offCamera = watch(store, (s) => s.camera?.shots_to_computer, showFailure);
+  // With copying put away, only where files go is left (imports from the
+  // card still land there).
+  const offFeature = watch(store, copyShown, (shown) => {
+    copying.hidden = !shown;
+    note.hidden = !shown || isOn();
+    showFailure();
+  });
   const offSettings = watch(store, (s) => s.settings, (s) => {
     pathText.textContent = s ? destinationText(s) : '';
     pathText.title = s?.destinationBase ?? '';
@@ -114,6 +121,7 @@ export function saveToSection(store: AppStore, actions: Actions): { el: HTMLElem
   const destroy = () => {
     offError();
     offCamera();
+    offFeature();
     offSwitch();
     offSettings();
   };
@@ -260,7 +268,10 @@ export function mount(root: HTMLElement, store: AppStore, actions: Actions): () 
   dest.append(parts[3].el);
   col.append(tools, dest);
   root.append(col);
+  // The Save to panel is part of copying after each shot, shown on request.
+  const offDest = watch(store, copyShown, (shown) => (dest.hidden = !shown));
   return () => {
+    offDest();
     parts.forEach((p) => p.destroy());
     col.remove();
   };

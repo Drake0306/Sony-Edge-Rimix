@@ -96,6 +96,22 @@ const FOCUS: PickerSpec = {
   },
 };
 
+/**
+ * Where in the picture autofocus looks. 0x00xx are wide, zone and centre,
+ * 0x01xx the spots that can be moved, 0x02xx the tracking form of each.
+ */
+const FOCUS_AREA: PickerSpec = {
+  title: 'Focus area',
+  groups: [['area', 'Area'], ['tracking', 'Tracking']],
+  groupOf: (c) => ((u16Of(c.raw) ?? 0) >> 8 === 2 ? 'tracking' : 'area'),
+  look: (c) => {
+    const code = u16Of(c.raw) ?? 0;
+    // The tracking forms repeat the list, with the spots from the fourth on.
+    const kind = code >> 8 === 1 || (code >> 8 === 2 && (code & 0xff) > 3) ? 'spot' : (code & 0xff) === 1 ? 'wide' : (code & 0xff) === 2 ? 'zone' : 'spot';
+    return { icon: `fa-${kind}`, name: c.label, badge: '' };
+  },
+};
+
 // ---------------------------------------------------------------- white balance
 
 /** White balance raw values meaning "use the colour temperature". */
@@ -151,6 +167,7 @@ const SPECS: Record<number, PickerSpec> = {
   0x500e: MODE,
   0x5013: DRIVE,
   0x500a: FOCUS,
+  0xd22c: FOCUS_AREA,
   0x5005: WHITE_BALANCE,
   0x5004: FORMAT,
   0xd253: FORMAT,
