@@ -33,7 +33,8 @@ pub mod liveview {
 /// for each.
 pub mod capture {
     pub use crate::sony::capture::{
-        captured_ready, default_recovery_dir, receive_one, Destination, DestinationMode, Received,
+        captured_ready, default_recovery_dir, ensure_host_delivery, host_delivery_target,
+        receive_one, Destination, DestinationMode, Received, DEST_COMPUTER,
     };
 }
 

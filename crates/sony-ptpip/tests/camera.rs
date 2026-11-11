@@ -2,7 +2,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use sony_ptpip::capture::{Destination, DestinationMode};
-use sony_ptpip::ptp::codes::{PROP_ISO, PROP_SHUTTER_SPEED};
+use sony_ptpip::ptp::codes::{
+    PROP_IMAGE_SIZE_TO_HOST, PROP_ISO, PROP_SHUTTER_SPEED, PROP_STILL_DESTINATION,
+};
 use sony_ptpip::ptp::PtpValue;
 use sony_ptpip::{load_or_create_guid, Camera, CameraConfig, CameraEvent, CameraState};
 use sony_ptpip_sim::{spawn, SimCommand, SimConfig, SimHandle};
@@ -696,5 +698,80 @@ async fn old_simulator_behaviour_still_works() {
     .await;
     camera.set(PROP_ISO, PtpValue::U32(1600)).await.unwrap();
     assert_eq!(short_of(&camera.state(), PROP_ISO), "1600");
+    stop(sim, camera).await;
+}
+
+fn raw(state: &CameraState, code: u16) -> PtpValue {
+    state
+        .properties
+        .iter()
+        .find(|p| p.code == code)
+        .unwrap_or_else(|| panic!("no property {code:#06x}"))
+        .raw
+        .clone()
+}
+
+/// The real ZV-E10 arrived set to save on its card only, and no shot ever
+/// reached the computer.
+#[tokio::test]
+async fn a_camera_saving_to_its_card_only_is_switched_to_send_shots_here_too() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sim_config = SimConfig {
+        still_destination: Some(0x0010),
+        host_image_size: Some(2),
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(sim_config, tmp.path()).await;
+    let state = camera.state();
+    // Computer and card: the card copy stays.
+    assert_eq!(raw(&state, PROP_STILL_DESTINATION), PtpValue::U16(0x0011));
+    // The original file, not the small copy.
+    assert_eq!(raw(&state, PROP_IMAGE_SIZE_TO_HOST), PtpValue::U8(1));
+    assert_eq!(state.shots_to_computer, Some(true));
+    let mut rx = camera.subscribe();
+    camera.shoot().await.unwrap();
+    let saved = wait_for(&mut rx, "CaptureSaved", |ev| match ev {
+        CameraEvent::CaptureSaved(r) => Some(r.clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(saved.path, tmp.path().join("DSC00001.JPG"));
+    stop(sim, camera).await;
+}
+
+#[tokio::test]
+async fn the_cameras_save_setting_is_left_alone_when_shots_are_not_received() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sim = spawn(SimConfig {
+        still_destination: Some(0x0010),
+        ..SimConfig::default()
+    })
+    .await;
+    let camera = Camera::connect(CameraConfig {
+        auto_receive: false,
+        ..config(&sim, tmp.path())
+    })
+    .await
+    .unwrap();
+    let state = camera.state();
+    assert_eq!(raw(&state, PROP_STILL_DESTINATION), PtpValue::U16(0x0010));
+    assert_eq!(state.shots_to_computer, Some(false));
+    stop(sim, camera).await;
+}
+
+#[tokio::test]
+async fn stepping_iso_moves_about_fifty_and_lands_on_a_real_stop() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (sim, camera) = start(SimConfig::default(), tmp.path()).await;
+    camera.set(PROP_ISO, PtpValue::U32(100)).await.unwrap();
+    let mut seen = Vec::new();
+    for _ in 0..4 {
+        camera.step(PROP_ISO, 1).await.unwrap();
+        seen.push(raw(&camera.state(), PROP_ISO));
+    }
+    // 100 +50 is 150: the nearest stop is 160, then 200, 250, 320.
+    assert_eq!(seen, [160, 200, 250, 320].map(PtpValue::U32));
+    camera.step(PROP_ISO, -1).await.unwrap();
+    assert_eq!(raw(&camera.state(), PROP_ISO), PtpValue::U32(250));
     stop(sim, camera).await;
 }

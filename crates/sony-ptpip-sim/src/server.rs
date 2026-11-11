@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use sony_ptpip::error::Error;
 use sony_ptpip::ptp::codes::*;
-use sony_ptpip::ptp::{encode_device_info, DeviceInfo};
+use sony_ptpip::ptp::{encode_device_info, DeviceInfo, PtpValue};
 use sony_ptpip::ptpip::{read_frame, Packet};
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -83,7 +83,22 @@ struct Shared {
 ///
 /// Panics if the property fixture cannot be loaded.
 pub async fn spawn(config: SimConfig) -> SimHandle {
-    let props = load_fixture(&config.fixture).expect("load simulator property fixture");
+    let mut props = load_fixture(&config.fixture).expect("load simulator property fixture");
+    let overrides = [
+        (
+            PROP_STILL_DESTINATION,
+            config.still_destination.map(PtpValue::U16),
+        ),
+        (
+            PROP_IMAGE_SIZE_TO_HOST,
+            config.host_image_size.map(PtpValue::U8),
+        ),
+    ];
+    for (code, value) in overrides {
+        if let (Some(value), Some(prop)) = (value, props.iter_mut().find(|p| p.code == code)) {
+            prop.current = value;
+        }
+    }
     let bind_addr = config
         .bind_addr
         .unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], 0)));

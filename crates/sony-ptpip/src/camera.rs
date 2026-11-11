@@ -36,11 +36,11 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
-use crate::capture::{Destination, Received};
+use crate::capture::{self, Destination, Received};
 use crate::card::{self, CardObject, PartialDownload, CARD_CHUNK};
 use crate::error::Error;
 use crate::liveview::{self, LiveViewFrame};
-use crate::ptp::codes::{OP_GET_DEVICE_INFO, PROP_FOCUS_MODE};
+use crate::ptp::codes::{OP_GET_DEVICE_INFO, PROP_FOCUS_MODE, PROP_ISO};
 use crate::ptp::{parse_device_info, PtpValue};
 use crate::sony::property::{read_all_props, Enabled, PropertyDesc};
 use crate::sony::{control, sdio_connect};
@@ -132,6 +132,10 @@ pub struct CameraState {
     /// When the last picture was taken from Rimix or received, in
     /// milliseconds since the Unix epoch.
     pub last_shot_at: Option<u64>,
+    /// Whether the camera hands new pictures to the computer: `false` while
+    /// its save destination is the card only, `None` when it does not say.
+    #[serde(default)]
+    pub shots_to_computer: Option<bool>,
 }
 
 /// One property, ready to show.
@@ -358,7 +362,13 @@ async fn connect_once(inner: &Inner) -> Result<Session, Error> {
     let (data, _) = conn.command_data_in(OP_GET_DEVICE_INFO, &[]).await?;
     let info = parse_device_info(&data)?;
     sdio_connect(&mut conn).await?;
-    let props = read_all_props(&mut conn).await?;
+    let mut props = read_all_props(&mut conn).await?;
+    // A camera saving to its card only never offers a shot to the computer.
+    if inner.auto_receive
+        && capture::ensure_host_delivery(&mut conn, &props, &quirks_for(&info.model)).await?
+    {
+        props = read_all_props(&mut conn).await?;
+    }
     // Live view never fails the connection: a camera that refuses the check
     // (live view still starting, busy, or off) is polled anyway, and
     // `next_frame` waits quietly until frames come. Only a transport failure
@@ -462,7 +472,11 @@ impl Camera {
     pub async fn step(&self, code: u16, delta: i32) -> Result<(), Error> {
         let desc = lock(&self.inner.snapshot).prop(code).cloned();
         let desc = desc.ok_or(Error::Unsupported("the camera has no such property"))?;
-        let target = state::step_target(&desc, delta)?;
+        let target = if code == PROP_ISO {
+            state::iso_step_target(&desc, delta)?
+        } else {
+            state::step_target(&desc, delta)?
+        };
         if target == desc.current {
             return Ok(());
         }

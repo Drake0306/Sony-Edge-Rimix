@@ -91,6 +91,14 @@ impl Controls {
                 Outcome::Unchanged
             }
             (CTRL_SHUTTER_FULL, false) if std::mem::take(&mut self.full_pressed) => {
+                // A body saving to its card only offers the computer nothing.
+                let to_host = props
+                    .get(PROP_STILL_DESTINATION)
+                    .and_then(|p| p.current.as_u64())
+                    .is_none_or(|v| v & 1 != 0);
+                if !to_host {
+                    return Outcome::Unchanged;
+                }
                 self.capture_queue = self
                     .capture_queue
                     .saturating_add(self.files_per_shot.max(1));

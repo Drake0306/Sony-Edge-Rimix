@@ -20,8 +20,10 @@ impl Labeled {
     }
 }
 
+/// What a value Rimix has no name for shows as. The code stays visible so
+/// a report can name it.
 fn unknown(raw: u16) -> String {
-    format!("0x{raw:04X}")
+    format!("Unknown (0x{raw:04X})")
 }
 
 /// Label a property value, or `None` when the code is unknown or the value
@@ -103,28 +105,94 @@ pub fn ev_label(raw: i16) -> String {
     format!("{sign}{}.{}", abs / 1000, (abs % 1000) / 100)
 }
 
+/// White balance values meaning "use the colour temperature": 0x8012 on
+/// the bodies libgphoto2 lists, 0x8007 in Rimix's first notes.
+pub const WB_COLOUR_TEMP: [u16; 2] = [0x8012, 0x8007];
+
 pub fn wb_label(raw: u16, colour_temp: Option<u16>) -> String {
     match raw {
-        0x0002 => "Auto".to_string(),
-        0x0004 => "Daylight".to_string(),
-        0x8007 => match colour_temp {
-            Some(k) => format!("{k}K"),
-            None => "Colour temp".to_string(),
-        },
-        _ => unknown(raw),
+        0x0001 => "Manual",
+        0x0002 => "Auto",
+        0x0003 => "One push",
+        0x0004 => "Daylight",
+        0x0005 => "Fluorescent",
+        0x0006 => "Incandescent",
+        0x0007 => "Flash",
+        0x8001 => "Fluorescent warm white",
+        0x8002 => "Fluorescent cool white",
+        0x8003 => "Fluorescent day white",
+        0x8004 => "Fluorescent daylight",
+        0x8010 => "Cloudy",
+        0x8011 => "Shade",
+        raw if WB_COLOUR_TEMP.contains(&raw) => {
+            return match colour_temp {
+                Some(k) => format!("{k}K"),
+                None => "Colour temp".to_string(),
+            }
+        }
+        0x8020 => "Custom 1",
+        0x8021 => "Custom 2",
+        0x8022 => "Custom 3",
+        0x8023 => "Custom",
+        0x8030 => "Underwater auto",
+        _ => return unknown(raw),
     }
+    .to_string()
 }
 
+/// The shooting mode. The names follow the mode dial and Sony's own
+/// tables (Camera Remote SDK `CrExposureProgram`, libgphoto2).
 pub fn exposure_program_label(raw: u16) -> String {
     match raw {
-        1 => "M",
-        2 => "P",
-        3 => "A",
-        4 => "S",
+        0x0001 => "M",
+        0x0002 => "P",
+        0x0003 => "A",
+        0x0004 => "S",
+        0x0005 => "Creative",
+        0x0006 => "Action",
+        0x0007 => "Portrait",
+        0x8000 => "Auto",
+        0x8001 => "Auto+",
+        0x8008 => "P (aperture shift)",
+        0x8009 => "P (shutter shift)",
+        0x8011 => "Sports",
+        0x8012 => "Sunset",
+        0x8013 => "Night scene",
+        0x8014 => "Landscape",
+        0x8015 => "Macro",
+        0x8016 => "Handheld twilight",
+        0x8017 => "Night portrait",
+        0x8018 => "Anti motion blur",
+        0x8019 => "Pet",
+        0x801A => "Gourmet",
+        0x801B => "Fireworks",
+        0x801C => "High sensitivity",
+        0x8020 => "Memory recall",
+        0x8031 => "Continuous priority, 8 fps",
+        0x8032 => "Continuous priority, 10 fps",
+        0x8033 => "Continuous priority, 12 fps",
+        0x8040 => "3D panorama",
+        0x8041 => "Panorama",
         0x8050 => "Movie P",
         0x8051 => "Movie A",
         0x8052 => "Movie S",
         0x8053 => "Movie M",
+        0x8054 => "Movie Auto",
+        0x8055 => "Movie F",
+        0x8059 | 0x8084 => "S&Q P",
+        0x805A | 0x8085 => "S&Q A",
+        0x805B | 0x8086 => "S&Q S",
+        0x805C | 0x8087 => "S&Q M",
+        0x805D => "S&Q Auto",
+        0x805E => "S&Q F",
+        0x8060 => "Auto, flash off",
+        0x8070 => "Picture effect",
+        0x8080 => "High frame rate P",
+        0x8081 => "High frame rate A",
+        0x8082 => "High frame rate S",
+        0x8083 => "High frame rate M",
+        0x8088 => "Movie",
+        0x8089 => "Photo",
         _ => return unknown(raw),
     }
     .to_string()
@@ -135,33 +203,77 @@ pub fn focus_mode_label(raw: u16) -> String {
         1 => "MF",
         2 => "AF-S",
         0x8004 => "AF-C",
-        0x8005 => "DMF",
-        0x8006 => "AF-A",
+        0x8005 => "AF-A",
+        0x8006 => "DMF",
+        0x8009 => "Preset focus",
         _ => return unknown(raw),
     }
     .to_string()
 }
 
+/// The drive mode, exposure brackets included: those are `0x8NSS`, with
+/// the number of shots in `N` and the step and kind in `SS`.
 pub fn drive_label(raw: u16) -> String {
-    match raw {
-        1 => "Single",
-        2 => "Continuous Hi",
+    let named = match raw {
+        0x0001 => "Single",
+        0x0002 => "Continuous Hi",
+        0x8010 => "Continuous Hi+",
+        0x8015 => "Continuous Mid",
         0x8012 => "Continuous Lo",
+        0x8013 => "Continuous",
+        0x8014 => "Continuous, speed priority",
+        0x8003 => "Self-timer 5 s",
         0x8004 => "Self-timer 10 s",
         0x8005 => "Self-timer 2 s",
-        _ => return unknown(raw),
+        0x8008 => "Self-timer 10 s, 3 shots",
+        0x8009 => "Self-timer 10 s, 5 shots",
+        0x800C => "Self-timer 5 s, 3 shots",
+        0x800D => "Self-timer 5 s, 5 shots",
+        0x800E => "Self-timer 2 s, 3 shots",
+        0x800F => "Self-timer 2 s, 5 shots",
+        0x8018 => "White balance bracket Lo",
+        0x8028 => "White balance bracket Hi",
+        0x8019 => "DRO bracket Lo",
+        0x8029 => "DRO bracket Hi",
+        _ => "",
+    };
+    if !named.is_empty() {
+        return named.to_string();
     }
-    .to_string()
+    let shots = (raw >> 8) & 0xF;
+    let step = match raw & 0xF0 {
+        0x30 if raw & 0xF >= 6 => Some("0.3"),
+        0x50 => Some("0.5"),
+        0x70 => Some("0.7"),
+        0x10 => Some("1.0"),
+        0x20 => Some("2.0"),
+        0x30 => Some("3.0"),
+        _ => None,
+    };
+    let kind = match raw & 0xF {
+        7 | 1 => Some("continuous"),
+        6 | 0 => Some("single"),
+        _ => None,
+    };
+    match (raw >> 12, shots, step, kind) {
+        (8, 3 | 5 | 7 | 9, Some(step), Some(kind)) => {
+            format!("Bracket {step} EV, {shots} shots, {kind}")
+        }
+        _ => unknown(raw),
+    }
 }
 
 pub fn format_label(raw: u8) -> String {
     match raw {
-        2 => "JPEG Standard",
-        3 => "JPEG Fine",
-        4 => "JPEG Extra fine",
+        0x01 => "JPEG Light",
+        0x02 => "JPEG Standard",
+        0x03 => "JPEG Fine",
+        0x04 => "JPEG Extra fine",
         0x10 => "RAW",
-        0x13 => "RAW+JPEG",
+        0x11 => "RAW+JPEG Light",
         0x12 => "RAW+JPEG Standard",
+        0x13 => "RAW+JPEG",
+        0x14 => "RAW+JPEG Extra fine",
         _ => return unknown(raw.into()),
     }
     .to_string()
@@ -216,7 +328,66 @@ mod tests {
         assert_eq!(wb_label(4, None), "Daylight");
         assert_eq!(wb_label(0x8007, Some(5200)), "5200K");
         assert_eq!(wb_label(0x8007, None), "Colour temp");
-        assert_eq!(wb_label(0x1234, None), "0x1234");
+        assert_eq!(wb_label(0x1234, None), "Unknown (0x1234)");
+        // Both codes seen for "use the colour temperature".
+        assert_eq!(wb_label(0x8012, Some(4300)), "4300K");
+        assert_eq!(wb_label(0x8011, None), "Shade");
+        assert_eq!(wb_label(0x8010, None), "Cloudy");
+        assert_eq!(wb_label(6, None), "Incandescent");
+        assert_eq!(wb_label(0x8003, None), "Fluorescent day white");
+        assert_eq!(wb_label(7, None), "Flash");
+        assert_eq!(wb_label(0x8021, None), "Custom 2");
+        assert_eq!(wb_label(0x8030, None), "Underwater auto");
+    }
+
+    #[test]
+    fn every_mode_a_body_reports_has_a_name() {
+        for (raw, name) in [
+            (0x8000, "Auto"),
+            (0x8001, "Auto+"),
+            (0x0007, "Portrait"),
+            (0x8011, "Sports"),
+            (0x8013, "Night scene"),
+            (0x8016, "Handheld twilight"),
+            (0x8020, "Memory recall"),
+            (0x8041, "Panorama"),
+            (0x8054, "Movie Auto"),
+            (0x8059, "S&Q P"),
+            (0x805C, "S&Q M"),
+            (0x805D, "S&Q Auto"),
+            (0x8080, "High frame rate P"),
+            (0x8084, "S&Q P"),
+            (0x8088, "Movie"),
+            (0x8089, "Photo"),
+        ] {
+            assert_eq!(exposure_program_label(raw), name, "{raw:#06x}");
+        }
+        // No name is a bare number.
+        for raw in [1u16, 2, 3, 4, 0x8000, 0x8050, 0x8059] {
+            let label = exposure_program_label(raw);
+            assert!(
+                !label.starts_with("0x") && !label.contains("Unknown"),
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
+    fn drive_modes_and_brackets_have_names() {
+        assert_eq!(drive_label(0x8010), "Continuous Hi+");
+        assert_eq!(drive_label(0x8015), "Continuous Mid");
+        assert_eq!(drive_label(0x8003), "Self-timer 5 s");
+        assert_eq!(drive_label(0x8008), "Self-timer 10 s, 3 shots");
+        assert_eq!(drive_label(0x800F), "Self-timer 2 s, 5 shots");
+        assert_eq!(drive_label(0x8337), "Bracket 0.3 EV, 3 shots, continuous");
+        assert_eq!(drive_label(0x8556), "Bracket 0.5 EV, 5 shots, single");
+        assert_eq!(drive_label(0x8911), "Bracket 1.0 EV, 9 shots, continuous");
+        assert_eq!(drive_label(0x8320), "Bracket 2.0 EV, 3 shots, single");
+        assert_eq!(drive_label(0x8018), "White balance bracket Lo");
+        assert_eq!(drive_label(0x8029), "DRO bracket Hi");
+        assert_eq!(drive_label(0x7777), "Unknown (0x7777)");
+        assert_eq!(format_label(0x14), "RAW+JPEG Extra fine");
+        assert_eq!(format_label(0x77), "Unknown (0x0077)");
     }
 
     #[test]
@@ -229,12 +400,12 @@ mod tests {
         assert_eq!(exposure_program_label(0x8051), "Movie A");
         assert_eq!(exposure_program_label(0x8052), "Movie S");
         assert_eq!(exposure_program_label(0x8053), "Movie M");
-        assert_eq!(exposure_program_label(0x7777), "0x7777");
+        assert_eq!(exposure_program_label(0x7777), "Unknown (0x7777)");
         assert_eq!(focus_mode_label(1), "MF");
         assert_eq!(focus_mode_label(2), "AF-S");
         assert_eq!(focus_mode_label(0x8004), "AF-C");
-        assert_eq!(focus_mode_label(0x8005), "DMF");
-        assert_eq!(focus_mode_label(0x8006), "AF-A");
+        assert_eq!(focus_mode_label(0x8005), "AF-A");
+        assert_eq!(focus_mode_label(0x8006), "DMF");
         assert_eq!(drive_label(1), "Single");
         assert_eq!(drive_label(2), "Continuous Hi");
         assert_eq!(drive_label(0x8012), "Continuous Lo");
