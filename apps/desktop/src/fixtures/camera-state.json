@@ -22,31 +22,36 @@
      "raw": {
       "U8": 2
      },
-     "label": "Standard"
+     "label": "Standard",
+     "short": "Standard"
     },
     {
      "raw": {
       "U8": 3
      },
-     "label": "Fine"
+     "label": "Fine",
+     "short": "Fine"
     },
     {
      "raw": {
       "U8": 4
      },
-     "label": "Extra fine"
+     "label": "Extra fine",
+     "short": "Extra fine"
     },
     {
      "raw": {
       "U8": 16
      },
-     "label": "RAW"
+     "label": "RAW",
+     "short": "RAW"
     },
     {
      "raw": {
       "U8": 19
      },
-     "label": "RAW+JPEG"
+     "label": "RAW+JPEG",
+     "short": "RAW+JPEG"
     }
    ]
   },
@@ -64,19 +69,22 @@
      "raw": {
       "U16": 2
      },
-     "label": "Auto"
+     "label": "Auto",
+     "short": "Auto"
     },
     {
      "raw": {
       "U16": 4
      },
-     "label": "Daylight"
+     "label": "Daylight",
+     "short": "Daylight"
     },
     {
      "raw": {
       "U16": 32775
      },
-     "label": "Colour temp"
+     "label": "Colour temp",
+     "short": "Colour temp"
     }
    ]
   },
@@ -94,19 +102,22 @@
      "raw": {
       "U16": 350
      },
-     "label": "f/3.5"
+     "label": "f/3.5",
+     "short": "f/3.5"
     },
     {
      "raw": {
       "U16": 400
      },
-     "label": "f/4.0"
+     "label": "f/4.0",
+     "short": "f/4.0"
     },
     {
      "raw": {
       "U16": 450
      },
-     "label": "f/4.5"
+     "label": "f/4.5",
+     "short": "f/4.5"
     }
    ]
   },
@@ -124,55 +135,118 @@
      "raw": {
       "U16": 2
      },
-     "label": "AF-S"
+     "label": "AF-S",
+     "short": "AF-S"
     },
     {
      "raw": {
       "U16": 32772
      },
-     "label": "AF-C"
+     "label": "AF-C",
+     "short": "AF-C"
     },
     {
      "raw": {
       "U16": 1
      },
-     "label": "MF"
+     "label": "MF",
+     "short": "MF"
     }
    ]
   },
   {
    "code": 20494,
-   "label": "Manual",
+   "label": "Manual Exposure",
    "short": "M",
    "raw": {
-    "U16": 1
+    "U32": 1
    },
    "writable": true,
    "enabled": "On",
    "choices": [
     {
      "raw": {
-      "U16": 2
+      "U32": 65538
      },
-     "label": "P"
+     "label": "Program Auto",
+     "short": "P"
     },
     {
      "raw": {
-      "U16": 3
+      "U32": 131075
      },
-     "label": "A"
+     "label": "Aperture Priority",
+     "short": "A"
     },
     {
      "raw": {
-      "U16": 4
+      "U32": 196612
      },
-     "label": "S"
+     "label": "Shutter Priority",
+     "short": "S"
     },
     {
      "raw": {
-      "U16": 1
+      "U32": 1
      },
-     "label": "M"
+     "label": "Manual Exposure",
+     "short": "M"
+    },
+    {
+     "raw": {
+      "U32": 491600
+     },
+     "label": "Program Auto (Movie)",
+     "short": "Movie P"
+    },
+    {
+     "raw": {
+      "U32": 491603
+     },
+     "label": "Manual Exposure (Movie)",
+     "short": "Movie M"
+    },
+    {
+     "raw": {
+      "U32": 491604
+     },
+     "label": "Intelligent Auto (Movie)",
+     "short": "Movie Auto"
+    },
+    {
+     "raw": {
+      "U32": 622681
+     },
+     "label": "Program Auto (S&Q)",
+     "short": "S&Q P"
+    },
+    {
+     "raw": {
+      "U32": 294912
+     },
+     "label": "Intelligent Auto",
+     "short": "Auto"
+    },
+    {
+     "raw": {
+      "U32": 426049
+     },
+     "label": "Sweep Panorama",
+     "short": "Panorama"
+    },
+    {
+     "raw": {
+      "U32": 7
+     },
+     "label": "Portrait",
+     "short": "Portrait"
+    },
+    {
+     "raw": {
+      "U32": 360470
+     },
+     "label": "Hand-held Twilight",
+     "short": "Twilight"
     }
    ]
   },
@@ -190,19 +264,22 @@
      "raw": {
       "I16": 0
      },
-     "label": "0.0"
+     "label": "0.0",
+     "short": "0.0"
     },
     {
      "raw": {
       "I16": 300
      },
-     "label": "+0.3"
+     "label": "+0.3",
+     "short": "+0.3"
     },
     {
      "raw": {
       "I16": 700
      },
-     "label": "+0.7"
+     "label": "+0.7",
+     "short": "+0.7"
     }
    ]
   },
@@ -220,13 +297,15 @@
      "raw": {
       "U32": 1
      },
-     "label": "Single"
+     "label": "Single",
+     "short": "Single"
     },
     {
      "raw": {
       "U32": 65555
      },
-     "label": "Continuous"
+     "label": "Continuous",
+     "short": "Continuous"
     }
    ]
   },
@@ -244,19 +323,22 @@
      "raw": {
       "U32": 65596
      },
-     "label": "1/60"
+     "label": "1/60",
+     "short": "1/60"
     },
     {
      "raw": {
       "U32": 65661
      },
-     "label": "1/125"
+     "label": "1/125",
+     "short": "1/125"
     },
     {
      "raw": {
       "U32": 65786
      },
-     "label": "1/250"
+     "label": "1/250",
+     "short": "1/250"
     }
    ]
   },
@@ -285,19 +367,22 @@
      "raw": {
       "U32": 400
      },
-     "label": "400"
+     "label": "400",
+     "short": "400"
     },
     {
      "raw": {
       "U32": 800
      },
-     "label": "800"
+     "label": "800",
+     "short": "800"
     },
     {
      "raw": {
       "U32": 1600
      },
-     "label": "1600"
+     "label": "1600",
+     "short": "1600"
     }
    ]
   }

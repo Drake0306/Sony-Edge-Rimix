@@ -14,6 +14,7 @@ const iso = (current: number): PropertySummary => ({
   choices: [0xffffff, 100, 125, 160, 200, 50, 64, 80, 250, 320, 12800, 32000, 0x10000320].map((n) => ({
     raw: u32(n),
     label: `ISO ${n}`,
+    short: String(n),
   })),
 });
 

@@ -11,16 +11,19 @@ use tokio::task::JoinSet;
 use tokio::time::{interval, sleep, MissedTickBehavior};
 
 use super::{connect_once, lock, CameraEvent, Inner, RecentShot};
-use crate::capture::{captured_ready, receive_one, Destination};
+use crate::capture::{
+    captured_ready, ensure_host_delivery, receive_one, Destination, DEST_COMPUTER,
+};
 use crate::card::CardKind;
 use crate::error::Error;
 use crate::liveview::next_frame;
 use crate::ptp::codes::{
     EV_SONY_DEVICE_PROP_CHANGED, HANDLE_CAPTURED_STILL, OP_GET_OBJECT_INFO, PROP_CAPTURED_READY,
-    PROP_MOVIE_REC_STATE,
+    PROP_MOVIE_REC_STATE, PROP_STILL_DESTINATION,
 };
 use crate::ptp::parse_object_info;
 use crate::ptp::PtpValue;
+use crate::quirks::quirks_for;
 use crate::{PtpEvent, PtpIpConnection};
 
 /// Shortest time between two reads of the property table.
@@ -45,6 +48,11 @@ pub(super) fn live_view_wait(consecutive_failures: u32) -> Duration {
 const FPS_WINDOW: Duration = Duration::from_secs(1);
 /// How often the capture loop looks for waiting shots in the snapshot.
 const CAPTURE_POLL: Duration = Duration::from_millis(250);
+/// How often the save destination is looked at, and so the wait between
+/// two requests to change it.
+const DELIVERY_CHECK: Duration = Duration::from_millis(1500);
+/// How many times in a row the camera is asked to send pictures here.
+const DELIVERY_TRIES: u32 = 6;
 /// How often the movie loop looks whether a recording started or stopped.
 const MOVIE_POLL: Duration = Duration::from_millis(500);
 /// Wait after a recording stops before the card is listed.
@@ -128,6 +136,7 @@ async fn run_session(inner: &Arc<Inner>, events: broadcast::Receiver<PtpEvent>) 
     if inner.auto_receive {
         loops.spawn(capture_loop(inner.clone()));
         loops.spawn(movie_loop(inner.clone()));
+        loops.spawn(delivery_loop(inner.clone()));
     }
     let reason = match loops.join_next().await {
         Some(Ok(reason)) => reason,
@@ -292,6 +301,73 @@ async fn capture_loop(inner: Arc<Inner>) -> String {
     }
 }
 
+/// Keeps the camera handing new pictures to the computer.
+///
+/// The request made while connecting is not always obeyed: the real ZV-E10
+/// answered OK and went on saving to its card only. So the save
+/// destination is watched for the whole session. While it leaves the
+/// computer out, the camera is asked again, a few times a few seconds
+/// apart; after [`DELIVERY_TRIES`] it is left alone, with a warning that
+/// names the camera's own menu item. Each change of state is logged once.
+async fn delivery_loop(inner: Arc<Inner>) -> String {
+    let mut tick = interval(DELIVERY_CHECK);
+    tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    // What was last said about it: Some(true) sending, Some(false) given up.
+    let mut said: Option<bool> = None;
+    let mut tries = 0;
+    loop {
+        tick.tick().await;
+        let (props, quirks) = {
+            let snap = lock(&inner.snapshot);
+            (snap.props.clone(), quirks_for(&snap.model))
+        };
+        let Some(sending) = props
+            .iter()
+            .find(|p| p.code == PROP_STILL_DESTINATION)
+            .and_then(|p| p.current.as_u64())
+            .map(|v| v & DEST_COMPUTER != 0)
+        else {
+            continue;
+        };
+        if sending {
+            if said != Some(true) {
+                tracing::info!("the camera is sending new pictures to this computer");
+                said = Some(true);
+            }
+            tries = 0;
+            continue;
+        }
+        if said == Some(true) {
+            tracing::info!("the camera went back to saving pictures on its card only");
+            said = None;
+        }
+        if tries >= DELIVERY_TRIES {
+            if said != Some(false) {
+                tracing::warn!(
+                    tries,
+                    "the camera keeps saving pictures to its card only; on the camera set Menu, Network, PC Remote Function, Still Img. Save Dest. to PC+Camera"
+                );
+                said = Some(false);
+            }
+            continue;
+        }
+        tries += 1;
+        let mut guard = inner.conn.lock().await;
+        let Some(conn) = guard.as_mut() else {
+            return "connection closed".into();
+        };
+        match ensure_host_delivery(conn, &props, &quirks).await {
+            Ok(_) => {}
+            Err(e) => return e.to_string(),
+        }
+        match inner.refresh(conn).await {
+            Ok(_) => {}
+            Err(e) if lost(conn, &e) => return e.to_string(),
+            Err(e) => tracing::debug!(error = %e, "reading the properties failed"),
+        }
+    }
+}
+
 /// Copies each movie to the computer once its recording stops.
 ///
 /// A movie is written to the card, never offered like a still, so the
@@ -341,9 +417,17 @@ async fn movie_loop(inner: Arc<Inner>) -> String {
             }
         };
         if now_recording {
+            tracing::info!(
+                files = files.len(),
+                "recording started; the card was listed to tell the new clip apart later"
+            );
             before = Some(files.iter().map(|f| f.handle).collect());
             continue;
         }
+        tracing::info!(
+            files = files.len(),
+            "recording stopped; looking for the new clip on the card"
+        );
         // Without a listing from before the recording, nothing can be
         // called new, and old clips are not to be copied.
         let Some(old) = before.take() else {
@@ -362,6 +446,7 @@ async fn movie_loop(inner: Arc<Inner>) -> String {
             });
             match inner.card_fetch(clip, true).await {
                 Ok(saved) => {
+                    tracing::info!(path = %saved.path.display(), bytes = saved.bytes, "movie saved");
                     inner.emit(CameraEvent::CaptureSaved(saved));
                     inner.emit_state();
                 }
@@ -404,6 +489,7 @@ async fn receive_next(inner: &Inner, conn: &mut PtpIpConnection) -> Result<(), E
     if let Err(e) = dest.ensure_writable(chrono::Local::now().date_naive()) {
         return Err(report_failure(inner, &dest, filename, e));
     }
+    tracing::info!(file = %filename, bytes = size, "the camera offers a picture; receiving it");
     inner.emit(CameraEvent::CaptureStarted {
         filename: filename.clone(),
     });
@@ -443,6 +529,7 @@ async fn receive_next(inner: &Inner, conn: &mut PtpIpConnection) -> Result<(), E
             }
             lock(&inner.last_failure).take();
             inner.mark_shot();
+            tracing::info!(path = %saved.path.display(), bytes = saved.bytes, "picture saved");
             inner.emit(CameraEvent::CaptureSaved(saved));
             inner.emit_state();
             Ok(())

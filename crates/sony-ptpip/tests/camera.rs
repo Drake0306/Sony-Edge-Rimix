@@ -865,3 +865,33 @@ async fn a_camera_that_keeps_its_card_to_itself_is_reported_once() {
     assert!(camera.state().connected);
     stop(sim, camera).await;
 }
+
+/// What the real ZV-E10 did: it answered OK to "save to computer and card"
+/// at connect and went on saving to its card only.
+#[tokio::test]
+async fn a_camera_that_ignores_the_first_request_is_asked_again_until_it_sends_shots_here() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sim_config = SimConfig {
+        still_destination: Some(0x0010),
+        still_destination_ignores_writes: 2,
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(sim_config, tmp.path()).await;
+    // Connecting did not fail, and did not change it.
+    assert_eq!(camera.state().shots_to_computer, Some(false));
+    let mut rx = camera.subscribe();
+    // Rimix keeps at it while the session runs.
+    wait_for(&mut rx, "pictures sent to the computer", |ev| match ev {
+        CameraEvent::StateChanged(s) if s.shots_to_computer == Some(true) => Some(()),
+        _ => None,
+    })
+    .await;
+    camera.shoot().await.unwrap();
+    let saved = wait_for(&mut rx, "CaptureSaved", |ev| match ev {
+        CameraEvent::CaptureSaved(r) => Some(r.clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(saved.path, tmp.path().join("DSC00001.JPG"));
+    stop(sim, camera).await;
+}

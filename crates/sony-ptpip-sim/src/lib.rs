@@ -114,6 +114,12 @@ pub struct SimConfig {
     /// (0xD215 stays 0), as a body set to "Camera Only" behaves.
     #[serde(default)]
     pub still_destination: Option<u16>,
+    /// Answer the first this-many writes of the save destination (0xD222)
+    /// with OK and change nothing, as the real ZV-E10 did right after
+    /// connecting: Rimix wrote "computer and card", the camera said OK, and
+    /// its next report still said "card only".
+    #[serde(default)]
+    pub still_destination_ignores_writes: u32,
     /// Refuse every look at the card (GetStorageIDs answers AccessDenied),
     /// as a body that keeps its card to itself while it is remote
     /// controlled does.
@@ -157,6 +163,7 @@ impl Default for SimConfig {
             props_param_hangs: true,
             single_prop_read_hangs: true,
             still_destination: None,
+            still_destination_ignores_writes: 0,
             card_denied: false,
             host_image_size: None,
         }

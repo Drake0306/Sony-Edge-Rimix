@@ -107,7 +107,7 @@
 .shoot:hover .c::after{transform:scale(.92)}
 
 /* ---------- camera settings popover (anchored to a chip) ---------- */
-.pop{position:absolute;left:160px;bottom:calc(100% + 12px);width:312px;padding:8px;border-radius:18px;background:var(--glass-pop)}
+.pop{position:absolute;left:160px;bottom:calc(100% + 12px);width:312px;max-height:calc(100vh - 196px);overflow-y:auto;padding:8px;border-radius:18px;background:var(--glass-pop)}
 .pop .sect + .sect{margin-top:8px}
 .ttl{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 8px;font-size:12px;font-weight:600}
 .ttl span{font-weight:400;color:var(--ink-2)}
@@ -152,7 +152,7 @@
 .ring .shoot text{fill:var(--shoot-ink);stroke:none;font-size:14px;font-weight:600}
 
 /* settings panel beside the ring: the camera settings popover, placed here */
-.pop.ringpanel{left:auto;right:432px;bottom:16px;width:312px;padding:8px;border-radius:18px;background:var(--glass-pop);z-index:30}
+.pop.ringpanel{left:auto;right:432px;bottom:16px;width:312px;max-height:calc(100vh - 32px);padding:8px;border-radius:18px;background:var(--glass-pop);z-index:30}
 .ringpanel .sect + .sect{margin-top:8px}
 
 /* presets + live status in ring layout (they live in the dock otherwise) */

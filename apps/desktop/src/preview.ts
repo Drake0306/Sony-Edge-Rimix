@@ -4,7 +4,7 @@
 //   pnpm dev, then open http://localhost:1420/preview.html
 //
 // Query parameters: layout=Dock|Ring, theme=Light|Dark, presets=<count>,
-// mode=<raw exposure mode>, apply=<slot to apply>, open=<chip name>, transfers=1 (files arriving), recording=1,
+// mode=<raw exposure mode>, drive=<raw drive mode>, apply=<slot to apply>, open=<chip name>, transfers=1 (files arriving), recording=1,
 // screen=connect, webcam=1. Never part of the built app.
 
 import { mockIPC } from '@tauri-apps/api/mocks';
@@ -17,26 +17,45 @@ const q = new URLSearchParams(location.search);
 const CAMERA_ID = '192.168.122.1:15740';
 const num = (key: string, fallback: number) => (q.has(key) ? Number(q.get(key)) : fallback);
 
-const u16 = (n: number): PtpValue => ({ U16: n });
 const u32 = (n: number): PtpValue => ({ U32: n });
 
-const MODES: [number, string][] = [
-  [0x8000, 'Auto'], [2, 'P'], [3, 'A'], [4, 'S'], [1, 'M'],
-  [0x8054, 'Movie Auto'], [0x8050, 'Movie P'], [0x8053, 'Movie M'], [0x805d, 'S&Q Auto'], [0x8016, 'Handheld twilight'],
+// The real ZV-E10's lists (firmware 2.01), as its camera report gave them.
+const MODES: [number, string, string][] = [
+  [0x00010002, 'Program Auto', 'P'], [0x00020003, 'Aperture Priority', 'A'], [0x00030004, 'Shutter Priority', 'S'],
+  [0x00000001, 'Manual Exposure', 'M'], [0x00078050, 'Program Auto (Movie)', 'Movie P'],
+  [0x00078051, 'Aperture Priority (Movie)', 'Movie A'], [0x00078052, 'Shutter Priority (Movie)', 'Movie S'],
+  [0x00078053, 'Manual Exposure (Movie)', 'Movie M'], [0x00078054, 'Intelligent Auto (Movie)', 'Movie Auto'],
+  [0x00098059, 'Program Auto (S&Q)', 'S&Q P'], [0x0009805a, 'Aperture Priority (S&Q)', 'S&Q A'],
+  [0x0009805b, 'Shutter Priority (S&Q)', 'S&Q S'], [0x0009805c, 'Manual Exposure (S&Q)', 'S&Q M'],
+  [0x00048000, 'Intelligent Auto', 'Auto'], [0x00048001, 'Superior Auto', 'Auto+'], [0x00068041, 'Sweep Panorama', 'Panorama'],
+  [0x00000007, 'Portrait', 'Portrait'], [0x00058011, 'Sports Action', 'Sports'], [0x00058015, 'Macro', 'Macro'],
+  [0x00058014, 'Landscape', 'Landscape'], [0x00058012, 'Sunset', 'Sunset'], [0x00058013, 'Night Scene', 'Night scene'],
+  [0x00058016, 'Hand-held Twilight', 'Twilight'], [0x00058017, 'Night Portrait', 'Night portrait'],
+  [0x00058018, 'Anti Motion Blur', 'Anti blur'],
 ];
-const ISOS = [50, 64, 80, 100, 125, 160, 200, 250, 320, 400, 500, 640, 800, 1000, 1250, 1600, 2000, 2500, 3200, 6400, 12800, 25600, 32000];
+const DRIVES: [number, string, string][] = [
+  [0x00000001, 'Single', 'Single'], [0x00018012, 'Continuous Lo', 'Cont. Lo'], [0x00018015, 'Continuous Mid', 'Cont. Mid'],
+  [0x00010002, 'Continuous Hi', 'Cont. Hi'], [0x00018010, 'Continuous Hi+', 'Cont. Hi+'], [0x00038004, 'Self-timer 10 s', 'Timer 10 s'],
+  [0x00048337, 'Bracket 0.3 EV, 3 shots, continuous', 'BRK C 0.3 ×3'], [0x00068028, 'White balance bracket Hi', 'WB BRK Hi'],
+];
+const ISOS = [100, 125, 160, 200, 250, 320, 400, 500, 640, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6400, 8000, 10000, 12800, 16000, 20000, 25600, 32000];
 
-function prop(code: number, raw: PtpValue, label: string, choices: [PtpValue, string][] = []): PropertySummary {
-  return { code, label, short: label.replace(/^ISO /, ''), raw, writable: true, enabled: 'On', choices: choices.map(([r, l]) => ({ raw: r, label: l })) };
+function prop(code: number, raw: PtpValue, label: string, short: string, choices: [PtpValue, string, string][] = []): PropertySummary {
+  return { code, label, short, raw, writable: true, enabled: 'On', choices: choices.map(([r, l, s]) => ({ raw: r, label: l, short: s })) };
+}
+
+function pick(list: [number, string, string][], raw: number, code: number): PropertySummary {
+  const [, label, short] = list.find(([m]) => m === raw) ?? [raw, `Unknown (0x${raw.toString(16)})`, '?'];
+  return prop(code, u32(raw), label, short, list.map(([m, l, s]) => [u32(m), l, s]));
 }
 
 function camera(): CameraState {
   const base = cameraState as unknown as CameraState;
-  const mode = num('mode', 0x8000);
   const iso = num('iso', 800);
   const replaced = new Map<number, PropertySummary>([
-    [0x500e, prop(0x500e, u16(mode), MODES.find(([m]) => m === mode)?.[1] ?? `Unknown (0x${mode.toString(16)})`, MODES.map(([m, l]) => [u16(m), l]))],
-    [0xd21e, prop(0xd21e, u32(iso), `ISO ${iso}`, [[u32(0xffffff), 'ISO Auto'], ...ISOS.map((i): [PtpValue, string] => [u32(i), `ISO ${i}`])])],
+    [0x500e, pick(MODES, num('mode', 0x00010002), 0x500e)],
+    [0x5013, pick(DRIVES, num('drive', 0x00018015), 0x5013)],
+    [0xd21e, prop(0xd21e, u32(iso), `ISO ${iso}`, String(iso), [[u32(0xffffff), 'ISO Auto', 'Auto'], ...ISOS.map((i): [PtpValue, string, string] => [u32(i), `ISO ${i}`, String(i)])])],
   ]);
   return {
     ...base,
@@ -123,5 +142,8 @@ window.setTimeout(() => {
   if (open) {
     const chip = [...document.querySelectorAll<HTMLElement>('.chip')].find((c) => c.querySelector('small')?.textContent === open);
     chip?.click();
+    // In the ring layout the settings are segments of the ring.
+    const seg = [...document.querySelectorAll<SVGElement>('.ring .seg')].find((g) => g.textContent?.includes(open));
+    seg?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   }
 }, 300);

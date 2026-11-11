@@ -35,7 +35,10 @@ export type Enabled = 'Off' | 'On' | 'DisplayOnly';
 
 export interface Choice {
   raw: PtpValue;
+  /** The full name: "Program Auto (Movie)". */
   label: string;
+  /** The compact form a chip shows: "Movie P". */
+  short: string;
 }
 
 export interface PropertySummary {

@@ -56,7 +56,7 @@ Then run `scripts/check-mac-bundle.sh ~/Downloads/Rimix-0.1.0/Rimix.app`:
 it must print three `ok` lines. A bundle that fails it cannot reach any
 camera (see "The 10:00 connect failure").
 
-## State of the code (main = merge of session-feedback)
+## State of the code (main = merge of real-values)
 
 All four spec phases are built and merged. Everything was developed against
 the simulator; only three real-camera sessions have happened, all on
@@ -242,13 +242,63 @@ Dev tools added: `http://localhost:1420/preview.html` under `pnpm dev`
 headless Chrome to check layout), and
 `cargo run -p rimix-desktop --example webcam_feed`.
 
+## Session 5 on the camera (06:18Z) and the real property table
+
+Roy tested the feedback build. `docs/camera-reports/zv-e10-fw2.01.json` is
+the report the app wrote at that connect: all 93 properties of the real
+ZV-E10 (firmware 2.01) with their allowed values. It is the ground truth
+for this body; check it before believing any table.
+
+What it showed, and what was fixed on branch `real-values` (merged):
+
+- **Mode and drive showed bare numbers except M.** The ZV-E10 sends
+  0x500E and 0x5013 as U32: the classic 16-bit code in the lower half, a
+  family number in the upper (P is `0x0001_0002`, Movie P `0x0007_8050`,
+  Continuous Lo `0x0001_8012`). `label_for` took only u16, so every value
+  but M (`0x0000_0001`) fell to the raw-number fallback. Now `low_word`
+  names both forms. The values match libgphoto2's
+  `sony_exposure_program_32_modes` and `sony3_capturemode`
+  (camlibs/ptp2/config.c) exactly; the names follow Sony's Help Guide
+  ("Program Auto", "Intelligent Auto", "Hand-held Twilight"). Tests list
+  all 25 modes and 36 drive values the camera reported.
+- **Confirmed from the report:** focus is 0x8005 AF-A, 0x8004 AF-C,
+  0x8006 DMF (the camera lists them in menu order AF-S, AF-A, AF-C, DMF,
+  MF); colour temperature is 0x8012 (0x8007 was only ever the fixture);
+  ISO runs 100 to 32000; the save destination offers 1, 0x11, 0x10.
+- **Photos still did not arrive.** The log says the write of 0xD222 was
+  answered OK at connect, and the report taken straight after still says
+  0x10 (card only). Either the camera applies it late or it ignores a
+  write made that early (drive mode was also reported "off, 0" at that
+  moment, so the body was not settled). `delivery_loop` now watches 0xD222
+  for the whole session and asks again every 1.5 s, six times, then warns
+  with the camera's own menu path. The capture and movie pipelines log at
+  info now ("the camera offers a picture", "picture saved", "recording
+  started", "movie saved"), so the next log shows how far a shot got.
+  NOT YET KNOWN whether the retry is what the ZV-E10 needs.
+- **Mode picker.** Roy asked for a list with an icon on the left and the
+  mode's letter on the right instead of a stepper. `src/modes.ts` sorts
+  the modes into Photo, Movie, S&Q and Scene; the popover's Mode row
+  unfolds into tabs and a list (pictogram, Sony's name, dial cap). The
+  pictograms are symbols `m-*` in `index.html`.
+- Chips need short forms: `Choice.short` and `drive_short` / `wb_short`.
+
+Seen in the report and not used yet: 0xD278 is an HTTP live view stream
+URL on the camera (`http://192.168.122.1:60152/liveviewstream?...`),
+possibly a faster live view than the PTP frames; 0xD26A (1 or 2,
+writable) may be the live view quality; drive mode has 36 values and is
+still a stepper.
+
 ## Next real-camera session
 
-Roy opens the new build and tries, in order: shoot (does the file land in
-`~/Pictures/Rimix/<date>` with a progress bar?), the mode dial (names?),
-ISO plus/minus and Custom, record then stop (clip copied, or "Videos stay
-on the card"?), "Use as a webcam". Then read `camera-ZV-E10.json` and the
-log. Likely follow-ups: mode values missing from the table; the card
+Roy opens the new build and tries: the Mode chip (picker, names), Drive
+(names), then shoot. The question that matters most is still whether a
+picture reaches the Save to folder. Read the log for `the camera is
+sending new pictures to this computer` (the save destination took),
+`the camera offers a picture` and `picture saved`; or the warning that the
+camera keeps saving to its card only, in which case Roy sets Still Img.
+Save Dest. to PC+Camera on the camera once and tries again. Then record
+and stop (`recording started` / `movie saved` / the card refused), and
+"Use as a webcam". Likely follow-ups: mode values missing from the table; the card
 refused in PC Remote (then say so in the README and drop the two walks);
 the save destination write refused (the log has a warning naming it).
 
