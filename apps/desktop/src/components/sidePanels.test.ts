@@ -24,6 +24,9 @@ const settings: AppSettings = {
   openAs: 'Remote',
 };
 
+// A body of the newer generation, whose remote session can list its card.
+const gen4 = { ...(cameraState as unknown as CameraState), generation: '4' };
+
 describe('Save to', () => {
   test('a switch turns copying pictures to this computer off and on', () => {
     const camera = { shots_to_computer: true } as unknown as CameraState;
@@ -97,7 +100,7 @@ describe('Cameras', () => {
     const rc: RecentCamera = {
       ip: '192.168.122.1', model: 'ILCE-7M4', lastUsed: 1, ssid: null, sshUser: 'cam', sshFingerprint: 'SHA256:x',
     };
-    const camera = { ...(cameraState as unknown as CameraState), model: 'ILCE-7M4', connected: true };
+    const camera = { ...gen4, model: 'ILCE-7M4', connected: true };
     const store = createStore({
       ...initialState(),
       screen: 'main' as const,
@@ -118,7 +121,7 @@ describe('Cameras', () => {
 
   test('a camera in the middle of reconnecting ignores a click on its row', () => {
     const rc: RecentCamera = { ip: '10.0.0.5', model: 'A7 IV', lastUsed: 1, ssid: null };
-    const camera = { ...(cameraState as unknown as CameraState), model: 'A7 IV', connected: false };
+    const camera = { ...gen4, model: 'A7 IV', connected: false };
     const store = createStore<AppState>({
       ...initialState(),
       screen: 'main',
@@ -146,7 +149,7 @@ describe('Cameras with a shared address', () => {
   const rows = (root: HTMLElement) =>
     [...root.querySelectorAll('[aria-label="Cameras"] .k')].map((k) => k.textContent);
   function mountWith(recent: RecentCamera[], lastIp: string, model: string) {
-    const camera = { ...(cameraState as unknown as CameraState), model, connected: true };
+    const camera = { ...gen4, model, connected: true };
     const store = createStore<AppState>({
       ...initialState(),
       screen: 'main',
@@ -174,7 +177,7 @@ describe('Cameras with a shared address', () => {
 });
 
 describe('Cameras with several connected', () => {
-  const base = cameraState as unknown as CameraState;
+  const base = gen4;
   const zv = { ...base, model: 'ZV-E10', connected: true };
   const a7 = { ...base, model: 'ILCE-7M4', connected: true };
   const A = '10.0.0.5:15740';
@@ -260,7 +263,7 @@ describe('Cameras with several connected', () => {
 
 describe('Scopes and timer', () => {
   test('the Interval timer row is live and opens its popover', () => {
-    const camera = { ...(cameraState as unknown as CameraState), connected: true };
+    const camera = { ...gen4, connected: true };
     const store = createStore<AppState>({ ...initialState(), screen: 'main', camera, settings });
     const root = document.createElement('div');
     document.body.append(root);
@@ -316,6 +319,22 @@ describe('Webcam switch', () => {
       'Scopes and timer',
       'Save to',
     ]);
+    unmount();
+  });
+});
+
+describe('Bodies whose remote session cannot list the card', () => {
+  // Sony's reference gives the ZV-E10 no storage commands: its files are
+  // browsed in Send to Smartphone, from the connect screen.
+  test('have no Browse card row', () => {
+    const root = document.createElement('div');
+    const camera = { ...(cameraState as unknown as CameraState), connected: true };
+    expect(camera.generation).toBe('3');
+    const store = createStore<AppState>({ ...initialState(), screen: 'main', camera, cameras: { a: camera }, activeId: 'a' });
+    const unmount = mount(root, store, createActions(store));
+    const rows = [...root.querySelectorAll('.group[aria-label="Cameras"] .k')].map((k) => k.textContent);
+    expect(rows).not.toContain('Browse card');
+    expect(rows).toContain('Disconnect');
     unmount();
   });
 });

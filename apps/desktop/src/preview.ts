@@ -105,7 +105,7 @@ const settings: AppSettings = {
   presets: presets(num('presets', 4)),
   bluetooth: false,
   saveToComputer: q.get('copy') !== '0',
-  openAs: (q.get('openas') as AppSettings['openAs']) ?? 'Remote',
+  openAs: q.get('files') === '1' ? 'Files' : ((q.get('openas') as AppSettings['openAs']) ?? 'Remote'),
   copyFeature: q.get('copying') === '1' || q.get('transfers') === '1' || q.has('copy') || q.get('cardonly') === '1',
   recentCameras: [{ ip: '192.168.122.1:15740', model: 'ZV-E10', lastUsed: 1, ssid: 'DIRECT-YKE1:ZV-E10', sshUser: null }],
 };
@@ -128,7 +128,7 @@ async function frame(): Promise<ArrayBuffer> {
   return blob.arrayBuffer();
 }
 
-const connected = q.get('screen') !== 'connect';
+const connected = q.get('screen') !== 'connect' && q.get('files') !== '1';
 // report=<name> puts a real camera's own report behind the interface, untouched:
 // a file of docs/camera-reports, without its .json.
 const reports = import.meta.glob('../../../docs/camera-reports/*.json', { import: 'default' });
@@ -168,6 +168,20 @@ mockIPC(
           { handle: 257, filename: 'DSC00412.JPG', kind: 'Still', bytes: 6_100_000, size_known: true, captured: '2026-11-11T15:28:10' },
           { handle: 256, filename: 'DSC00411.ARW', kind: 'Raw', bytes: 24_900_000, size_known: true, captured: '2026-11-11T15:20:42' },
         ];
+      // files=1: a camera in Send to Smartphone, with one folder of files.
+      case 'files_open': return { model: 'ZV-E10', root: 'PushRoot', address: '192.168.122.1:64321' };
+      case 'files_list': {
+        const f = (id: string, title: string, bytes: number | null, original = true) => ({
+          id, title, folder: false, date: '2026-11-11T15:28:10', thumb: `t/${title}`, preview: `p/${title}`,
+          file: `o/${title}`, bytes, resolution: bytes && title.endsWith('.JPG') ? '6000x4000' : null, original,
+        });
+        return a.folder
+          ? [f('a', 'DSC00412.JPG', 6_100_000), f('b', 'DSC00413.ARW', null, false), f('c', 'DSC00414.JPG', 5_800_000), f('d', 'C0007.MP4', 912_000_000), f('e', 'DSC00415.JPG', 6_300_000), f('g', 'DSC00416.JPG', 6_000_000)]
+          : [{ id: 'd1', title: '2026-11-11', folder: true, date: null, thumb: null, preview: null, file: null, bytes: null, resolution: null, original: false }];
+      }
+      case 'files_picture': return frame();
+      case 'files_import': return a.id === 'a' ? '/Users/you/Pictures/Rimix/DSC00412.JPG' : new Promise(() => {});
+      case 'files_close': return null;
       case 'webcam_set': return { enabled: !!a.on, url: 'http://127.0.0.1:8717/', quality: 'Full', width: 1024, height: 576, fps: 24, viewers: 0 };
       case 'discover': case 'ble_scan': case 'shoot_all': case 'apply_values': return [];
       case 'card_mode': return 'same-session';
@@ -184,9 +198,20 @@ await import('./main');
 
 const send = (event: unknown) => emit('camera-event', { camera_id: CAMERA_ID, event });
 window.setTimeout(() => {
+  // hover=<n> shows the nth choice of what the camera is for as hovered.
+  if (q.has('hover')) document.querySelectorAll<HTMLElement>('.purpose button')[num('hover', 0)]?.classList.add('hovered');
   if (!connected) {
     // Start a connect from the remembered camera, to show the cover.
-    if (q.get('connecting')) document.querySelector<HTMLElement>('.recent .row-btn button, .recent button')?.click();
+    if (q.get('connecting') || q.get('files') === '1') document.querySelector<HTMLElement>('.recent .row-btn button, .recent button')?.click();
+    // files=1 goes on to the files screen: one file imported, one arriving; view=1 opens a picture large.
+    if (q.get('files') === '1') {
+      window.setTimeout(() => {
+        const tiles = [...document.querySelectorAll<HTMLElement>('.files-grid .tile')];
+        tiles[0]?.querySelector<HTMLElement>('.act button')?.click();
+        tiles[2]?.querySelector<HTMLElement>('.act button')?.click();
+        if (q.get('view') === '1') tiles[4]?.querySelector<HTMLElement>('.pic')?.click();
+      }, 600);
+    }
     return;
   }
   void send({ Frame: null });

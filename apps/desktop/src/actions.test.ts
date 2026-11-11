@@ -29,6 +29,10 @@ vi.mock('./ipc', () => ({
   cancelConnect: vi.fn(() => Promise.resolve()),
   focusAt: vi.fn(() => Promise.resolve()),
   webcamSet: vi.fn(),
+  filesOpen: vi.fn(),
+  filesList: vi.fn(),
+  filesImport: vi.fn(),
+  filesClose: vi.fn(() => Promise.resolve()),
 }));
 
 const camera = cameraState as unknown as CameraState;
@@ -99,16 +103,98 @@ describe('what the camera was connected for', () => {
     expect(store.get().cardOpen).toBe(false);
   });
 
-  test('browsing files opens on the card', async () => {
-    const store = await connectAs('Files');
-    expect(store.get().cardOpen).toBe(true);
-    expect(ipc.webcamSet).not.toHaveBeenCalled();
-  });
-
   test('anything but a webcam takes the picture back from other apps', async () => {
     const store = await connectAs('Remote', { feed: feed(true) });
     expect(ipc.webcamSet).toHaveBeenCalledWith(false);
     expect(store.get().feed?.enabled).toBe(false);
+  });
+});
+
+// Browsing files is the camera's other mode (Send to Smartphone): no remote
+// session is made, and the files screen opens instead of the live view.
+describe('browsing a camera\'s files', () => {
+  const info = { model: 'ZV-E10', root: 'PushRoot', address: '192.168.122.1:64321' };
+  const file = (id: string, title: string, folder = false): ipc.FileEntry => ({
+    id, title, folder, date: null, thumb: folder ? null : `http://c/TN_${title}`, preview: folder ? null : `http://c/LRG_${title}`,
+    file: folder ? null : `http://c/ORG_${title}`, bytes: folder ? null : 100, resolution: null, original: !folder,
+  });
+  const filesStore = () => storeWith('Automatic', { openAs: 'Files' });
+  beforeEach(() => {
+    vi.mocked(ipc.connect).mockClear();
+    vi.mocked(ipc.waitForCamera).mockClear();
+    vi.mocked(ipc.joinNetwork).mockReset().mockResolvedValue(undefined as never);
+    vi.mocked(ipc.filesOpen).mockReset().mockResolvedValue(info);
+    vi.mocked(ipc.filesList).mockReset().mockImplementation((folder: string | null = null) =>
+      Promise.resolve(folder === null ? [file('d1', '2026-11-11', true)] : [file('a', 'DSC00412.JPG'), file('b', 'DSC00413.JPG')]),
+    );
+    vi.mocked(ipc.filesImport).mockReset().mockResolvedValue('/shots/DSC00412.JPG');
+  });
+
+  test('joining the camera\'s Wi-Fi opens its files, with no remote session', async () => {
+    const store = filesStore();
+    expect(await createActions(store).connectWithWifi({ ssid: SSID, password: '12345678' })).toBe(true);
+    expect(ipc.joinNetwork).toHaveBeenCalledWith(SSID, '12345678');
+    expect(ipc.filesOpen).toHaveBeenCalledWith(null);
+    expect(ipc.waitForCamera).not.toHaveBeenCalled();
+    expect(ipc.connect).not.toHaveBeenCalled();
+    const s = store.get();
+    expect(s.screen).toBe('files');
+    expect(s.connecting).toBeNull();
+    expect(s.files!.info).toEqual(info);
+    // The single folder at the top is opened at once.
+    expect(s.files!.path.map((p) => p.title)).toEqual(['ZV-E10', '2026-11-11']);
+    expect(s.files!.items.map((f) => f.title)).toEqual(['DSC00412.JPG', 'DSC00413.JPG']);
+  });
+
+  test('by address the same, at that address', async () => {
+    const store = filesStore();
+    expect(await createActions(store).connect('192.168.122.1')).toBe(true);
+    expect(ipc.filesOpen).toHaveBeenCalledWith('192.168.122.1');
+    expect(ipc.connect).not.toHaveBeenCalled();
+  });
+
+  test('a camera not in Send to Smartphone is said, with what to do on it', async () => {
+    vi.mocked(ipc.filesOpen).mockRejectedValue('NO_SEND_TO');
+    const store = filesStore();
+    expect(await createActions(store).connect('192.168.122.1')).toBe(false);
+    expect(store.get().screen).toBe('connect');
+    expect(store.get().error).toContain('Send to Smartphone');
+    expect(store.get().connecting).toBeNull();
+  });
+
+  test('a file is imported, shown as it arrives, then as imported; a failure stays on its file', async () => {
+    const store = filesStore();
+    const actions = createActions(store);
+    await actions.connect('192.168.122.1');
+    const [a, b] = store.get().files!.items;
+    let done!: (path: string) => void;
+    vi.mocked(ipc.filesImport).mockImplementationOnce(() => new Promise((ok) => (done = ok)));
+    const importing = actions.filesImport(a);
+    expect(store.get().files!.progress).toEqual({ a: { received: 0, total: 100 } });
+    done('/shots/DSC00412.JPG');
+    await importing;
+    expect(ipc.filesImport).toHaveBeenCalledWith('a', 'http://c/ORG_DSC00412.JPG', 'DSC00412.JPG');
+    expect(store.get().files!.progress).toEqual({});
+    expect(store.get().files!.saved).toEqual({ a: '/shots/DSC00412.JPG' });
+
+    vi.mocked(ipc.filesImport).mockRejectedValueOnce('the camera does not send DSC00413.JPG over Wi-Fi (answered 406)');
+    await actions.filesImport(b);
+    expect(store.get().files!.failed.b).toContain('406');
+    expect(store.get().files!.saved).toEqual({ a: '/shots/DSC00412.JPG' });
+  });
+
+  test('Import all takes what is not imported yet; Done tells the camera and goes back', async () => {
+    const store = filesStore();
+    const actions = createActions(store);
+    await actions.connect('192.168.122.1');
+    await actions.filesImport(store.get().files!.items[0]);
+    vi.mocked(ipc.filesImport).mockClear();
+    await actions.filesImportAll();
+    expect(vi.mocked(ipc.filesImport).mock.calls.map((c) => c[0])).toEqual(['b']);
+    await actions.filesDone();
+    expect(ipc.filesClose).toHaveBeenCalled();
+    expect(store.get().screen).toBe('connect');
+    expect(store.get().files).toBeNull();
   });
 });
 

@@ -14,9 +14,12 @@ import {
   isBleUnavailable,
   joiningText,
   wifiErrorMessage,
+  NO_SEND_TO,
+  NO_SEND_TO_TEXT,
+  openingFilesText,
 } from './copy';
 import { sameAddress } from './address';
-import type { AppSettings, FeedQuality, FeedStatus, Found, OpenAs, Preset, PtpValue, RecentCamera, SshLogin } from './ipc';
+import type { AppSettings, FeedQuality, FeedStatus, FileEntry, Found, OpenAs, Preset, PtpValue, RecentCamera, SshLogin } from './ipc';
 import { start, type IntervalPlan } from './interval';
 import { describeFailures, upsertPreset } from './presets';
 import type { WifiCredentials } from './qr/payload';
@@ -30,6 +33,7 @@ import {
   type AppState,
   type AppStore,
   type CardState,
+  type FilesState,
 } from './state';
 
 /** How long to wait for the camera after joining its network. */
@@ -75,6 +79,18 @@ export interface Actions {
   /** Stops the connect in progress; nothing is shown as an error. */
   cancelConnect(): Promise<void>;
   toggleRecord(): void;
+  /** Opens a folder of the camera whose files are browsed; `null` is the top, a number goes back to that level. */
+  filesEnter(folder: FileEntry | number | null): Promise<void>;
+  /** Imports one file into the destination folder. */
+  filesImport(entry: FileEntry): Promise<void>;
+  /** Imports every file of the folder shown that is not imported yet, one after another. */
+  filesImportAll(): Promise<void>;
+  /** Opens a file large, or closes it with null. */
+  filesView(id: string | null): void;
+  /** Ends the browsing: the camera leaves Send to Smartphone; back to the connect screen. */
+  filesDone(): Promise<void>;
+  /** Zooms the lens while held: 1 towards tele, -1 towards wide, 0 stops. */
+  zoom(direction: number): void;
   stepProperty(code: number, delta: number): void;
   setProperty(code: number, raw: PtpValue): void;
   saveSettings(settings: AppSettings): Promise<void>;
@@ -206,9 +222,93 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     }
   }
 
+  /** Whether the next camera is connected to browse its files: its other mode, with no remote session. */
+  const wantsFiles = () => store.get().settings?.openAs === 'Files';
+
   /** A connect in flight is never doubled, whichever way it was started. */
   const connectOnce = (ip: string, ssid: string | null, name: string, ssh: SshLogin | null) =>
-    store.get().connecting ? Promise.resolve(false) : connectTo(ip, ssid, name, ssh);
+    store.get().connecting ? Promise.resolve(false) : wantsFiles() ? openFiles(ip, name) : connectTo(ip, ssid, name, ssh);
+
+  const setFiles = (patch: Partial<FilesState>) => {
+    const files = store.get().files;
+    if (files) store.set({ files: { ...files, ...patch } });
+  };
+
+  /**
+   * Opens the files of a camera in Send to Smartphone, at `host` or its
+   * usual place on the network just joined, and shows the files screen.
+   */
+  async function openFiles(host: string | null, name: string): Promise<boolean> {
+    store.set({ error: null, pendingFingerprint: null, connecting: { phase: 'connecting', text: openingFilesText(name) } });
+    try {
+      const info = await ipc.filesOpen(host);
+      store.set({
+        screen: 'files',
+        connecting: null,
+        error: null,
+        files: { info, path: [{ id: null, title: info.model || name }], items: [], loading: true, error: null, progress: {}, saved: {}, failed: {}, viewing: null },
+      });
+      await filesEnter(null);
+      return true;
+    } catch (e) {
+      const said = message(e);
+      store.set({ connecting: null, error: said === CANCELLED ? null : said === NO_SEND_TO ? NO_SEND_TO_TEXT : said });
+      return false;
+    }
+  }
+
+  async function filesEnter(folder: FileEntry | number | null): Promise<void> {
+    const files = store.get().files;
+    if (!files) return;
+    const path =
+      folder === null ? files.path.slice(0, 1)
+      : typeof folder === 'number' ? files.path.slice(0, folder + 1)
+      : [...files.path, { id: folder.id, title: folder.title }];
+    setFiles({ path, items: [], loading: true, error: null, viewing: null });
+    try {
+      const items = await ipc.filesList(path[path.length - 1].id);
+      // A camera with a single folder at the top opens it at once.
+      if (path.length === 1 && items.length === 1 && items[0].folder) return filesEnter(items[0]);
+      setFiles({ items, loading: false });
+    } catch (e) {
+      setFiles({ loading: false, error: message(e) });
+    }
+  }
+
+  async function filesImport(entry: FileEntry): Promise<void> {
+    const files = store.get().files;
+    if (!files || !entry.file || entry.id in files.progress) return;
+    const { [entry.id]: _failed, ...failed } = files.failed;
+    setFiles({ failed, progress: { ...files.progress, [entry.id]: { received: 0, total: entry.bytes } } });
+    const settle = (patch: (f: FilesState) => Partial<FilesState>) => {
+      const now = store.get().files;
+      if (!now) return;
+      const { [entry.id]: _done, ...progress } = now.progress;
+      store.set({ files: { ...now, progress, ...patch(now) } });
+    };
+    try {
+      const path = await ipc.filesImport(entry.id, entry.file, entry.title);
+      settle((f) => ({ saved: { ...f.saved, [entry.id]: path } }));
+    } catch (e) {
+      settle((f) => ({ failed: { ...f.failed, [entry.id]: message(e) } }));
+    }
+  }
+
+  async function filesImportAll(): Promise<void> {
+    const items = store.get().files?.items ?? [];
+    for (const entry of items) {
+      const now = store.get().files;
+      if (!now) return;
+      if (entry.folder || !entry.file || entry.id in now.saved) continue;
+      await filesImport(entry);
+    }
+  }
+
+  async function filesDone(): Promise<void> {
+    // The camera is told first, so it leaves the mode even if the window closes next.
+    await ipc.filesClose().catch(() => {});
+    store.set({ screen: 'connect', files: null, error: null });
+  }
 
   /**
    * After a failed connect: keeps only the cameras still connected (a
@@ -238,7 +338,6 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
   function openAsChosen(openAs: OpenAs): void {
     const webcam = openAs === 'Webcam';
     if (webcam !== (store.get().feed?.enabled ?? false)) void feedThen(ipc.webcamSet(webcam));
-    if (openAs === 'Files') store.set({ cardOpen: true });
   }
 
   /** `name` is what the progress line calls the camera. */
@@ -369,6 +468,9 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
         return fail('join', e);
       }
     }
+    // Browsing files: the camera is in Send to Smartphone, where no remote
+    // shooting answers; its files are opened on the network just joined.
+    if (wantsFiles()) return openFiles(null, ssid);
     const text = ask ? askToJoinText(ssid) : findingText(ssid);
     store.set({ error: null, connecting: { phase: 'finding', text } });
     let camera: ipc.DiscoveredCamera;
@@ -531,6 +633,12 @@ export function createActions(store: AppStore, toast: (m: string) => void = () =
     focusAt: (x, y) => run(ipc.focusAt(x, y)),
     cancelConnect: () => ipc.cancelConnect().catch((e) => toast(message(e))),
     toggleRecord: () => run(ipc.toggleRecord()),
+    zoom: (direction) => run(ipc.zoom(direction)),
+    filesEnter,
+    filesImport,
+    filesImportAll,
+    filesView: (id) => setFiles({ viewing: id }),
+    filesDone,
     stepProperty: (code, delta) => run(ipc.stepProperty(code, delta)),
     setProperty: (code, raw) => run(ipc.setProperty(code, raw)),
     saveSettings,

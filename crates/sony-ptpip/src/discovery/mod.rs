@@ -8,12 +8,17 @@ use tokio::task::JoinSet;
 
 use crate::error::Error;
 
-mod http;
+pub(crate) mod http;
 mod probe;
 mod ssdp;
 mod upnp;
 
 pub use probe::probe_gateway;
+
+/// The address of the network's router: on a camera's own Wi-Fi, the camera.
+pub async fn gateway() -> Option<std::net::IpAddr> {
+    probe::default_gateway().await.ok().flatten()
+}
 pub use ssdp::ssdp_search;
 pub use upnp::{fetch_description, parse_dd_xml, parse_digital_imaging_desc};
 

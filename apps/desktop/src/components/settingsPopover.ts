@@ -48,6 +48,14 @@ const GROUPS: Group[] = [
     codes: (c) => (findProp(c, PROP.focusArea) ? [PROP.focus, PROP.focusArea, PROP.drive] : [PROP.focus, PROP.drive]),
     chevrons: true,
   },
+  {
+    // Only what the camera reports: zoom by the lens where the camera can
+    // drive it, the zooms beyond it, and SteadyShot on bodies that let a
+    // computer set it (the ZV-E10 does not).
+    title: 'Lens',
+    codes: (c) => [PROP.zoom, PROP.zoomSetting, PROP.steadyShot, PROP.steadyShotMovie].filter((code) => findProp(c, code)),
+    chevrons: true,
+  },
 ];
 
 /** A dock chip or a ring segment. */
@@ -201,6 +209,38 @@ export function createSettingsPopover(
     };
   }
 
+  /**
+   * A button that zooms while it is held: towards tele or wide on the press,
+   * a stop on letting go, sliding off, or losing the pointer. The stop is
+   * sent once, and only if this button started the zoom.
+   */
+  function zoomButton(direction: 1 | -1): HTMLButtonElement {
+    const b = button('zoombtn', direction > 0 ? 'T' : 'W', direction > 0 ? 'Zoom in' : 'Zoom out');
+    let held = false;
+    const start = () => {
+      if (held || b.disabled) return;
+      held = true;
+      b.classList.add('held');
+      actions.zoom(direction);
+    };
+    const stop = () => {
+      if (!held) return;
+      held = false;
+      b.classList.remove('held');
+      actions.zoom(0);
+    };
+    b.addEventListener('pointerdown', start);
+    for (const type of ['pointerup', 'pointerleave', 'pointercancel', 'blur']) b.addEventListener(type, stop);
+    // From the keyboard: held with Space or Enter.
+    b.addEventListener('keydown', (e) => {
+      if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) start();
+    });
+    b.addEventListener('keyup', (e) => {
+      if (e.key === ' ' || e.key === 'Enter') stop();
+    });
+    return b;
+  }
+
   function autoButton(code: number): HTMLButtonElement {
     const b = button('autobtn', 'Auto');
     b.setAttribute('aria-pressed', 'false');
@@ -220,6 +260,10 @@ export function createSettingsPopover(
     row.setAttribute('role', 'listitem');
     row.dataset.code = String(code);
     row.append(el('span', 'k', name));
+    if (code === PROP.zoom) {
+      row.append(el('span', 'v'), zoomButton(-1), zoomButton(1));
+      return row;
+    }
     const kind = panelKind(code, prop);
     const auto = AUTO_CODES.includes(code) ? [autoButton(code)] : [];
     if (!kind) {
@@ -251,7 +295,11 @@ export function createSettingsPopover(
       tabs.setAttribute('role', 'tablist');
       const list = el('div', 'picklist');
       list.setAttribute('role', 'radiogroup');
-      panel.append(tabs, list);
+      // Why nothing in the list can be chosen now, with a way to change that.
+      const blocked = el('div', 'blocked');
+      blocked.hidden = true;
+      blocked.append(el('span'), button('pathbtn'));
+      panel.append(tabs, list, blocked);
     } else if (kind === 'fstops') {
       const grid = el('div', 'fgrid');
       grid.setAttribute('role', 'radiogroup');
@@ -304,6 +352,24 @@ export function createSettingsPopover(
     return svg as unknown as HTMLElement;
   }
 
+  /**
+   * Why a list cannot be chosen from now, where Rimix knows: Sony's cameras
+   * offer no zoom but the lens's own while the file format is RAW or RAW and
+   * JPEG (their Help Guide says so), and JPEG is one press away.
+   */
+  function whyBlocked(code: number, camera: CameraState | null): { text: string; fix?: { label: string; code: number; raw: PtpValue } } | null {
+    if (code !== PROP.zoomSetting) return null;
+    const format = findProp(camera, PROP.format);
+    const jpeg = format?.choices.find((c) => /^(JPEG|HEIF)$/.test(c.label));
+    if (format && /RAW/.test(format.label)) {
+      return {
+        text: `Clear Image Zoom and digital zoom work on JPEG pictures only. The format is ${format.label}.`,
+        fix: jpeg && isUsable(format) ? { label: `Switch to ${jpeg.label}`, code: format.code, raw: jpeg.raw } : undefined,
+      };
+    }
+    return { text: 'The camera does not offer this in the mode it is in.' };
+  }
+
   function drawList(code: number, prop: PropertySummary, head: HTMLButtonElement, panel: HTMLElement, open: boolean): void {
     const spec = pickerFor(prop.code)!;
     const usable = isUsable(prop);
@@ -312,12 +378,23 @@ export function createSettingsPopover(
     const chosen = tabChosen.get(code);
     const ids = groups.map(([id]) => id);
     const tab = chosen && ids.includes(chosen) ? chosen : ids.includes(here) ? here : ids[0];
-    const key = JSON.stringify([prop.raw, prop.label, prop.choices.map((c) => c.raw), tab, open, usable]);
+    const formatNow = code === PROP.zoomSetting ? findProp(store.get().camera, PROP.format)?.label : '';
+    const key = JSON.stringify([prop.raw, prop.label, prop.choices.map((c) => c.raw), tab, open, usable, formatNow]);
     if (drawn.get(code) === key) return;
     drawn.set(code, key);
 
+    const why = usable ? null : whyBlocked(code, store.get().camera);
     const current = spec.look({ raw: prop.raw, label: prop.label, short: prop.short });
     head.replaceChildren(...lookParts(current), chevron());
+    const blocked = panel.querySelector<HTMLElement>('.blocked')!;
+    blocked.hidden = !why;
+    if (why) {
+      blocked.querySelector('span')!.textContent = why.text;
+      const fix = blocked.querySelector<HTMLButtonElement>('button')!;
+      fix.hidden = !why.fix;
+      fix.textContent = why.fix?.label ?? '';
+      fix.onclick = why.fix ? () => actions.setProperty(why.fix!.code, why.fix!.raw) : null;
+    }
     head.title = prop.label;
     head.setAttribute('aria-label', `${SETTING_NAMES[code]}, ${prop.label}. ${open ? 'Hide' : 'Show'} the list`);
     if (!open) return;
@@ -530,6 +607,18 @@ export function createSettingsPopover(
     }
     const v = row.querySelector('.v');
     if (v) v.textContent = shortText(prop);
+    if (rowCode === PROP.zoom) {
+      // The row stands on "can the camera drive this lens"; it shows how
+      // far in the zoom is.
+      const can = !!prop && 'U8' in prop.raw && prop.raw.U8 === 1;
+      row.classList.toggle('off', !can);
+      row.setAttribute('aria-disabled', String(!can));
+      if (v) v.textContent = can ? shortText(findProp(camera, PROP.zoomScale)) : 'By hand';
+      row.querySelectorAll<HTMLButtonElement>('.zoombtn').forEach((b) => {
+        b.disabled = !can;
+        b.title = can ? 'Hold to zoom' : 'The camera cannot drive this lens: turn its zoom ring';
+      });
+    }
     if (row === isoCustom) {
       const custom = row.querySelector<HTMLInputElement>('input')!;
       const stops = isoStops(prop);
@@ -562,7 +651,7 @@ export function createSettingsPopover(
       drawn.clear();
       isoCustom = null;
       body.replaceChildren(
-        ...groups.map((g) => {
+        ...groups.filter((g) => g.list.length > 0).map((g) => {
           const sect = el('div', 'sect');
           const h = el('div', 'h');
           h.append(el('span', '', g.title));

@@ -107,7 +107,7 @@
 .shoot:hover .c::after{transform:scale(.92)}
 
 /* ---------- camera settings popover (anchored to a chip) ---------- */
-.pop{position:absolute;left:160px;bottom:calc(100% + 12px);width:312px;max-height:calc(100vh - 196px);overflow-y:auto;padding:8px;border-radius:18px;background:var(--glass-pop)}
+.pop{position:absolute;left:160px;bottom:calc(100% + 12px);width:312px;max-height:calc(100vh - 196px);overflow-y:auto;overscroll-behavior:contain;padding:8px;border-radius:18px;background:var(--glass-pop)}
 .pop .sect + .sect{margin-top:8px}
 .ttl{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 8px;font-size:12px;font-weight:600}
 .ttl span{font-weight:400;color:var(--ink-2)}
@@ -116,7 +116,8 @@
 .arrow{position:absolute;left:160px;bottom:calc(100% + 2px);width:22px;height:11px;transform:translateX(-50%);clip-path:polygon(0 0,100% 0,50% 100%);background:var(--glass-pop);-webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%)}
 
 /* ---------- app settings popover (from the gear) ---------- */
-.apppop{position:absolute;right:174px;top:62px;width:296px;padding:8px;border-radius:18px;background:var(--glass-pop);z-index:40}
+/* As tall as the window allows and scrolled beyond that: it has grown past a laptop screen. */
+.apppop{position:absolute;right:174px;top:62px;width:296px;max-height:calc(100vh - 78px);overflow-y:auto;overscroll-behavior:contain;padding:8px;border-radius:18px;background:var(--glass-pop);z-index:40}
 .apppop .sect + .sect{margin-top:8px}
 .aparrow{position:absolute;right:181px;top:53px;width:22px;height:11px;clip-path:polygon(50% 0,100% 100%,0 100%);background:var(--glass-pop);-webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);z-index:40}
 .hint{display:flex;align-items:center;gap:6px;padding:9px 4px 2px;font-size:11px;color:var(--ink-3)}
@@ -172,6 +173,53 @@ html[data-layout="ring"] .strip{grid-template-columns:1fr 1fr;gap:6px}
 .headline{position:absolute;left:24px;top:84px;text-shadow:var(--headline-ts)}
 .headline h1{font-size:30px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
 .headline p{margin-top:8px;color:var(--ink-2);font-size:14px;max-width:460px}
+/* The files of a camera in Send to Smartphone. */
+.files{position:absolute;inset:0;display:flex;flex-direction:column;gap:10px;padding:16px;background:var(--bg);overflow:hidden}
+.files-bar{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:16px}
+.files-head{flex:1;min-width:0}
+.files-head h1{font-size:16px;font-weight:600}
+.files-head p{font-size:12px;color:var(--ink-2)}
+.files-bar .where{max-width:34%;font-size:12px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.files .sbtn{flex:none;height:26px;padding:0 12px;border-radius:9px;font-size:12px;font-weight:500;background:var(--well-2);color:var(--ink)}
+.files .sbtn:hover:not(:disabled){background:var(--hov-2)}
+.files .sbtn:disabled,.files .pbtn:disabled{opacity:.45;cursor:default}
+.files-path{display:flex;gap:4px;padding:0 4px;font-size:12.5px}
+.files-path button{padding:2px 7px;border-radius:7px;color:var(--ink-2)}
+.files-path button:not(:disabled):hover{background:var(--hov)}
+.files-path button.on{color:var(--ink);font-weight:600}
+.files-path button + button::before{content:"/";margin-right:8px;color:var(--ink-3);font-weight:400}
+.files-note{padding:0 6px;font-size:13px;color:var(--ink-2)}
+.files-note.error{color:var(--error-ink)}
+.files-grid{flex:1;min-height:0;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(176px,1fr));grid-auto-rows:max-content;gap:12px;padding:2px 2px 16px;list-style:none}
+.files-grid .tile{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center}
+.files-grid .pic{grid-column:1/-1;position:relative;display:block;aspect-ratio:3/2;border-radius:10px;overflow:hidden;background:var(--well-2)}
+.files-grid .pic img{display:block;width:100%;height:100%;object-fit:cover}
+.files-grid .pic img:not([src]){visibility:hidden}
+.files-grid .pic:hover{box-shadow:0 0 0 2px var(--ink-3)}
+.files-grid .pic .kind{position:absolute;left:6px;bottom:6px;padding:1px 6px;border-radius:6px;font-size:10px;font-weight:700;background:rgba(0,0,0,.55);color:#fff}
+.files-grid .pic .kind:empty{display:none}
+.files-grid .folder .pic .glyph{position:absolute;inset:30% 34%;border-radius:6px;box-shadow:inset 0 0 0 2px var(--ink-3)}
+.files-grid .name{font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.files-grid .meta{grid-column:1;font-size:11px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.files-grid .act{grid-column:2;grid-row:2/4;display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.files .bar{display:block;width:64px;height:5px;border-radius:3px;background:var(--well-2);overflow:hidden}
+.files .bar i{display:block;height:100%;background:var(--lock)}
+.files .saved{font-size:11.5px;font-weight:600;color:var(--lock)}
+.files .failed{max-width:150px;font-size:10.5px;line-height:1.25;color:var(--error-ink);text-align:right}
+.files .none{font-size:11px;color:var(--ink-3)}
+/* One picture large: a dark room for it, whatever the theme. */
+.files-view{position:absolute;inset:16px;z-index:20;display:flex;flex-direction:column;border-radius:18px;overflow:hidden;background:#0b0c0e;color:#f2f2f4;-webkit-backdrop-filter:none;backdrop-filter:none;text-shadow:none}
+.files-view[hidden]{display:none}
+.files-view img{flex:1;min-height:0;width:100%;object-fit:contain}
+.files-view img:not([src]){opacity:0}
+.files-view .view-bar{display:flex;align-items:center;gap:10px;padding:10px 12px}
+.files-view .view-bar b{font-size:13px}
+.files-view .view-bar .meta{flex:1;font-size:12px;color:#a9abb3}
+.files-view .sbtn{background:rgba(255,255,255,.14);color:#f2f2f4}
+.files-view .sbtn:hover:not(:disabled){background:rgba(255,255,255,.22)}
+.files-view .view-bar .act{display:flex;align-items:center;gap:8px}
+.purpose-how{max-width:660px !important;margin-top:12px !important;font-size:12.5px !important;line-height:1.45;color:var(--ink) !important}
+.purpose-how[hidden]{display:none}
 /* What the camera is connected for: three choices, the chosen one filled. */
 .purpose{display:flex;gap:10px;margin-top:16px;text-shadow:none}
 .purpose button{display:flex;align-items:center;gap:10px;width:214px;padding:10px 12px;border-radius:14px;text-align:left;color:var(--ink)}
@@ -179,8 +227,9 @@ html[data-layout="ring"] .strip{grid-template-columns:1fr 1fr;gap:6px}
 .purpose button span{display:flex;flex-direction:column;gap:2px;min-width:0}
 .purpose button b{font-size:13.5px;font-weight:600}
 .purpose button small{font-size:11.5px;line-height:1.3;color:var(--ink-2)}
-.purpose button:hover:not(.on){background:var(--hov-2)}
-.purpose button.on{background:var(--sel);color:var(--sel-ink);box-shadow:var(--sel-shadow)}
+/* Hovered, the glass stays and a tint lies over it: a tint alone lets the room behind show through. */
+.purpose button:hover:not(.on),.purpose button.hovered:not(.on){background:linear-gradient(var(--hov-2),var(--hov-2)),var(--glass)}
+.purpose button.on{background:var(--sel);color:var(--sel-ink);box-shadow:var(--sel-shadow),var(--lift);text-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
 .purpose button.on svg,.purpose button.on small{color:inherit}
 .purpose button.on small{opacity:.8}
 .ways{position:absolute;left:24px;right:24px;top:67%;transform:translateY(-50%);display:grid;grid-template-columns:repeat(3,1fr);gap:14px;max-width:1240px;margin:0 auto}

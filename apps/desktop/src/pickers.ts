@@ -112,6 +112,25 @@ const FOCUS_AREA: PickerSpec = {
   },
 };
 
+/** Which zooms are allowed past the lens's own: optical only, Clear Image Zoom, digital zoom. */
+const ZOOM_SETTING: PickerSpec = {
+  title: 'Zoom setting',
+  groups: [['all', 'Zoom']],
+  groupOf: () => 'all',
+  look: (c) => {
+    const code = u16Of(c.raw);
+    return { icon: code === 1 ? 'z-lens' : 'z-crop', name: c.label, badge: code === 3 ? 'CIZ' : code === 4 ? 'DZ' : '' };
+  },
+};
+
+/** SteadyShot, on the bodies that let a computer set it. */
+const STEADYSHOT: PickerSpec = {
+  title: 'SteadyShot',
+  groups: [['all', 'SteadyShot']],
+  groupOf: () => 'all',
+  look: (c) => ({ icon: 'z-steady', name: c.label, badge: '' }),
+};
+
 // ---------------------------------------------------------------- white balance
 
 /** White balance raw values meaning "use the colour temperature". */
@@ -168,6 +187,9 @@ const SPECS: Record<number, PickerSpec> = {
   0x5013: DRIVE,
   0x500a: FOCUS,
   0xd22c: FOCUS_AREA,
+  0xd25f: ZOOM_SETTING,
+  0xd0d9: STEADYSHOT,
+  0xd0da: STEADYSHOT,
   0x5005: WHITE_BALANCE,
   0x5004: FORMAT,
   0xd253: FORMAT,

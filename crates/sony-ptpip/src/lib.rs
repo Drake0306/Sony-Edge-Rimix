@@ -5,6 +5,7 @@ pub mod guid;
 pub mod ptp;
 pub mod ptpip;
 pub mod quirks;
+pub mod sendto;
 pub mod sony;
 pub mod ssh;
 

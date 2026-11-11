@@ -1,0 +1,3723 @@
+{
+  "connected": true,
+  "secured": false,
+  "model": "ZV-E10",
+  "firmware": "2.01",
+  "generation": "3",
+  "battery": 68,
+  "recording": false,
+  "focus_found": true,
+  "properties": [
+    {
+      "code": 20485,
+      "label": "Auto",
+      "short": "Auto",
+      "raw": {
+        "U16": 2
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U16": 2
+          },
+          "label": "Auto",
+          "short": "Auto"
+        },
+        {
+          "raw": {
+            "U16": 4
+          },
+          "label": "Daylight",
+          "short": "Daylight"
+        },
+        {
+          "raw": {
+            "U16": 32785
+          },
+          "label": "Shade",
+          "short": "Shade"
+        },
+        {
+          "raw": {
+            "U16": 32784
+          },
+          "label": "Cloudy",
+          "short": "Cloudy"
+        },
+        {
+          "raw": {
+            "U16": 6
+          },
+          "label": "Incandescent",
+          "short": "Incandescent"
+        },
+        {
+          "raw": {
+            "U16": 32769
+          },
+          "label": "Fluorescent warm white",
+          "short": "Fluor. warm"
+        },
+        {
+          "raw": {
+            "U16": 32770
+          },
+          "label": "Fluorescent cool white",
+          "short": "Fluor. cool"
+        },
+        {
+          "raw": {
+            "U16": 32771
+          },
+          "label": "Fluorescent day white",
+          "short": "Fluor. day"
+        },
+        {
+          "raw": {
+            "U16": 32772
+          },
+          "label": "Fluorescent daylight",
+          "short": "Fluor. light"
+        },
+        {
+          "raw": {
+            "U16": 7
+          },
+          "label": "Flash",
+          "short": "Flash"
+        },
+        {
+          "raw": {
+            "U16": 32816
+          },
+          "label": "Underwater auto",
+          "short": "Underwater"
+        },
+        {
+          "raw": {
+            "U16": 32786
+          },
+          "label": "5500K",
+          "short": "5500K"
+        },
+        {
+          "raw": {
+            "U16": 32800
+          },
+          "label": "Custom 1",
+          "short": "Custom 1"
+        },
+        {
+          "raw": {
+            "U16": 32801
+          },
+          "label": "Custom 2",
+          "short": "Custom 2"
+        },
+        {
+          "raw": {
+            "U16": 32802
+          },
+          "label": "Custom 3",
+          "short": "Custom 3"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 20487,
+      "label": "f/3.5",
+      "short": "f/3.5",
+      "raw": {
+        "U16": 350
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U16": 350
+          },
+          "label": "f/3.5",
+          "short": "f/3.5"
+        },
+        {
+          "raw": {
+            "U16": 400
+          },
+          "label": "f/4.0",
+          "short": "f/4.0"
+        },
+        {
+          "raw": {
+            "U16": 450
+          },
+          "label": "f/4.5",
+          "short": "f/4.5"
+        },
+        {
+          "raw": {
+            "U16": 500
+          },
+          "label": "f/5.0",
+          "short": "f/5.0"
+        },
+        {
+          "raw": {
+            "U16": 560
+          },
+          "label": "f/5.6",
+          "short": "f/5.6"
+        },
+        {
+          "raw": {
+            "U16": 630
+          },
+          "label": "f/6.3",
+          "short": "f/6.3"
+        },
+        {
+          "raw": {
+            "U16": 710
+          },
+          "label": "f/7.1",
+          "short": "f/7.1"
+        },
+        {
+          "raw": {
+            "U16": 800
+          },
+          "label": "f/8.0",
+          "short": "f/8.0"
+        },
+        {
+          "raw": {
+            "U16": 900
+          },
+          "label": "f/9.0",
+          "short": "f/9.0"
+        },
+        {
+          "raw": {
+            "U16": 1000
+          },
+          "label": "f/10",
+          "short": "f/10"
+        },
+        {
+          "raw": {
+            "U16": 1100
+          },
+          "label": "f/11",
+          "short": "f/11"
+        },
+        {
+          "raw": {
+            "U16": 1300
+          },
+          "label": "f/13",
+          "short": "f/13"
+        },
+        {
+          "raw": {
+            "U16": 1400
+          },
+          "label": "f/14",
+          "short": "f/14"
+        },
+        {
+          "raw": {
+            "U16": 1600
+          },
+          "label": "f/16",
+          "short": "f/16"
+        },
+        {
+          "raw": {
+            "U16": 1800
+          },
+          "label": "f/18",
+          "short": "f/18"
+        },
+        {
+          "raw": {
+            "U16": 2000
+          },
+          "label": "f/20",
+          "short": "f/20"
+        },
+        {
+          "raw": {
+            "U16": 2200
+          },
+          "label": "f/22",
+          "short": "f/22"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 20490,
+      "label": "Single-shot AF",
+      "short": "AF-S",
+      "raw": {
+        "U16": 2
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U16": 2
+          },
+          "label": "Single-shot AF",
+          "short": "AF-S"
+        },
+        {
+          "raw": {
+            "U16": 32773
+          },
+          "label": "Automatic AF",
+          "short": "AF-A"
+        },
+        {
+          "raw": {
+            "U16": 32772
+          },
+          "label": "Continuous AF",
+          "short": "AF-C"
+        },
+        {
+          "raw": {
+            "U16": 32774
+          },
+          "label": "Direct Manual Focus",
+          "short": "DMF"
+        },
+        {
+          "raw": {
+            "U16": 1
+          },
+          "label": "Manual Focus",
+          "short": "MF"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 20491,
+      "label": "32770",
+      "short": "32770",
+      "raw": {
+        "U16": 32770
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U16": 32769
+          },
+          "label": "32769",
+          "short": "32769"
+        },
+        {
+          "raw": {
+            "U16": 32770
+          },
+          "label": "32770",
+          "short": "32770"
+        },
+        {
+          "raw": {
+            "U16": 32772
+          },
+          "label": "32772",
+          "short": "32772"
+        },
+        {
+          "raw": {
+            "U16": 32773
+          },
+          "label": "32773",
+          "short": "32773"
+        },
+        {
+          "raw": {
+            "U16": 32771
+          },
+          "label": "32771",
+          "short": "32771"
+        },
+        {
+          "raw": {
+            "U16": 32774
+          },
+          "label": "32774",
+          "short": "32774"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 20492,
+      "label": "3",
+      "short": "3",
+      "raw": {
+        "U16": 3
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U16": 3
+          },
+          "label": "3",
+          "short": "3"
+        },
+        {
+          "raw": {
+            "U16": 32769
+          },
+          "label": "32769",
+          "short": "32769"
+        },
+        {
+          "raw": {
+            "U16": 32771
+          },
+          "label": "32771",
+          "short": "32771"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 20494,
+      "label": "Aperture Priority",
+      "short": "A",
+      "raw": {
+        "U32": 131075
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U32": 65538
+          },
+          "label": "Program Auto",
+          "short": "P"
+        },
+        {
+          "raw": {
+            "U32": 131075
+          },
+          "label": "Aperture Priority",
+          "short": "A"
+        },
+        {
+          "raw": {
+            "U32": 196612
+          },
+          "label": "Shutter Priority",
+          "short": "S"
+        },
+        {
+          "raw": {
+            "U32": 1
+          },
+          "label": "Manual Exposure",
+          "short": "M"
+        },
+        {
+          "raw": {
+            "U32": 491600
+          },
+          "label": "Program Auto (Movie)",
+          "short": "Movie P"
+        },
+        {
+          "raw": {
+            "U32": 491601
+          },
+          "label": "Aperture Priority (Movie)",
+          "short": "Movie A"
+        },
+        {
+          "raw": {
+            "U32": 491602
+          },
+          "label": "Shutter Priority (Movie)",
+          "short": "Movie S"
+        },
+        {
+          "raw": {
+            "U32": 491603
+          },
+          "label": "Manual Exposure (Movie)",
+          "short": "Movie M"
+        },
+        {
+          "raw": {
+            "U32": 491604
+          },
+          "label": "Intelligent Auto (Movie)",
+          "short": "Movie Auto"
+        },
+        {
+          "raw": {
+            "U32": 622681
+          },
+          "label": "Program Auto (S&Q)",
+          "short": "S&Q P"
+        },
+        {
+          "raw": {
+            "U32": 622682
+          },
+          "label": "Aperture Priority (S&Q)",
+          "short": "S&Q A"
+        },
+        {
+          "raw": {
+            "U32": 622683
+          },
+          "label": "Shutter Priority (S&Q)",
+          "short": "S&Q S"
+        },
+        {
+          "raw": {
+            "U32": 622684
+          },
+          "label": "Manual Exposure (S&Q)",
+          "short": "S&Q M"
+        },
+        {
+          "raw": {
+            "U32": 294912
+          },
+          "label": "Intelligent Auto",
+          "short": "Auto"
+        },
+        {
+          "raw": {
+            "U32": 294913
+          },
+          "label": "Superior Auto",
+          "short": "Auto+"
+        },
+        {
+          "raw": {
+            "U32": 426049
+          },
+          "label": "Sweep Panorama",
+          "short": "Panorama"
+        },
+        {
+          "raw": {
+            "U32": 7
+          },
+          "label": "Portrait",
+          "short": "Portrait"
+        },
+        {
+          "raw": {
+            "U32": 360465
+          },
+          "label": "Sports Action",
+          "short": "Sports"
+        },
+        {
+          "raw": {
+            "U32": 360469
+          },
+          "label": "Macro",
+          "short": "Macro"
+        },
+        {
+          "raw": {
+            "U32": 360468
+          },
+          "label": "Landscape",
+          "short": "Landscape"
+        },
+        {
+          "raw": {
+            "U32": 360466
+          },
+          "label": "Sunset",
+          "short": "Sunset"
+        },
+        {
+          "raw": {
+            "U32": 360467
+          },
+          "label": "Night Scene",
+          "short": "Night scene"
+        },
+        {
+          "raw": {
+            "U32": 360470
+          },
+          "label": "Hand-held Twilight",
+          "short": "Twilight"
+        },
+        {
+          "raw": {
+            "U32": 360471
+          },
+          "label": "Night Portrait",
+          "short": "Night portrait"
+        },
+        {
+          "raw": {
+            "U32": 360472
+          },
+          "label": "Anti Motion Blur",
+          "short": "Anti blur"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 20496,
+      "label": "0.0",
+      "short": "0.0",
+      "raw": {
+        "I16": 0
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "I16": 5000
+          },
+          "label": "+5.0",
+          "short": "+5.0"
+        },
+        {
+          "raw": {
+            "I16": 4700
+          },
+          "label": "+4.7",
+          "short": "+4.7"
+        },
+        {
+          "raw": {
+            "I16": 4300
+          },
+          "label": "+4.3",
+          "short": "+4.3"
+        },
+        {
+          "raw": {
+            "I16": 4000
+          },
+          "label": "+4.0",
+          "short": "+4.0"
+        },
+        {
+          "raw": {
+            "I16": 3700
+          },
+          "label": "+3.7",
+          "short": "+3.7"
+        },
+        {
+          "raw": {
+            "I16": 3300
+          },
+          "label": "+3.3",
+          "short": "+3.3"
+        },
+        {
+          "raw": {
+            "I16": 3000
+          },
+          "label": "+3.0",
+          "short": "+3.0"
+        },
+        {
+          "raw": {
+            "I16": 2700
+          },
+          "label": "+2.7",
+          "short": "+2.7"
+        },
+        {
+          "raw": {
+            "I16": 2300
+          },
+          "label": "+2.3",
+          "short": "+2.3"
+        },
+        {
+          "raw": {
+            "I16": 2000
+          },
+          "label": "+2.0",
+          "short": "+2.0"
+        },
+        {
+          "raw": {
+            "I16": 1700
+          },
+          "label": "+1.7",
+          "short": "+1.7"
+        },
+        {
+          "raw": {
+            "I16": 1300
+          },
+          "label": "+1.3",
+          "short": "+1.3"
+        },
+        {
+          "raw": {
+            "I16": 1000
+          },
+          "label": "+1.0",
+          "short": "+1.0"
+        },
+        {
+          "raw": {
+            "I16": 700
+          },
+          "label": "+0.7",
+          "short": "+0.7"
+        },
+        {
+          "raw": {
+            "I16": 300
+          },
+          "label": "+0.3",
+          "short": "+0.3"
+        },
+        {
+          "raw": {
+            "I16": 0
+          },
+          "label": "0.0",
+          "short": "0.0"
+        },
+        {
+          "raw": {
+            "I16": -300
+          },
+          "label": "-0.3",
+          "short": "-0.3"
+        },
+        {
+          "raw": {
+            "I16": -700
+          },
+          "label": "-0.7",
+          "short": "-0.7"
+        },
+        {
+          "raw": {
+            "I16": -1000
+          },
+          "label": "-1.0",
+          "short": "-1.0"
+        },
+        {
+          "raw": {
+            "I16": -1300
+          },
+          "label": "-1.3",
+          "short": "-1.3"
+        },
+        {
+          "raw": {
+            "I16": -1700
+          },
+          "label": "-1.7",
+          "short": "-1.7"
+        },
+        {
+          "raw": {
+            "I16": -2000
+          },
+          "label": "-2.0",
+          "short": "-2.0"
+        },
+        {
+          "raw": {
+            "I16": -2300
+          },
+          "label": "-2.3",
+          "short": "-2.3"
+        },
+        {
+          "raw": {
+            "I16": -2700
+          },
+          "label": "-2.7",
+          "short": "-2.7"
+        },
+        {
+          "raw": {
+            "I16": -3000
+          },
+          "label": "-3.0",
+          "short": "-3.0"
+        },
+        {
+          "raw": {
+            "I16": -3300
+          },
+          "label": "-3.3",
+          "short": "-3.3"
+        },
+        {
+          "raw": {
+            "I16": -3700
+          },
+          "label": "-3.7",
+          "short": "-3.7"
+        },
+        {
+          "raw": {
+            "I16": -4000
+          },
+          "label": "-4.0",
+          "short": "-4.0"
+        },
+        {
+          "raw": {
+            "I16": -4300
+          },
+          "label": "-4.3",
+          "short": "-4.3"
+        },
+        {
+          "raw": {
+            "I16": -4700
+          },
+          "label": "-4.7",
+          "short": "-4.7"
+        },
+        {
+          "raw": {
+            "I16": -5000
+          },
+          "label": "-5.0",
+          "short": "-5.0"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 20499,
+      "label": "Single",
+      "short": "Single",
+      "raw": {
+        "U32": 1
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U32": 1
+          },
+          "label": "Single",
+          "short": "Single"
+        },
+        {
+          "raw": {
+            "U32": 98322
+          },
+          "label": "Continuous Lo",
+          "short": "Cont. Lo"
+        },
+        {
+          "raw": {
+            "U32": 98325
+          },
+          "label": "Continuous Mid",
+          "short": "Cont. Mid"
+        },
+        {
+          "raw": {
+            "U32": 65538
+          },
+          "label": "Continuous Hi",
+          "short": "Cont. Hi"
+        },
+        {
+          "raw": {
+            "U32": 98320
+          },
+          "label": "Continuous Hi+",
+          "short": "Cont. Hi+"
+        },
+        {
+          "raw": {
+            "U32": 229380
+          },
+          "label": "Self-timer 10 s",
+          "short": "Timer 10 s"
+        },
+        {
+          "raw": {
+            "U32": 229379
+          },
+          "label": "Self-timer 5 s",
+          "short": "Timer 5 s"
+        },
+        {
+          "raw": {
+            "U32": 229381
+          },
+          "label": "Self-timer 2 s",
+          "short": "Timer 2 s"
+        },
+        {
+          "raw": {
+            "U32": 557064
+          },
+          "label": "Self-timer 10 s, 3 shots",
+          "short": "Timer 10 s ×3"
+        },
+        {
+          "raw": {
+            "U32": 557065
+          },
+          "label": "Self-timer 10 s, 5 shots",
+          "short": "Timer 10 s ×5"
+        },
+        {
+          "raw": {
+            "U32": 557068
+          },
+          "label": "Self-timer 5 s, 3 shots",
+          "short": "Timer 5 s ×3"
+        },
+        {
+          "raw": {
+            "U32": 557069
+          },
+          "label": "Self-timer 5 s, 5 shots",
+          "short": "Timer 5 s ×5"
+        },
+        {
+          "raw": {
+            "U32": 557070
+          },
+          "label": "Self-timer 2 s, 3 shots",
+          "short": "Timer 2 s ×3"
+        },
+        {
+          "raw": {
+            "U32": 557071
+          },
+          "label": "Self-timer 2 s, 5 shots",
+          "short": "Timer 2 s ×5"
+        },
+        {
+          "raw": {
+            "U32": 295735
+          },
+          "label": "Bracket 0.3 EV, 3 shots, continuous",
+          "short": "BRK C 0.3 ×3"
+        },
+        {
+          "raw": {
+            "U32": 296247
+          },
+          "label": "Bracket 0.3 EV, 5 shots, continuous",
+          "short": "BRK C 0.3 ×5"
+        },
+        {
+          "raw": {
+            "U32": 295767
+          },
+          "label": "Bracket 0.5 EV, 3 shots, continuous",
+          "short": "BRK C 0.5 ×3"
+        },
+        {
+          "raw": {
+            "U32": 296279
+          },
+          "label": "Bracket 0.5 EV, 5 shots, continuous",
+          "short": "BRK C 0.5 ×5"
+        },
+        {
+          "raw": {
+            "U32": 295799
+          },
+          "label": "Bracket 0.7 EV, 3 shots, continuous",
+          "short": "BRK C 0.7 ×3"
+        },
+        {
+          "raw": {
+            "U32": 296311
+          },
+          "label": "Bracket 0.7 EV, 5 shots, continuous",
+          "short": "BRK C 0.7 ×5"
+        },
+        {
+          "raw": {
+            "U32": 295697
+          },
+          "label": "Bracket 1.0 EV, 3 shots, continuous",
+          "short": "BRK C 1.0 ×3"
+        },
+        {
+          "raw": {
+            "U32": 295713
+          },
+          "label": "Bracket 2.0 EV, 3 shots, continuous",
+          "short": "BRK C 2.0 ×3"
+        },
+        {
+          "raw": {
+            "U32": 295729
+          },
+          "label": "Bracket 3.0 EV, 3 shots, continuous",
+          "short": "BRK C 3.0 ×3"
+        },
+        {
+          "raw": {
+            "U32": 361270
+          },
+          "label": "Bracket 0.3 EV, 3 shots, single",
+          "short": "BRK S 0.3 ×3"
+        },
+        {
+          "raw": {
+            "U32": 361782
+          },
+          "label": "Bracket 0.3 EV, 5 shots, single",
+          "short": "BRK S 0.3 ×5"
+        },
+        {
+          "raw": {
+            "U32": 361302
+          },
+          "label": "Bracket 0.5 EV, 3 shots, single",
+          "short": "BRK S 0.5 ×3"
+        },
+        {
+          "raw": {
+            "U32": 361814
+          },
+          "label": "Bracket 0.5 EV, 5 shots, single",
+          "short": "BRK S 0.5 ×5"
+        },
+        {
+          "raw": {
+            "U32": 361334
+          },
+          "label": "Bracket 0.7 EV, 3 shots, single",
+          "short": "BRK S 0.7 ×3"
+        },
+        {
+          "raw": {
+            "U32": 361846
+          },
+          "label": "Bracket 0.7 EV, 5 shots, single",
+          "short": "BRK S 0.7 ×5"
+        },
+        {
+          "raw": {
+            "U32": 361232
+          },
+          "label": "Bracket 1.0 EV, 3 shots, single",
+          "short": "BRK S 1.0 ×3"
+        },
+        {
+          "raw": {
+            "U32": 361248
+          },
+          "label": "Bracket 2.0 EV, 3 shots, single",
+          "short": "BRK S 2.0 ×3"
+        },
+        {
+          "raw": {
+            "U32": 361264
+          },
+          "label": "Bracket 3.0 EV, 3 shots, single",
+          "short": "BRK S 3.0 ×3"
+        },
+        {
+          "raw": {
+            "U32": 426024
+          },
+          "label": "White balance bracket Hi",
+          "short": "WB BRK Hi"
+        },
+        {
+          "raw": {
+            "U32": 426008
+          },
+          "label": "White balance bracket Lo",
+          "short": "WB BRK Lo"
+        },
+        {
+          "raw": {
+            "U32": 491561
+          },
+          "label": "DRO bracket Hi",
+          "short": "DRO BRK Hi"
+        },
+        {
+          "raw": {
+            "U32": 491545
+          },
+          "label": "DRO bracket Lo",
+          "short": "DRO BRK Lo"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53760,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "I16": 0
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "I16": 3000
+          },
+          "label": "3000",
+          "short": "3000"
+        },
+        {
+          "raw": {
+            "I16": 2700
+          },
+          "label": "2700",
+          "short": "2700"
+        },
+        {
+          "raw": {
+            "I16": 2300
+          },
+          "label": "2300",
+          "short": "2300"
+        },
+        {
+          "raw": {
+            "I16": 2000
+          },
+          "label": "2000",
+          "short": "2000"
+        },
+        {
+          "raw": {
+            "I16": 1700
+          },
+          "label": "1700",
+          "short": "1700"
+        },
+        {
+          "raw": {
+            "I16": 1300
+          },
+          "label": "1300",
+          "short": "1300"
+        },
+        {
+          "raw": {
+            "I16": 1000
+          },
+          "label": "1000",
+          "short": "1000"
+        },
+        {
+          "raw": {
+            "I16": 700
+          },
+          "label": "700",
+          "short": "700"
+        },
+        {
+          "raw": {
+            "I16": 300
+          },
+          "label": "300",
+          "short": "300"
+        },
+        {
+          "raw": {
+            "I16": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "I16": -300
+          },
+          "label": "-300",
+          "short": "-300"
+        },
+        {
+          "raw": {
+            "I16": -700
+          },
+          "label": "-700",
+          "short": "-700"
+        },
+        {
+          "raw": {
+            "I16": -1000
+          },
+          "label": "-1000",
+          "short": "-1000"
+        },
+        {
+          "raw": {
+            "I16": -1300
+          },
+          "label": "-1300",
+          "short": "-1300"
+        },
+        {
+          "raw": {
+            "I16": -1700
+          },
+          "label": "-1700",
+          "short": "-1700"
+        },
+        {
+          "raw": {
+            "I16": -2000
+          },
+          "label": "-2000",
+          "short": "-2000"
+        },
+        {
+          "raw": {
+            "I16": -2300
+          },
+          "label": "-2300",
+          "short": "-2300"
+        },
+        {
+          "raw": {
+            "I16": -2700
+          },
+          "label": "-2700",
+          "short": "-2700"
+        },
+        {
+          "raw": {
+            "I16": -3000
+          },
+          "label": "-3000",
+          "short": "-3000"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53761,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        },
+        {
+          "raw": {
+            "U8": 31
+          },
+          "label": "31",
+          "short": "31"
+        },
+        {
+          "raw": {
+            "U8": 17
+          },
+          "label": "17",
+          "short": "17"
+        },
+        {
+          "raw": {
+            "U8": 18
+          },
+          "label": "18",
+          "short": "18"
+        },
+        {
+          "raw": {
+            "U8": 19
+          },
+          "label": "19",
+          "short": "19"
+        },
+        {
+          "raw": {
+            "U8": 20
+          },
+          "label": "20",
+          "short": "20"
+        },
+        {
+          "raw": {
+            "U8": 21
+          },
+          "label": "21",
+          "short": "21"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53763,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        },
+        {
+          "raw": {
+            "U8": 2
+          },
+          "label": "2",
+          "short": "2"
+        },
+        {
+          "raw": {
+            "U8": 3
+          },
+          "label": "3",
+          "short": "3"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53773,
+      "label": "1/13",
+      "short": "1/13",
+      "raw": {
+        "U32": 65549
+      },
+      "writable": true,
+      "enabled": "DisplayOnly",
+      "choices": [
+        {
+          "raw": {
+            "U32": 19660810
+          },
+          "label": "30.0\"",
+          "short": "30.0\""
+        },
+        {
+          "raw": {
+            "U32": 16384010
+          },
+          "label": "25.0\"",
+          "short": "25.0\""
+        },
+        {
+          "raw": {
+            "U32": 13107210
+          },
+          "label": "20.0\"",
+          "short": "20.0\""
+        },
+        {
+          "raw": {
+            "U32": 9830410
+          },
+          "label": "15.0\"",
+          "short": "15.0\""
+        },
+        {
+          "raw": {
+            "U32": 8519690
+          },
+          "label": "13.0\"",
+          "short": "13.0\""
+        },
+        {
+          "raw": {
+            "U32": 6553610
+          },
+          "label": "10.0\"",
+          "short": "10.0\""
+        },
+        {
+          "raw": {
+            "U32": 5242890
+          },
+          "label": "8.0\"",
+          "short": "8.0\""
+        },
+        {
+          "raw": {
+            "U32": 3932170
+          },
+          "label": "6.0\"",
+          "short": "6.0\""
+        },
+        {
+          "raw": {
+            "U32": 3276810
+          },
+          "label": "5.0\"",
+          "short": "5.0\""
+        },
+        {
+          "raw": {
+            "U32": 2621450
+          },
+          "label": "4.0\"",
+          "short": "4.0\""
+        },
+        {
+          "raw": {
+            "U32": 2097162
+          },
+          "label": "3.2\"",
+          "short": "3.2\""
+        },
+        {
+          "raw": {
+            "U32": 1638410
+          },
+          "label": "2.5\"",
+          "short": "2.5\""
+        },
+        {
+          "raw": {
+            "U32": 1310730
+          },
+          "label": "2.0\"",
+          "short": "2.0\""
+        },
+        {
+          "raw": {
+            "U32": 1048586
+          },
+          "label": "1.6\"",
+          "short": "1.6\""
+        },
+        {
+          "raw": {
+            "U32": 851978
+          },
+          "label": "1.3\"",
+          "short": "1.3\""
+        },
+        {
+          "raw": {
+            "U32": 655370
+          },
+          "label": "1.0\"",
+          "short": "1.0\""
+        },
+        {
+          "raw": {
+            "U32": 524298
+          },
+          "label": "0.8\"",
+          "short": "0.8\""
+        },
+        {
+          "raw": {
+            "U32": 393226
+          },
+          "label": "0.6\"",
+          "short": "0.6\""
+        },
+        {
+          "raw": {
+            "U32": 327690
+          },
+          "label": "0.5\"",
+          "short": "0.5\""
+        },
+        {
+          "raw": {
+            "U32": 262154
+          },
+          "label": "0.4\"",
+          "short": "0.4\""
+        },
+        {
+          "raw": {
+            "U32": 65539
+          },
+          "label": "1/3",
+          "short": "1/3"
+        },
+        {
+          "raw": {
+            "U32": 65540
+          },
+          "label": "1/4",
+          "short": "1/4"
+        },
+        {
+          "raw": {
+            "U32": 65541
+          },
+          "label": "1/5",
+          "short": "1/5"
+        },
+        {
+          "raw": {
+            "U32": 65542
+          },
+          "label": "1/6",
+          "short": "1/6"
+        },
+        {
+          "raw": {
+            "U32": 65544
+          },
+          "label": "1/8",
+          "short": "1/8"
+        },
+        {
+          "raw": {
+            "U32": 65546
+          },
+          "label": "1/10",
+          "short": "1/10"
+        },
+        {
+          "raw": {
+            "U32": 65549
+          },
+          "label": "1/13",
+          "short": "1/13"
+        },
+        {
+          "raw": {
+            "U32": 65551
+          },
+          "label": "1/15",
+          "short": "1/15"
+        },
+        {
+          "raw": {
+            "U32": 65556
+          },
+          "label": "1/20",
+          "short": "1/20"
+        },
+        {
+          "raw": {
+            "U32": 65561
+          },
+          "label": "1/25",
+          "short": "1/25"
+        },
+        {
+          "raw": {
+            "U32": 65566
+          },
+          "label": "1/30",
+          "short": "1/30"
+        },
+        {
+          "raw": {
+            "U32": 65576
+          },
+          "label": "1/40",
+          "short": "1/40"
+        },
+        {
+          "raw": {
+            "U32": 65586
+          },
+          "label": "1/50",
+          "short": "1/50"
+        },
+        {
+          "raw": {
+            "U32": 65596
+          },
+          "label": "1/60",
+          "short": "1/60"
+        },
+        {
+          "raw": {
+            "U32": 65616
+          },
+          "label": "1/80",
+          "short": "1/80"
+        },
+        {
+          "raw": {
+            "U32": 65636
+          },
+          "label": "1/100",
+          "short": "1/100"
+        },
+        {
+          "raw": {
+            "U32": 65661
+          },
+          "label": "1/125",
+          "short": "1/125"
+        },
+        {
+          "raw": {
+            "U32": 65696
+          },
+          "label": "1/160",
+          "short": "1/160"
+        },
+        {
+          "raw": {
+            "U32": 65736
+          },
+          "label": "1/200",
+          "short": "1/200"
+        },
+        {
+          "raw": {
+            "U32": 65786
+          },
+          "label": "1/250",
+          "short": "1/250"
+        },
+        {
+          "raw": {
+            "U32": 65856
+          },
+          "label": "1/320",
+          "short": "1/320"
+        },
+        {
+          "raw": {
+            "U32": 65936
+          },
+          "label": "1/400",
+          "short": "1/400"
+        },
+        {
+          "raw": {
+            "U32": 66036
+          },
+          "label": "1/500",
+          "short": "1/500"
+        },
+        {
+          "raw": {
+            "U32": 66176
+          },
+          "label": "1/640",
+          "short": "1/640"
+        },
+        {
+          "raw": {
+            "U32": 66336
+          },
+          "label": "1/800",
+          "short": "1/800"
+        },
+        {
+          "raw": {
+            "U32": 66536
+          },
+          "label": "1/1000",
+          "short": "1/1000"
+        },
+        {
+          "raw": {
+            "U32": 66786
+          },
+          "label": "1/1250",
+          "short": "1/1250"
+        },
+        {
+          "raw": {
+            "U32": 67136
+          },
+          "label": "1/1600",
+          "short": "1/1600"
+        },
+        {
+          "raw": {
+            "U32": 67536
+          },
+          "label": "1/2000",
+          "short": "1/2000"
+        },
+        {
+          "raw": {
+            "U32": 68036
+          },
+          "label": "1/2500",
+          "short": "1/2500"
+        },
+        {
+          "raw": {
+            "U32": 68736
+          },
+          "label": "1/3200",
+          "short": "1/3200"
+        },
+        {
+          "raw": {
+            "U32": 69536
+          },
+          "label": "1/4000",
+          "short": "1/4000"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53774,
+      "label": "6",
+      "short": "6",
+      "raw": {
+        "U8": 6
+      },
+      "writable": false,
+      "enabled": "On",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53775,
+      "label": "5500",
+      "short": "5500",
+      "raw": {
+        "U16": 5500
+      },
+      "writable": true,
+      "enabled": "Off",
+      "choices": [],
+      "range": {
+        "min": 2500,
+        "max": 9900,
+        "step": 100
+      }
+    },
+    {
+      "code": 53776,
+      "label": "192",
+      "short": "192",
+      "raw": {
+        "U8": 192
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [],
+      "range": {
+        "min": 164,
+        "max": 220,
+        "step": 1
+      }
+    },
+    {
+      "code": 53777,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        },
+        {
+          "raw": {
+            "U8": 3
+          },
+          "label": "3",
+          "short": "3"
+        },
+        {
+          "raw": {
+            "U8": 2
+          },
+          "label": "2",
+          "short": "2"
+        },
+        {
+          "raw": {
+            "U8": 4
+          },
+          "label": "4",
+          "short": "4"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53779,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": false,
+      "enabled": "On",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53780,
+      "label": "4294967295",
+      "short": "4294967295",
+      "raw": {
+        "U32": 4294967295
+      },
+      "writable": false,
+      "enabled": "On",
+      "choices": [],
+      "range": {
+        "min": 0,
+        "max": 4294967295,
+        "step": 1
+      }
+    },
+    {
+      "code": 53781,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U16": 0
+      },
+      "writable": false,
+      "enabled": "On",
+      "choices": [],
+      "range": {
+        "min": 0,
+        "max": 65535,
+        "step": 1
+      }
+    },
+    {
+      "code": 53783,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": false,
+      "enabled": "On",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53784,
+      "label": "68%",
+      "short": "68%",
+      "raw": {
+        "I8": 68
+      },
+      "writable": false,
+      "enabled": "On",
+      "choices": [],
+      "range": {
+        "min": -1,
+        "max": 100,
+        "step": 1
+      }
+    },
+    {
+      "code": 53787,
+      "label": "32768",
+      "short": "32768",
+      "raw": {
+        "U16": 32768
+      },
+      "writable": true,
+      "enabled": "DisplayOnly",
+      "choices": [
+        {
+          "raw": {
+            "U16": 32768
+          },
+          "label": "32768",
+          "short": "32768"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53788,
+      "label": "192",
+      "short": "192",
+      "raw": {
+        "U8": 192
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [],
+      "range": {
+        "min": 164,
+        "max": 220,
+        "step": 2
+      }
+    },
+    {
+      "code": 53789,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "DisplayOnly",
+      "choices": [],
+      "range": {
+        "min": 0,
+        "max": 2,
+        "step": 1
+      }
+    },
+    {
+      "code": 53790,
+      "label": "ISO Auto",
+      "short": "Auto",
+      "raw": {
+        "U32": 16777215
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U32": 16777215
+          },
+          "label": "ISO Auto",
+          "short": "Auto"
+        },
+        {
+          "raw": {
+            "U32": 268435506
+          },
+          "label": "ISO 50 NR",
+          "short": "50 NR"
+        },
+        {
+          "raw": {
+            "U32": 268435520
+          },
+          "label": "ISO 64 NR",
+          "short": "64 NR"
+        },
+        {
+          "raw": {
+            "U32": 268435536
+          },
+          "label": "ISO 80 NR",
+          "short": "80 NR"
+        },
+        {
+          "raw": {
+            "U32": 100
+          },
+          "label": "ISO 100",
+          "short": "100"
+        },
+        {
+          "raw": {
+            "U32": 125
+          },
+          "label": "ISO 125",
+          "short": "125"
+        },
+        {
+          "raw": {
+            "U32": 160
+          },
+          "label": "ISO 160",
+          "short": "160"
+        },
+        {
+          "raw": {
+            "U32": 200
+          },
+          "label": "ISO 200",
+          "short": "200"
+        },
+        {
+          "raw": {
+            "U32": 250
+          },
+          "label": "ISO 250",
+          "short": "250"
+        },
+        {
+          "raw": {
+            "U32": 320
+          },
+          "label": "ISO 320",
+          "short": "320"
+        },
+        {
+          "raw": {
+            "U32": 400
+          },
+          "label": "ISO 400",
+          "short": "400"
+        },
+        {
+          "raw": {
+            "U32": 500
+          },
+          "label": "ISO 500",
+          "short": "500"
+        },
+        {
+          "raw": {
+            "U32": 640
+          },
+          "label": "ISO 640",
+          "short": "640"
+        },
+        {
+          "raw": {
+            "U32": 800
+          },
+          "label": "ISO 800",
+          "short": "800"
+        },
+        {
+          "raw": {
+            "U32": 1000
+          },
+          "label": "ISO 1000",
+          "short": "1000"
+        },
+        {
+          "raw": {
+            "U32": 1250
+          },
+          "label": "ISO 1250",
+          "short": "1250"
+        },
+        {
+          "raw": {
+            "U32": 1600
+          },
+          "label": "ISO 1600",
+          "short": "1600"
+        },
+        {
+          "raw": {
+            "U32": 2000
+          },
+          "label": "ISO 2000",
+          "short": "2000"
+        },
+        {
+          "raw": {
+            "U32": 2500
+          },
+          "label": "ISO 2500",
+          "short": "2500"
+        },
+        {
+          "raw": {
+            "U32": 3200
+          },
+          "label": "ISO 3200",
+          "short": "3200"
+        },
+        {
+          "raw": {
+            "U32": 4000
+          },
+          "label": "ISO 4000",
+          "short": "4000"
+        },
+        {
+          "raw": {
+            "U32": 5000
+          },
+          "label": "ISO 5000",
+          "short": "5000"
+        },
+        {
+          "raw": {
+            "U32": 6400
+          },
+          "label": "ISO 6400",
+          "short": "6400"
+        },
+        {
+          "raw": {
+            "U32": 8000
+          },
+          "label": "ISO 8000",
+          "short": "8000"
+        },
+        {
+          "raw": {
+            "U32": 10000
+          },
+          "label": "ISO 10000",
+          "short": "10000"
+        },
+        {
+          "raw": {
+            "U32": 12800
+          },
+          "label": "ISO 12800",
+          "short": "12800"
+        },
+        {
+          "raw": {
+            "U32": 16000
+          },
+          "label": "ISO 16000",
+          "short": "16000"
+        },
+        {
+          "raw": {
+            "U32": 20000
+          },
+          "label": "ISO 20000",
+          "short": "20000"
+        },
+        {
+          "raw": {
+            "U32": 25600
+          },
+          "label": "ISO 25600",
+          "short": "25600"
+        },
+        {
+          "raw": {
+            "U32": 32000
+          },
+          "label": "ISO 32000",
+          "short": "32000"
+        },
+        {
+          "raw": {
+            "U32": 268475456
+          },
+          "label": "ISO 40000 NR",
+          "short": "40000 NR"
+        },
+        {
+          "raw": {
+            "U32": 268486656
+          },
+          "label": "ISO 51200 NR",
+          "short": "51200 NR"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53791,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": false,
+      "enabled": "On",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53793,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": false,
+      "enabled": "On",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53794,
+      "label": "16",
+      "short": "16",
+      "raw": {
+        "U16": 16
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U16": 1
+          },
+          "label": "1",
+          "short": "1"
+        },
+        {
+          "raw": {
+            "U16": 17
+          },
+          "label": "17",
+          "short": "17"
+        },
+        {
+          "raw": {
+            "U16": 16
+          },
+          "label": "16",
+          "short": "16"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53795,
+      "label": "",
+      "short": "",
+      "raw": {
+        "Str": ""
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53802,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53804,
+      "label": "Wide",
+      "short": "Wide",
+      "raw": {
+        "U16": 1
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U16": 1
+          },
+          "label": "Wide",
+          "short": "Wide"
+        },
+        {
+          "raw": {
+            "U16": 2
+          },
+          "label": "Zone",
+          "short": "Zone"
+        },
+        {
+          "raw": {
+            "U16": 259
+          },
+          "label": "Flexible Spot: L",
+          "short": "Spot L"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53809,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        },
+        {
+          "raw": {
+            "U8": 2
+          },
+          "label": "2",
+          "short": "2"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53813,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53814,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": false,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53821,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U16": 1
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53822,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": true,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53823,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        },
+        {
+          "raw": {
+            "U8": 2
+          },
+          "label": "2",
+          "short": "2"
+        },
+        {
+          "raw": {
+            "U8": 3
+          },
+          "label": "3",
+          "short": "3"
+        },
+        {
+          "raw": {
+            "U8": 4
+          },
+          "label": "4",
+          "short": "4"
+        },
+        {
+          "raw": {
+            "U8": 5
+          },
+          "label": "5",
+          "short": "5"
+        },
+        {
+          "raw": {
+            "U8": 6
+          },
+          "label": "6",
+          "short": "6"
+        },
+        {
+          "raw": {
+            "U8": 7
+          },
+          "label": "7",
+          "short": "7"
+        },
+        {
+          "raw": {
+            "U8": 8
+          },
+          "label": "8",
+          "short": "8"
+        },
+        {
+          "raw": {
+            "U8": 9
+          },
+          "label": "9",
+          "short": "9"
+        },
+        {
+          "raw": {
+            "U8": 10
+          },
+          "label": "10",
+          "short": "10"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53824,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        },
+        {
+          "raw": {
+            "U8": 2
+          },
+          "label": "2",
+          "short": "2"
+        },
+        {
+          "raw": {
+            "U8": 3
+          },
+          "label": "3",
+          "short": "3"
+        },
+        {
+          "raw": {
+            "U8": 4
+          },
+          "label": "4",
+          "short": "4"
+        },
+        {
+          "raw": {
+            "U8": 5
+          },
+          "label": "5",
+          "short": "5"
+        },
+        {
+          "raw": {
+            "U8": 6
+          },
+          "label": "6",
+          "short": "6"
+        },
+        {
+          "raw": {
+            "U8": 13
+          },
+          "label": "13",
+          "short": "13"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53825,
+      "label": "8",
+      "short": "8",
+      "raw": {
+        "U8": 8
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 8
+          },
+          "label": "8",
+          "short": "8"
+        },
+        {
+          "raw": {
+            "U8": 9
+          },
+          "label": "9",
+          "short": "9"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53826,
+      "label": "34",
+      "short": "34",
+      "raw": {
+        "U16": 34
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U16": 32
+          },
+          "label": "32",
+          "short": "32"
+        },
+        {
+          "raw": {
+            "U16": 35
+          },
+          "label": "35",
+          "short": "35"
+        },
+        {
+          "raw": {
+            "U16": 34
+          },
+          "label": "34",
+          "short": "34"
+        },
+        {
+          "raw": {
+            "U16": 37
+          },
+          "label": "37",
+          "short": "37"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53827,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U16": 1
+      },
+      "writable": true,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53828,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U16": 1
+      },
+      "writable": true,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53829,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": true,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53830,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": true,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53831,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        },
+        {
+          "raw": {
+            "U8": 2
+          },
+          "label": "2",
+          "short": "2"
+        },
+        {
+          "raw": {
+            "U8": 3
+          },
+          "label": "3",
+          "short": "3"
+        },
+        {
+          "raw": {
+            "U8": 17
+          },
+          "label": "17",
+          "short": "17"
+        },
+        {
+          "raw": {
+            "U8": 18
+          },
+          "label": "18",
+          "short": "18"
+        },
+        {
+          "raw": {
+            "U8": 19
+          },
+          "label": "19",
+          "short": "19"
+        },
+        {
+          "raw": {
+            "U8": 20
+          },
+          "label": "20",
+          "short": "20"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53832,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": false,
+      "enabled": "DisplayOnly",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53833,
+      "label": "858",
+      "short": "858",
+      "raw": {
+        "U32": 858
+      },
+      "writable": false,
+      "enabled": "DisplayOnly",
+      "choices": [],
+      "range": {
+        "min": 0,
+        "max": 4294967295,
+        "step": 1
+      }
+    },
+    {
+      "code": 53834,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U32": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [],
+      "range": {
+        "min": 0,
+        "max": 4294967295,
+        "step": 1
+      }
+    },
+    {
+      "code": 53836,
+      "label": "100",
+      "short": "100",
+      "raw": {
+        "U8": 100
+      },
+      "writable": false,
+      "enabled": "DisplayOnly",
+      "choices": [],
+      "range": {
+        "min": 0,
+        "max": 0,
+        "step": 1
+      }
+    },
+    {
+      "code": 53838,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U16": 1
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53839,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        },
+        {
+          "raw": {
+            "U8": 2
+          },
+          "label": "2",
+          "short": "2"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53840,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "On",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53841,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "DisplayOnly",
+      "choices": [],
+      "range": {
+        "min": 0,
+        "max": 2,
+        "step": 1
+      }
+    },
+    {
+      "code": 53842,
+      "label": "Extra fine",
+      "short": "Extra fine",
+      "raw": {
+        "U8": 1
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "Extra fine",
+          "short": "Extra fine"
+        },
+        {
+          "raw": {
+            "U8": 2
+          },
+          "label": "Fine",
+          "short": "Fine"
+        },
+        {
+          "raw": {
+            "U8": 3
+          },
+          "label": "Standard",
+          "short": "Standard"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53843,
+      "label": "RAW",
+      "short": "RAW",
+      "raw": {
+        "U8": 1
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "RAW",
+          "short": "RAW"
+        },
+        {
+          "raw": {
+            "U8": 2
+          },
+          "label": "RAW+JPEG",
+          "short": "RAW+JPEG"
+        },
+        {
+          "raw": {
+            "U8": 3
+          },
+          "label": "JPEG",
+          "short": "JPEG"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53844,
+      "label": "20971760",
+      "short": "20971760",
+      "raw": {
+        "U64": 20971760
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U64": 4294967295
+          },
+          "label": "4294967295",
+          "short": "4294967295"
+        },
+        {
+          "raw": {
+            "U64": 47244640255
+          },
+          "label": "47244640255",
+          "short": "47244640255"
+        },
+        {
+          "raw": {
+            "U64": 257698037759
+          },
+          "label": "257698037759",
+          "short": "257698037759"
+        },
+        {
+          "raw": {
+            "U64": 506806140927
+          },
+          "label": "506806140927",
+          "short": "506806140927"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53849,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": true,
+      "enabled": "DisplayOnly",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53851,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": false,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53852,
+      "label": "1000",
+      "short": "1000",
+      "raw": {
+        "U32": 1000
+      },
+      "writable": true,
+      "enabled": "Off",
+      "choices": [],
+      "range": {
+        "min": 1000,
+        "max": 1000,
+        "step": 100
+      }
+    },
+    {
+      "code": 53853,
+      "label": "16777216",
+      "short": "16777216",
+      "raw": {
+        "U32": 16777216
+      },
+      "writable": false,
+      "enabled": "On",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53855,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": true,
+      "enabled": "DisplayOnly",
+      "choices": [
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        },
+        {
+          "raw": {
+            "U8": 3
+          },
+          "label": "3",
+          "short": "3"
+        },
+        {
+          "raw": {
+            "U8": 4
+          },
+          "label": "4",
+          "short": "4"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53856,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53857,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U32": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [],
+      "range": {
+        "min": 0,
+        "max": 4294967295,
+        "step": 1
+      }
+    },
+    {
+      "code": 53858,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        },
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53859,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": true,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53860,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "On",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53863,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U32": 0
+      },
+      "writable": false,
+      "enabled": "On",
+      "choices": [],
+      "range": {
+        "min": 0,
+        "max": 41943520,
+        "step": 1
+      }
+    },
+    {
+      "code": 53864,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": true,
+      "enabled": "DisplayOnly",
+      "choices": [
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        },
+        {
+          "raw": {
+            "U8": 2
+          },
+          "label": "2",
+          "short": "2"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53865,
+      "label": "RAW only",
+      "short": "RAW only",
+      "raw": {
+        "U8": 3
+      },
+      "writable": true,
+      "enabled": "DisplayOnly",
+      "choices": [
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "RAW and JPEG",
+          "short": "RAW and JPEG"
+        },
+        {
+          "raw": {
+            "U8": 2
+          },
+          "label": "JPEG only",
+          "short": "JPEG only"
+        },
+        {
+          "raw": {
+            "U8": 3
+          },
+          "label": "RAW only",
+          "short": "RAW only"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53866,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        },
+        {
+          "raw": {
+            "U8": 2
+          },
+          "label": "2",
+          "short": "2"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53867,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U32": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [],
+      "range": {
+        "min": 0,
+        "max": 0,
+        "step": 1
+      }
+    },
+    {
+      "code": 53868,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U32": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [],
+      "range": {
+        "min": 0,
+        "max": 0,
+        "step": 1
+      }
+    },
+    {
+      "code": 53869,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53870,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53871,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53872,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "On",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53873,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53874,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53875,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53876,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53877,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53878,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53880,
+      "label": "http://192.168.122.1:60152/liveviewstream?%211234%21%2a%3a%2a%3aimage%2fjpeg%3a%2a%21%21%21%21%21",
+      "short": "http://192.168.122.1:60152/liveviewstream?%211234%21%2a%3a%2a%3aimage%2fjpeg%3a%2a%21%21%21%21%21",
+      "raw": {
+        "Str": "http://192.168.122.1:60152/liveviewstream?%211234%21%2a%3a%2a%3aimage%2fjpeg%3a%2a%21%21%21%21%21"
+      },
+      "writable": false,
+      "enabled": "DisplayOnly",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53884,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": true,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53885,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53886,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53887,
+      "label": "1",
+      "short": "1",
+      "raw": {
+        "U8": 1
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53888,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U16": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [],
+      "range": null
+    },
+    {
+      "code": 53891,
+      "label": "3",
+      "short": "3",
+      "raw": {
+        "U8": 3
+      },
+      "writable": true,
+      "enabled": "On",
+      "choices": [
+        {
+          "raw": {
+            "U8": 3
+          },
+          "label": "3",
+          "short": "3"
+        },
+        {
+          "raw": {
+            "U8": 4
+          },
+          "label": "4",
+          "short": "4"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53892,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53893,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53909,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        }
+      ],
+      "range": null
+    },
+    {
+      "code": 53910,
+      "label": "0",
+      "short": "0",
+      "raw": {
+        "U8": 0
+      },
+      "writable": false,
+      "enabled": "Off",
+      "choices": [
+        {
+          "raw": {
+            "U8": 0
+          },
+          "label": "0",
+          "short": "0"
+        },
+        {
+          "raw": {
+            "U8": 1
+          },
+          "label": "1",
+          "short": "1"
+        }
+      ],
+      "range": null
+    }
+  ],
+  "live_view_fps": 15.541294,
+  "last_shot_at": null,
+  "shots_to_computer": false,
+  "controls": [
+    53953,
+    53954,
+    53955,
+    53959,
+    53960,
+    53961,
+    53962,
+    53965,
+    53966,
+    53967,
+    53968,
+    53969,
+    53970,
+    53973,
+    53974,
+    53975,
+    53976,
+    53977,
+    53978,
+    53979,
+    53980,
+    53981,
+    53983,
+    53984,
+    53985,
+    53988,
+    53989,
+    53990,
+    53992
+  ]
+}

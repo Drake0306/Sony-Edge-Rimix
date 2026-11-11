@@ -357,6 +357,95 @@ describe('dock', () => {
     expect(root.querySelector('.pop .r[data-code="53804"]')).toBeNull();
   });
 
+  // Roy, 2026-11-11: zoom from the app, by the lens where it can and by
+  // the camera's own crop where the file format allows it. The codes and
+  // values are Sony's (Camera Control PTP 3 Reference).
+  describe('zoom', () => {
+    const withZoom = (enabled: number, settingEnabled: 'On' | 'DisplayOnly', format: number) => {
+      const camera = cameraState as unknown as CameraState;
+      const u8 = (v: number) => ({ U8: v });
+      const setting = (raw: number, label: string, short: string) => ({ raw: u8(raw), label, short });
+      return {
+        ...camera,
+        properties: [
+          ...camera.properties.map((p) => (p.code === 0xd253 ? { ...p, raw: u8(format), label: format === 3 ? 'JPEG' : 'RAW', short: format === 3 ? 'JPEG' : 'RAW' } : p)),
+          { code: 0xd25b, label: String(enabled), short: String(enabled), raw: u8(enabled), writable: false, enabled: 'On' as const, choices: [] },
+          { code: 0xd25c, label: '\u00d71.2', short: '\u00d71.2', raw: { U32: 1200 }, writable: true, enabled: 'On' as const, choices: [] },
+          {
+            code: 0xd25f, label: 'Optical zoom only', short: 'Optical', raw: u8(1), writable: true, enabled: settingEnabled,
+            choices: [setting(1, 'Optical zoom only', 'Optical'), setting(3, 'Clear Image Zoom', 'Clear Image'), setting(4, 'Digital zoom', 'Digital')],
+          },
+        ],
+      };
+    };
+    const open = (camera: CameraState) => {
+      const { root, store } = setup();
+      store.set({ camera });
+      root.querySelectorAll<HTMLButtonElement>('.chip')[6].click();
+      return root.querySelector<HTMLElement>('.pop')!;
+    };
+
+    test('a lens the camera can drive zooms while a button is held, and stops when it is let go', () => {
+      const pop = open(withZoom(1, 'On', 3));
+      const row = pop.querySelector<HTMLElement>('.r[data-code="53851"]')!;
+      expect(row.querySelector('.k')!.textContent).toBe('Zoom');
+      expect(row.querySelector('.v')!.textContent).toBe('\u00d71.2');
+      const [wide, tele] = [...row.querySelectorAll<HTMLButtonElement>('.zoombtn')];
+      expect([wide.getAttribute('aria-label'), tele.getAttribute('aria-label')]).toEqual(['Zoom out', 'Zoom in']);
+      tele.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      expect(invoke).toHaveBeenLastCalledWith('zoom', { cameraId: null, direction: 1 });
+      tele.dispatchEvent(new Event('pointerup', { bubbles: true }));
+      expect(invoke).toHaveBeenLastCalledWith('zoom', { cameraId: null, direction: 0 });
+      wide.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      expect(invoke).toHaveBeenLastCalledWith('zoom', { cameraId: null, direction: -1 });
+      // Sliding off the button stops it too.
+      wide.dispatchEvent(new Event('pointerleave', { bubbles: true }));
+      expect(invoke).toHaveBeenLastCalledWith('zoom', { cameraId: null, direction: 0 });
+      // Letting go again sends nothing more.
+      const calls = vi.mocked(invoke).mock.calls.length;
+      wide.dispatchEvent(new Event('pointerup', { bubbles: true }));
+      expect(vi.mocked(invoke).mock.calls.length).toBe(calls);
+    });
+
+    test('a lens zoomed by hand has its buttons off and says so', () => {
+      const pop = open(withZoom(0, 'On', 3));
+      const buttons = [...pop.querySelectorAll<HTMLButtonElement>('.r[data-code="53851"] .zoombtn')];
+      expect(buttons.every((b) => b.disabled)).toBe(true);
+      expect(buttons[0].title).toContain('zoom ring');
+    });
+
+    test('Zoom setting lists what the camera offers; in RAW it says why not and offers JPEG', () => {
+      const pop = open(withZoom(1, 'DisplayOnly', 1));
+      const row = pop.querySelector<HTMLElement>('.r[data-code="53855"]')!;
+      expect(row.querySelector('.k')!.textContent).toBe('Zoom setting');
+      row.querySelector<HTMLButtonElement>('.pickbtn')!.click();
+      const panel = pop.querySelector<HTMLElement>('#panel-53855')!;
+      expect([...panel.querySelectorAll('.mn')].map((n) => n.textContent)).toEqual(['Optical zoom only', 'Clear Image Zoom', 'Digital zoom']);
+      expect([...panel.querySelectorAll<HTMLButtonElement>('[role="radio"]')].every((b) => b.disabled)).toBe(true);
+      const why = panel.querySelector<HTMLElement>('.blocked')!;
+      expect(why.hidden).toBe(false);
+      expect(why.querySelector('span')!.textContent).toContain('JPEG');
+      why.querySelector<HTMLButtonElement>('button')!.click();
+      expect(invoke).toHaveBeenLastCalledWith('set_property', { code: 0xd253, raw: { U8: 3 } });
+    });
+
+    test('in JPEG the zoom setting is chosen like any other', () => {
+      const pop = open(withZoom(1, 'On', 3));
+      pop.querySelector<HTMLButtonElement>('.r[data-code="53855"] .pickbtn')!.click();
+      const panel = pop.querySelector<HTMLElement>('#panel-53855')!;
+      expect(panel.querySelector<HTMLElement>('.blocked')!.hidden).toBe(true);
+      panel.querySelectorAll<HTMLButtonElement>('[role="radio"]')[1].click();
+      expect(invoke).toHaveBeenLastCalledWith('set_property', { code: 0xd25f, raw: { U8: 3 } });
+    });
+
+    test('a camera that reports no zoom has no Lens section', () => {
+      const { root } = setup();
+      root.querySelectorAll<HTMLButtonElement>('.chip')[6].click();
+      const heads = [...root.querySelectorAll('.pop .sect .h span')].map((h) => h.textContent);
+      expect(heads).toEqual(['Exposure', 'Image', 'Focus and drive']);
+    });
+  });
+
   // Roy, 2026-11-11: "add an auto mode" to shutter speed, aperture and ISO.
   // A camera's automatic shutter speed is its aperture priority mode, so
   // the button changes the mode; ISO has an Auto value of its own.

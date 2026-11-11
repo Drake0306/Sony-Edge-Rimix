@@ -1203,6 +1203,58 @@ async fn a_tap_the_camera_cannot_follow_says_so_and_does_not_focus_elsewhere() {
     stop(sim, camera).await;
 }
 
+/// Sony's Zoom Operation: 1 towards tele, -1 towards wide, 0 to stop, and
+/// only while the camera says the lens can be zoomed from here.
+#[tokio::test]
+async fn zooming_holds_towards_tele_or_wide_and_then_stops() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = SimConfig {
+        zoom: Some(true),
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(config, tmp.path()).await;
+    camera.zoom(1).await.unwrap();
+    camera.zoom(0).await.unwrap();
+    camera.zoom(-1).await.unwrap();
+    camera.zoom(0).await.unwrap();
+    let log = sim.log.lock().unwrap().join("\n");
+    // One signed byte each: 1, 0, 255 (-1), 0, in that order.
+    let sent: Vec<&str> = log
+        .lines()
+        .filter_map(|l| l.split("D2DD=").nth(1))
+        .collect();
+    assert_eq!(sent, ["1", "0", "255", "0"], "{log}");
+    drop(log);
+    // The state names the zoom setting and the scale.
+    let state = camera.state();
+    let setting = state.properties.iter().find(|p| p.code == 0xD25F).unwrap();
+    assert_eq!(setting.label, "Optical zoom only");
+    let labels: Vec<&str> = setting.choices.iter().map(|c| c.label.as_str()).collect();
+    assert_eq!(
+        labels,
+        ["Optical zoom only", "Clear Image Zoom", "Digital zoom"]
+    );
+    stop(sim, camera).await;
+}
+
+#[tokio::test]
+async fn a_lens_the_camera_cannot_drive_is_not_zoomed_but_a_stop_is_always_sent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let config = SimConfig {
+        zoom: Some(false),
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(config, tmp.path()).await;
+    let err = camera.zoom(1).await.unwrap_err();
+    assert!(err.to_string().contains("zoom ring"), "{err}");
+    camera.zoom(0).await.unwrap();
+    let log = sim.log.lock().unwrap().join("\n");
+    assert!(!log.contains("D2DD=1"), "{log}");
+    assert!(log.contains("D2DD=0"), "{log}");
+    drop(log);
+    stop(sim, camera).await;
+}
+
 #[tokio::test]
 async fn the_state_lists_the_controls_the_camera_says_it_has() {
     let tmp = tempfile::tempdir().unwrap();

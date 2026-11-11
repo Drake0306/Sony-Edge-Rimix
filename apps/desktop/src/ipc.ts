@@ -364,6 +364,9 @@ export const applyValues = (values: PresetValue[], cameraId: CameraId | null = n
 export const shoot = (cameraId: CameraId | null = null) => onCamera<void>('shoot', cameraId);
 export const focus = (cameraId: CameraId | null = null) => onCamera<void>('focus', cameraId);
 export const toggleRecord = (cameraId: CameraId | null = null) => onCamera<void>('toggle_record', cameraId);
+/** Zooms while held: 1 towards tele, -1 towards wide, 0 stops. */
+export const zoom = (direction: number, cameraId: CameraId | null = null) =>
+  invoke<void>('zoom', { cameraId, direction });
 /** Every file on the camera's cards. */
 export const cardList = (cameraId: CameraId | null = null) => onCamera<CardObject[]>('card_list', cameraId);
 /**
@@ -404,6 +407,47 @@ export const bleRetry = () => invoke<void>('ble_retry');
 export const pickFolder = () => invoke<string | null>('pick_folder');
 
 /** Calls `cb` with the camera's id for every camera event except `Frame` (poll `liveViewFrame`). */
+/** A folder or a file a camera in Send to Smartphone lists. */
+export interface FileEntry {
+  id: string;
+  /** The folder's name, or the file's (`DSC00412.JPG`). */
+  title: string;
+  folder: boolean;
+  date: string | null;
+  /** Links to a small picture of it and a larger one to look at. */
+  thumb: string | null;
+  preview: string | null;
+  /** What an import fetches, and whether that is the file itself or a JPEG the camera made of it. */
+  file: string | null;
+  bytes: number | null;
+  resolution: string | null;
+  original: boolean;
+}
+
+/** The camera whose files are open: `root` is `PushRoot` (chosen on the camera) or `PhotoRoot` (everything). */
+export interface FilesInfo {
+  model: string;
+  root: string;
+  address: string;
+}
+
+export interface FilesProgress {
+  id: string;
+  received: number;
+  total: number | null;
+}
+
+/** Opens the files of a camera in Send to Smartphone, at `host` or its usual place on its own network. */
+export const filesOpen = (host: string | null = null) => invoke<FilesInfo>('files_open', { host });
+export const filesList = (folder: string | null = null) => invoke<FileEntry[]>('files_list', { folder });
+/** A thumbnail or preview, as JPEG bytes. */
+export const filesPicture = (link: string) => invoke<ArrayBuffer>('files_picture', { link });
+/** Imports one file into the destination folder; resolves with where it was saved. */
+export const filesImport = (id: string, link: string, name: string) => invoke<string>('files_import', { id, link, name });
+export const filesClose = () => invoke<void>('files_close');
+export const onFilesProgress = (cb: (progress: FilesProgress) => void): Promise<UnlistenFn> =>
+  listen<FilesProgress>('files-progress', (e) => cb(e.payload));
+
 export const onCameraEvent = (cb: (cameraId: CameraId, event: CameraEvent) => void): Promise<UnlistenFn> =>
   listen<TaggedEvent>('camera-event', (e) => cb(e.payload.camera_id, e.payload.event));
 

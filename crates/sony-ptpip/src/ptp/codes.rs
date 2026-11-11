@@ -74,6 +74,22 @@ pub const CTRL_AF_AREA_POSITION: u16 = 0xD2DC;
 pub const CTRL_REMOTE_TOUCH: u16 = 0xD2E4;
 /// Which part of the picture autofocus uses (wide, zone, a movable spot...).
 pub const PROP_FOCUS_AREA: u16 = 0xD22C;
+// Zoom, as Sony's Camera Control PTP 3 Reference gives it.
+/// Whether the lens can be zoomed from the computer: 1 when it can (a
+/// power zoom lens is on).
+pub const PROP_ZOOM_ENABLED: u16 = 0xD25B;
+/// How far in the zoom is, times 1000.
+pub const PROP_ZOOM_SCALE: u16 = 0xD25C;
+/// Which zooms are allowed beyond the lens's own: 1 optical only, 2 smart
+/// zoom, 3 Clear Image Zoom, 4 digital zoom.
+pub const PROP_ZOOM_SETTING: u16 = 0xD25F;
+/// Zooms while it is held: an INT8, 1 towards tele, -1 towards wide, 0 to
+/// stop. Taken only while [`PROP_ZOOM_ENABLED`] is 1.
+pub const CTRL_ZOOM: u16 = 0xD2DD;
+/// SteadyShot for pictures (1 off, 2 on) and for movies (1 off, 2
+/// standard, 3 active, 4 hybrid). The ZV-E10 has neither; newer bodies do.
+pub const PROP_STEADYSHOT: u16 = 0xD0D9;
+pub const PROP_STEADYSHOT_MOVIE: u16 = 0xD0DA;
 /// Shots left on the card in slot 1.
 pub const PROP_SHOTS_LEFT: u16 = 0xD249;
 
