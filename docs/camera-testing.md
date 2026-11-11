@@ -49,6 +49,8 @@ This tells us whether the QR code on the camera leads to the same network the co
 
    This checks whether the camera answers on the port Rimix uses. "succeeded" or "open" means yes. "refused" or a timeout means no. If it says no, put the camera on the PC Remote screen (step 1) and try once more.
 
+Good to know: the camera's QR code holds only the short part of the network name (for example `YKE1`) and the model (`ZV-E10`). Rimix puts them together as `DIRECT-<name>:<model>`, for example `DIRECT-YKE1:ZV-E10`, which is the camera's real network name (confirmed on 2026-11-11). So if your phone shows `S:YKE1` and the Mac joins `DIRECT-YKE1:ZV-E10`, that is expected.
+
 ### If Rimix says it can't see the network
 
 Rimix may say "This computer can't see DIRECT-xxxx yet". Then:

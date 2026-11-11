@@ -77,7 +77,7 @@ The connect screen has three ways in:
 
 1. **Scan the QR code.** On the camera choose Menu, Network, Send to Smartphone Func., Send to Smartphone, then hold the screen up to the Mac's webcam. If the webcam can't read it, scan the code with your phone and use "Paste the code's text" under the QR card.
 2. **Nearby.** If the camera and the Mac are on the same router, the camera shows up in the list. Pick it.
-3. **Type the Wi-Fi name and password.** On the camera choose Menu, Network, PC Remote Function, Wi-Fi Direct Info, then type the name (it starts with DIRECT-) and the password. The Mac joins the camera's network by itself.
+3. **Type the Wi-Fi name and password.** On the camera choose Menu, Network, PC Remote Function, Wi-Fi Direct Info, then type the name (it starts with DIRECT-) and the password. The Mac joins the camera's network by itself. The camera's network is named `DIRECT-<code>:<model>`, for example `DIRECT-YKE1:ZV-E10`.
 
 "Advanced: connect by address" holds the old IP address field. Rimix remembers cameras you have used. In App settings, the Connection section lets you choose whether Wi-Fi joins happen automatically or ask first, pick the webcam, and forget remembered cameras.
 
