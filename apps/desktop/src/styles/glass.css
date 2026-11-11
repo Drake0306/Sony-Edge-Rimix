@@ -80,3 +80,30 @@ svg{display:block}
 .switch[aria-checked="true"]::after{left:14px;background:var(--sel-ink)}
 .switch[aria-checked="true"]:hover{background:var(--sel)}
 .switch:disabled,.switch[title]{cursor:default}
+
+/* ---------- the mode picker ---------- */
+/* The Mode row's own button: the mode in use, and the way to unfold the list. */
+.r .modebtn{display:flex;align-items:center;gap:7px;min-width:0;height:22px;margin-right:1px;padding:0 5px 0 6px;border-radius:7px}
+.r .modebtn:hover{background:var(--hov)}
+.r .modebtn .mn{min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r .modebtn .chev{flex:none;width:9px;height:9px;color:var(--ink-3);transform:rotate(90deg);transition:transform .15s}
+.r.unfolded .modebtn .chev{transform:rotate(-90deg)}
+.mi{flex:none;width:17px;height:17px;color:var(--ink-2)}
+/* The dial cap: the letter a mode has on a camera's mode dial. */
+.cap{flex:none;display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:10px;font-size:11px;font-weight:700;line-height:1;color:var(--ink);box-shadow:inset 0 0 0 1.25px var(--ink-3)}
+.cap.wide{padding:0 6px;font-size:9.5px;letter-spacing:.03em}
+.modepick{padding:6px 6px 7px;border-top:.5px solid var(--hair);background:var(--well)}
+.modepick[hidden]{display:none}
+.modepick .tabs{display:flex;width:100%;margin-bottom:5px}
+.modepick .tabs[hidden]{display:none}
+.modepick .tabs button{flex:1 1 0;min-width:0;height:24px;padding:0 4px;font-size:11.5px}
+.modelist{display:flex;flex-direction:column;gap:1px}
+.mopt{display:flex;align-items:center;gap:9px;width:100%;height:28px;padding:0 6px 0 7px;border-radius:8px;text-align:left}
+.mopt .mn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mopt:hover{background:var(--hov)}
+.mopt.on{background:var(--sel);color:var(--sel-ink);font-weight:600;box-shadow:var(--sel-shadow)}
+.mopt.on .mi{color:var(--sel-ink)}
+.mopt.on .cap{color:var(--sel);background:var(--sel-ink);box-shadow:none}
+.mopt:disabled{opacity:.45;cursor:default}
+.mopt:disabled:hover{background:none}
+.mopt.on:disabled:hover{background:var(--sel)}

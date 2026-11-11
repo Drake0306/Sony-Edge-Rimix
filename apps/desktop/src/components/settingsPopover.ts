@@ -6,6 +6,7 @@ import type { Actions } from '../actions';
 import { button, el, icon, isTyping } from '../dom';
 import type { CameraState, PropertySummary } from '../ipc';
 import { findProp, isColourTemp, isoStops, isUsable, nearestIso, PROP, sameRaw, SETTING_NAMES, shortText } from '../props';
+import { FAMILIES, familiesOf, modeInfo, modeName, modesIn, type ModeFamily } from '../modes';
 import { watch, type AppStore } from '../state';
 
 const PENDING_MS = 400;
@@ -87,6 +88,12 @@ export function createSettingsPopover(
   const rows = new Map<number, HTMLElement>();
   /** The typing row under ISO; it shares ISO's property but is not its row. */
   let isoCustom: HTMLElement | null = null;
+  /** The mode picker under the Mode row, whether it is unfolded, and the tab chosen by hand. */
+  let modePick: HTMLElement | null = null;
+  let modeOpen = false;
+  let modeTab: ModeFamily | null = null;
+  /** What the picker last drew, so it is rebuilt only when that changes. */
+  let modeKey = '';
   const pending = new Map<number, number>();
 
   function markPending(code: number): void {
@@ -125,24 +132,97 @@ export function createSettingsPopover(
     row.setAttribute('role', 'listitem');
     row.dataset.code = String(code);
     row.append(el('span', 'k', name));
-    if (code === PROP.mode && prop && prop.choices.length > 0 && prop.choices.length <= 4) {
-      const mini = el('div', 'mini');
-      mini.setAttribute('role', 'radiogroup');
-      mini.setAttribute('aria-label', name);
-      for (const choice of prop.choices) {
-        const b = button('', choice.label);
-        b.setAttribute('role', 'radio');
-        b.addEventListener('click', () => {
-          actions.setProperty(code, choice.raw);
-          markPending(code);
-        });
-        mini.append(b);
-      }
-      row.append(mini);
+    if (code === PROP.mode && prop && prop.choices.length > 0) {
+      // Mode is chosen from a list, not stepped through: see `drawMode`.
+      const b = button('modebtn');
+      b.setAttribute('aria-expanded', 'false');
+      b.setAttribute('aria-controls', 'modepick');
+      b.append(icon('m-photo', 'mi', '0 0 20 20'), el('span', 'mn'), el('span', 'cap'), icon('chr', 'chev', '0 0 10 10'));
+      b.addEventListener('click', () => {
+        modeOpen = !modeOpen;
+        modeTab = null;
+        drawMode(findProp(store.get().camera, PROP.mode));
+      });
+      row.append(b);
     } else {
       row.append(el('span', 'v'), stepper(code, name, chevrons));
     }
     return row;
+  }
+
+  /** The list of modes under the Mode row: tabs for the kinds of shooting, then the modes of the tab showing. */
+  function buildModePick(): HTMLElement {
+    const pick = el('div', 'modepick');
+    pick.id = 'modepick';
+    const tabs = el('div', 'segc tabs');
+    tabs.setAttribute('role', 'tablist');
+    tabs.setAttribute('aria-label', 'Kind of shooting');
+    const list = el('div', 'modelist');
+    list.setAttribute('role', 'radiogroup');
+    list.setAttribute('aria-label', 'Shooting mode');
+    pick.append(tabs, list);
+    pick.hidden = true;
+    return pick;
+  }
+
+  /** A pictogram, a name and a dial cap: what a mode looks like in the row and in the list. */
+  function modeParts(raw: PropertySummary['raw'], name: string): HTMLElement[] {
+    const info = modeInfo(raw);
+    const cap = el('span', 'cap', info.badge);
+    if (info.badge.length > 1) cap.classList.add('wide');
+    return [icon(info.icon, 'mi', '0 0 20 20') as unknown as HTMLElement, el('span', 'mn', name), cap];
+  }
+
+  function drawMode(prop: PropertySummary | undefined): void {
+    const row = rows.get(PROP.mode);
+    const head = row?.querySelector<HTMLButtonElement>('.modebtn');
+    if (!row || !head || !modePick || !prop) return;
+    const usable = isUsable(prop);
+    const here = modeInfo(prop.raw);
+    const families = familiesOf(prop.choices);
+    const tab = modeTab && families.includes(modeTab) ? modeTab : families.includes(here.family) ? here.family : families[0];
+    const key = JSON.stringify([prop.raw, prop.label, prop.choices.map((c) => c.raw), tab, modeOpen, usable]);
+    if (key === modeKey) return;
+    modeKey = key;
+
+    const name = prop.label.replace(/ \((Movie|S&Q|High frame rate)\)$/, '');
+    head.replaceChildren(...modeParts(prop.raw, name), icon('chr', 'chev', '0 0 10 10'));
+    head.title = prop.label;
+    head.setAttribute('aria-expanded', String(modeOpen));
+    head.setAttribute('aria-label', `Mode, ${prop.label}. ${modeOpen ? 'Hide' : 'Show'} the list of modes`);
+    row.classList.toggle('unfolded', modeOpen);
+    modePick.hidden = !modeOpen;
+    if (!modeOpen) return;
+
+    const [tabs, list] = [modePick.children[0] as HTMLElement, modePick.children[1] as HTMLElement];
+    tabs.hidden = families.length < 2;
+    tabs.replaceChildren(
+      ...FAMILIES.filter(([f]) => families.includes(f)).map(([family, title]) => {
+        const b = button(family === tab ? 'on' : '', title);
+        b.setAttribute('role', 'tab');
+        b.setAttribute('aria-selected', String(family === tab));
+        b.addEventListener('click', () => {
+          modeTab = family;
+          drawMode(findProp(store.get().camera, PROP.mode));
+        });
+        return b;
+      }),
+    );
+    list.replaceChildren(
+      ...modesIn(prop.choices, tab).map((choice) => {
+        const on = sameRaw(choice.raw, prop.raw);
+        const b = button(on ? 'mopt on' : 'mopt');
+        b.setAttribute('role', 'radio');
+        b.setAttribute('aria-checked', String(on));
+        b.disabled = !usable;
+        b.append(...modeParts(choice.raw, modeName(choice)));
+        b.addEventListener('click', () => {
+          actions.setProperty(PROP.mode, choice.raw);
+          markPending(PROP.mode);
+        });
+        return b;
+      }),
+    );
   }
 
   /**
@@ -184,7 +264,7 @@ export function createSettingsPopover(
     const usable = isUsable(prop);
     row.classList.toggle('off', !usable);
     row.setAttribute('aria-disabled', String(!usable));
-    row.querySelectorAll('button').forEach((b) => (b.disabled = !usable));
+    row.querySelectorAll<HTMLButtonElement>('button:not(.modebtn)').forEach((b) => (b.disabled = !usable));
     const v = row.querySelector('.v');
     if (v) v.textContent = shortText(prop);
     const custom = row.querySelector<HTMLInputElement>('input');
@@ -211,8 +291,7 @@ export function createSettingsPopover(
 
   function render(camera: CameraState | null): void {
     const groups = GROUPS.map((g) => ({ ...g, list: g.codes(camera) }));
-    const modeChoices = findProp(camera, PROP.mode)?.choices.length ?? 0;
-    const key = JSON.stringify([groups.map((g) => g.list), modeChoices <= 4 && modeChoices > 0]);
+    const key = JSON.stringify([groups.map((g) => g.list), (findProp(camera, PROP.mode)?.choices.length ?? 0) > 0]);
     if (key !== layoutKey) {
       layoutKey = key;
       rows.clear();
@@ -231,6 +310,11 @@ export function createSettingsPopover(
               isoCustom = customIsoRow();
               group.append(isoCustom);
             }
+            if (code === PROP.mode) {
+              modePick = buildModePick();
+              modeKey = '';
+              group.append(modePick);
+            }
           }
           sect.append(h, group);
           return sect;
@@ -239,6 +323,7 @@ export function createSettingsPopover(
     }
     for (const [code, row] of rows) updateRow(row, findProp(camera, code));
     if (isoCustom) updateRow(isoCustom, findProp(camera, PROP.iso));
+    drawMode(findProp(camera, PROP.mode));
   }
 
   const unwatch = watch(store, (s) => s.camera, (camera) => render(camera));
@@ -264,6 +349,9 @@ export function createSettingsPopover(
     chip.classList.add(onClass);
     chip.setAttribute(stateAttr, 'true');
     from.textContent = `opened from ${label}`;
+    modeOpen = code === PROP.mode;
+    modeTab = null;
+    modeKey = '';
     render(store.get().camera);
     place();
   }

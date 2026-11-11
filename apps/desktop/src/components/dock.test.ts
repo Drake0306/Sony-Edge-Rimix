@@ -77,10 +77,12 @@ describe('dock', () => {
     expect(iso.getAttribute('aria-expanded')).toBe('true');
     expect(pop.querySelector('.ttl span')!.textContent).toBe('opened from ISO');
     expect(pop.querySelector('.r.active .k')!.textContent).toBe('ISO');
-    // Mode has four choices, so it is a segmented control.
-    expect([...pop.querySelectorAll('.r[data-code="20494"] .mini button')].map((b) => b.textContent)).toEqual([
-      'P', 'A', 'S', 'M',
-    ]);
+    // Opened from ISO, the Mode row is closed: it shows the mode in use.
+    const mode = pop.querySelector<HTMLButtonElement>('.r[data-code="20494"] .modebtn')!;
+    expect(mode.getAttribute('aria-expanded')).toBe('false');
+    expect(mode.querySelector('.mn')!.textContent).toBe('Manual Exposure');
+    expect(mode.querySelector('.cap')!.textContent).toBe('M');
+    expect(pop.querySelector<HTMLElement>('.modepick')!.hidden).toBe(true);
     // White balance is colour temp, so the colour temp row appears.
     expect(pop.querySelector('.r[data-code="53775"] .k')!.textContent).toBe('Colour temp');
     iso.click();
@@ -148,6 +150,64 @@ describe('dock', () => {
     document.body.append(menu);
     item.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
     expect(steps()).toHaveLength(0);
+  });
+
+  test('the Mode chip opens a picker: a tab per kind of shooting, each mode with its icon, name and dial letter', () => {
+    const { root } = setup();
+    root.querySelectorAll<HTMLButtonElement>('.chip')[0].click();
+    const pop = root.querySelector<HTMLElement>('.pop')!;
+    const pick = pop.querySelector<HTMLElement>('.modepick')!;
+    expect(pick.hidden).toBe(false);
+    expect(pop.querySelector('.modebtn')!.getAttribute('aria-expanded')).toBe('true');
+    const tabs = () => [...pick.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    expect(tabs().map((t) => t.textContent)).toEqual(['Photo', 'Movie', 'S&Q', 'Scene']);
+    // The camera is in M, a photo mode, so the Photo tab is showing.
+    expect(tabs().map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false']);
+    const rows = () =>
+      [...pick.querySelectorAll<HTMLButtonElement>('[role="radio"]')].map((b) => [
+        b.querySelector('use')!.getAttribute('href'),
+        b.querySelector('.mn')!.textContent,
+        b.querySelector('.cap')!.textContent,
+        b.getAttribute('aria-checked'),
+      ]);
+    expect(rows()).toEqual([
+      ['#m-auto', 'Intelligent Auto', 'AUTO', 'false'],
+      ['#m-photo', 'Program Auto', 'P', 'false'],
+      ['#m-photo', 'Aperture Priority', 'A', 'false'],
+      ['#m-photo', 'Shutter Priority', 'S', 'false'],
+      ['#m-photo', 'Manual Exposure', 'M', 'true'],
+      ['#m-pano', 'Sweep Panorama', 'PANO', 'false'],
+    ]);
+    // Another tab shows its modes without changing the camera.
+    tabs()[1].click();
+    expect(rows()).toEqual([
+      ['#m-movie', 'Intelligent Auto', 'AUTO', 'false'],
+      ['#m-movie', 'Program Auto', 'P', 'false'],
+      ['#m-movie', 'Manual Exposure', 'M', 'false'],
+    ]);
+    expect(invoke).not.toHaveBeenCalledWith('set_property', expect.anything());
+    // Choosing one sets it.
+    pick.querySelectorAll<HTMLButtonElement>('[role="radio"]')[1].click();
+    expect(invoke).toHaveBeenCalledWith('set_property', { code: 0x500e, raw: { U32: 0x00078050 } });
+  });
+
+  test('the picker follows the camera: the mode in use is marked and its tab shown', () => {
+    const { root, store } = setup();
+    root.querySelectorAll<HTMLButtonElement>('.chip')[0].click();
+    const pop = root.querySelector<HTMLElement>('.pop')!;
+    const properties = camera.properties.map((p) =>
+      p.code === 0x500e ? { ...p, raw: { U32: 0x00058016 }, label: 'Hand-held Twilight', short: 'Twilight' } : p,
+    );
+    store.set({ camera: { ...camera, properties } });
+    expect(pop.querySelector('.modebtn .mn')!.textContent).toBe('Hand-held Twilight');
+    expect(pop.querySelector('.modebtn .cap')!.textContent).toBe('SCN');
+    expect(pop.querySelector('.modebtn use')!.getAttribute('href')).toBe('#m-twilight');
+    expect(pop.querySelector('[role="tab"][aria-selected="true"]')!.textContent).toBe('Scene');
+    const checked = pop.querySelector('.modepick [role="radio"][aria-checked="true"] .mn')!;
+    expect(checked.textContent).toBe('Hand-held Twilight');
+    // The row's own button folds the list away again.
+    pop.querySelector<HTMLButtonElement>('.modebtn')!.click();
+    expect(pop.querySelector<HTMLElement>('.modepick')!.hidden).toBe(true);
   });
 
   test('the ISO row takes a typed value, shows the range and sets the nearest stop', () => {
