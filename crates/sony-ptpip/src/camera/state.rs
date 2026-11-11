@@ -26,6 +26,8 @@ pub(super) struct Snapshot {
     pub props: Vec<PropertyDesc>,
     pub live_view_fps: f32,
     pub last_shot_at: Option<u64>,
+    /// The control codes the camera said it accepts.
+    pub controls: Vec<u16>,
     /// The last shooting mode reported that is one the camera lists: see
     /// [`Snapshot::mode_shown`].
     listed_mode: Option<u64>,
@@ -151,6 +153,7 @@ impl Snapshot {
             live_view_fps: self.live_view_fps,
             last_shot_at: self.last_shot_at,
             shots_to_computer: number(PROP_STILL_DESTINATION).map(|v| v & DEST_COMPUTER != 0),
+            controls: self.controls.clone(),
         }
     }
 }

@@ -409,7 +409,10 @@ mod tests {
         Arc::new(LiveViewFrame {
             jpeg,
             focus_frames: Vec::new(),
+            face_frames: Vec::new(),
+            tracking_frames: Vec::new(),
             level_deg: None,
+            raw_meta: Vec::new(),
         })
     }
 

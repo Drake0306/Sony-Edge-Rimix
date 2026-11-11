@@ -88,6 +88,9 @@ pub struct AppState {
     pub ble: crate::ble::BleService,
     /// Webcam mode: the live view served as a video feed on this computer.
     pub webcam: crate::webcam::WebcamService,
+    /// Counts the times a connect in progress was cancelled; the steps of a
+    /// connect (join, find, connect) each stop when it moves.
+    pub connect_cancel: tokio::sync::watch::Sender<u64>,
 }
 
 /// Locks a std mutex, carrying on if a panicking holder poisoned it.
@@ -116,6 +119,27 @@ impl AppState {
             sftp: crate::sftp::SftpService::default(),
             ble: crate::ble::BleService::default(),
             webcam: crate::webcam::WebcamService::default(),
+            connect_cancel: tokio::sync::watch::channel(0).0,
+        }
+    }
+
+    /// Stops the join, find or connect step that is running now, with
+    /// [`CANCELLED`] as its error.
+    pub fn cancel_connect(&self) {
+        self.connect_cancel.send_modify(|n| *n += 1);
+    }
+
+    /// Runs one step of a connect, giving up with [`CANCELLED`] if
+    /// [`AppState::cancel_connect`] is called meanwhile. The step's future is
+    /// dropped then, which also stops what it started (see `CancelOnDrop`).
+    pub async fn cancellable<T>(
+        &self,
+        step: impl std::future::Future<Output = Result<T, String>>,
+    ) -> Result<T, String> {
+        let mut cancelled = self.connect_cancel.subscribe();
+        tokio::select! {
+            done = step => done,
+            _ = cancelled.changed() => Err(CANCELLED.to_string()),
         }
     }
 
@@ -186,6 +210,9 @@ fn nearby(found: sony_ptpip::discovery::Discovery) -> Result<Vec<DiscoveredCamer
     }
 }
 
+/// The error a step of a connect gives when the user cancelled it.
+pub const CANCELLED: &str = "cancelled";
+
 /// The error [`wait_for_camera`] gives when nothing answered in time.
 pub const NO_CAMERA: &str = "No camera answered on this network";
 
@@ -203,10 +230,17 @@ pub async fn join_network(
     let ssid = ssid.to_string();
     let password = password.map(str::to_string);
     let wifi = state.wifi.clone();
-    tokio::task::spawn_blocking(move || wifi.join(&ssid, password.as_deref()))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+    // Dropping this future (a cancelled connect) stops the join between
+    // its commands and waits.
+    let cancel = Arc::new(AtomicBool::new(false));
+    let _guard = CancelOnDrop(cancel.clone());
+    tokio::task::spawn_blocking(move || {
+        wifi.join_with_cancel(&ssid, password.as_deref(), &cancel)
+            .map(|_| ())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
 }
 
 /// The Wi-Fi network this computer is on, if any.
@@ -781,6 +815,22 @@ pub async fn focus(state: &AppState, id: Option<CameraId>) -> Result<(), String>
     camera.focus().await.map_err(|e| e.to_string())
 }
 
+/// Focuses at a point of the picture, `x` and `y` from 0 to 1 across and down.
+pub async fn focus_at(
+    state: &AppState,
+    id: Option<CameraId>,
+    x: f32,
+    y: f32,
+) -> Result<(), String> {
+    let camera = state.camera(id.as_ref()).await?;
+    camera.focus_at(x, y).await.map_err(|e| match e {
+        Error::Response { code, .. } => {
+            format!("The camera did not take the focus point (answered {code:#06x})")
+        }
+        other => other.to_string(),
+    })
+}
+
 pub async fn toggle_record(state: &AppState, id: Option<CameraId>) -> Result<(), String> {
     let camera = state.camera(id.as_ref()).await?;
     camera.toggle_record().await.map_err(|e| e.to_string())
@@ -845,6 +895,8 @@ pub async fn live_view_meta(
     let fps = camera.map_or(0.0, |c| c.state().live_view_fps);
     Ok(serde_json::json!({
         "focus_frames": frame.as_ref().map(|f| f.focus_frames.clone()).unwrap_or_default(),
+        "face_frames": frame.as_ref().map(|f| f.face_frames.clone()).unwrap_or_default(),
+        "tracking_frames": frame.as_ref().map(|f| f.tracking_frames.clone()).unwrap_or_default(),
         "level_deg": frame.and_then(|f| f.level_deg),
         "fps": fps,
     }))
@@ -1293,7 +1345,7 @@ mod tests {
         let meta = live_view_meta(&state, None).await.unwrap();
         assert_eq!(
             meta,
-            serde_json::json!({ "focus_frames": [], "level_deg": null, "fps": 0.0 })
+            serde_json::json!({ "focus_frames": [], "face_frames": [], "tracking_frames": [], "level_deg": null, "fps": 0.0 })
         );
         disconnect(&state, None).await.unwrap();
     }
@@ -1712,6 +1764,7 @@ mod tests {
             live_view_fps: 29.5,
             last_shot_at: None,
             shots_to_computer: None,
+            controls: Vec::new(),
         });
         let tagged = TaggedEvent {
             camera_id: &id,
@@ -1805,12 +1858,33 @@ mod tests {
             live_view_fps: 0.0,
             last_shot_at: None,
             shots_to_computer: Some(false),
+            controls: Vec::new(),
         };
         let path = write_camera_report(&logs, &camera).unwrap();
         // The model cannot name a path outside the log folder.
         assert_eq!(path, logs.join("camera-ZV-E10____x.json"));
         let read: CameraState = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert_eq!(read, camera);
+    }
+
+    #[tokio::test]
+    async fn cancelling_stops_the_step_that_is_running_and_not_the_next_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = app_state(dir.path());
+        let never = std::future::pending::<Result<(), String>>();
+        let (waited, ()) = tokio::join!(state.cancellable(never), async {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            state.cancel_connect();
+        });
+        assert_eq!(waited.unwrap_err(), CANCELLED);
+        // A step started after the cancel runs to its end.
+        assert_eq!(
+            state
+                .cancellable(async { Ok::<_, String>(7) })
+                .await
+                .unwrap(),
+            7
+        );
     }
 
     #[tokio::test]

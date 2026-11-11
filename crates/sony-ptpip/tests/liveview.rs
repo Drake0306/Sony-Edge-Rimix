@@ -33,6 +33,13 @@ async fn streams_ten_frames_from_sim() {
         assert_eq!((img.width(), img.height()), (640, 424));
         assert_eq!(frame.level_deg, Some(1.2));
         assert_eq!(frame.focus_frames.len(), 1);
+        // A face up and to the left, a tracked subject down and to the right.
+        assert_eq!(frame.face_frames.len(), 1);
+        assert!((frame.face_frames[0].cx - 0.3).abs() < 0.001);
+        assert!((frame.face_frames[0].cy - 0.3).abs() < 0.001);
+        assert_eq!(frame.tracking_frames.len(), 1);
+        assert!((frame.tracking_frames[0].cx - 0.7).abs() < 0.001);
+        assert!(!frame.raw_meta.is_empty());
         assert_eq!(frame.focus_frames[0].kind, 2);
         assert_eq!(frame.focus_frames[0].cx, 0.5);
         jpegs.push(frame.jpeg);

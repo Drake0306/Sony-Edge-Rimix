@@ -66,6 +66,13 @@ pub const PROP_PC_SAVE_FORMAT: u16 = 0xD269;
 pub const CTRL_SHUTTER_HALF: u16 = 0xD2C1;
 pub const CTRL_SHUTTER_FULL: u16 = 0xD2C2;
 pub const CTRL_MOVIE_REC: u16 = 0xD2C8;
+/// Where the autofocus frame goes: a u32, x in the upper 16 bits and y in
+/// the lower, on a 640 by 480 grid (libgphoto2: AFAreaPosition).
+pub const CTRL_AF_AREA_POSITION: u16 = 0xD2DC;
+/// Which part of the picture autofocus uses (wide, zone, a movable spot...).
+pub const PROP_FOCUS_AREA: u16 = 0xD22C;
+/// Shots left on the card in slot 1.
+pub const PROP_SHOTS_LEFT: u16 = 0xD249;
 
 // Datatypes
 pub const DT_INT8: u16 = 0x0001;

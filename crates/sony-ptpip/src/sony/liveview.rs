@@ -30,8 +30,18 @@ pub struct FocusFrame {
 pub struct LiveViewFrame {
     pub jpeg: Vec<u8>,
     pub focus_frames: Vec<FocusFrame>,
+    /// The faces (or animal faces) the camera has found.
+    #[serde(default)]
+    pub face_frames: Vec<FocusFrame>,
+    /// The subject the camera is tracking.
+    #[serde(default)]
+    pub tracking_frames: Vec<FocusFrame>,
     /// Roll from the camera's level gauge, in degrees.
     pub level_deg: Option<f32>,
+    /// The metadata as the camera sent it, for the log: its layout on a real
+    /// body has only been read from documents so far.
+    #[serde(skip)]
+    pub raw_meta: Vec<u8>,
 }
 
 /// Oldest metadata version with the layout read here.
@@ -105,25 +115,37 @@ pub fn parse_live_view_dataset(buf: &[u8]) -> Result<Option<LiveViewFrame>, Erro
     if !jpeg.starts_with(&[0xFF, 0xD8]) {
         return Err(Error::Protocol("live view image is not a JPEG".into()));
     }
-    let (focus_frames, level_deg) = section(buf, meta_offset, meta_size, "metadata")
-        .ok()
-        .and_then(parse_metadata)
-        .unwrap_or_default();
+    let raw_meta = section(buf, meta_offset, meta_size, "metadata").unwrap_or_default();
+    let (blocks, level_deg) = parse_metadata(raw_meta).unwrap_or_default();
+    let [focus_frames, face_frames, tracking_frames] = blocks;
     Ok(Some(LiveViewFrame {
         jpeg: jpeg.to_vec(),
         focus_frames,
+        face_frames,
+        tracking_frames,
         level_deg,
+        raw_meta: raw_meta.to_vec(),
     }))
 }
 
-/// Reads the focus frames and the level; `None` if the metadata is malformed.
-fn parse_metadata(meta: &[u8]) -> Option<(Vec<FocusFrame>, Option<f32>)> {
+/// The focus frames, the face frames and the tracking frames, in that order.
+type FrameBlocks = [Vec<FocusFrame>; 3];
+
+/// Reads the frames and the level; `None` if the metadata is malformed.
+///
+/// After the level come up to three blocks of frames, one after another:
+/// focus frames, then faces, then the tracked subject. Each block is a
+/// 16-byte header (the size of the grid its frames are measured on, then
+/// how many frames) and 24 bytes per frame. The first block is required;
+/// the others are read while they are there and make sense, since their
+/// layout is taken from Sony's SDK structures, not yet from a real body.
+fn parse_metadata(meta: &[u8]) -> Option<(FrameBlocks, Option<f32>)> {
     if meta.is_empty() {
-        return Some((Vec::new(), None));
+        return Some((FrameBlocks::default(), None));
     }
     // Older layouts place the blocks elsewhere; read none of them.
     if u16_at(meta, 0)? < MIN_META_VERSION {
-        return Some((Vec::new(), None));
+        return Some((FrameBlocks::default(), None));
     }
 
     let state = u32_at(meta, LEVEL_BLOCK)?;
@@ -132,16 +154,37 @@ fn parse_metadata(meta: &[u8]) -> Option<(Vec<FocusFrame>, Option<f32>)> {
     // i32::MAX marks an axis the camera does not measure.
     let level_deg = (state == LEVEL_VALID && x != i32::MAX).then(|| x as f32 / 1000.0);
 
-    let x_max = u32_at(meta, FRAME_BLOCK)?;
-    let y_max = u32_at(meta, FRAME_BLOCK + 4)?;
-    let count = usize::from(u16_at(meta, FRAME_BLOCK + 8)?).min(MAX_FRAMES);
-    if x_max == 0 || y_max == 0 {
+    let mut blocks = FrameBlocks::default();
+    let mut at = FRAME_BLOCK;
+    let (first, next) = frame_block(meta, at)?;
+    blocks[0] = first;
+    at = next;
+    for block in blocks.iter_mut().skip(1) {
+        // A block that is cut short, or whose frames fall outside the
+        // picture, is not one: stop there and keep what was read.
+        match frame_block(meta, at) {
+            Some((frames, next)) if frames.iter().all(plausible) => {
+                *block = frames;
+                at = next;
+            }
+            _ => break,
+        }
+    }
+    Some((blocks, level_deg))
+}
+
+/// One block of frames at `at`, and where the next block would start.
+fn frame_block(meta: &[u8], at: usize) -> Option<(Vec<FocusFrame>, usize)> {
+    let x_max = u32_at(meta, at)?;
+    let y_max = u32_at(meta, at + 4)?;
+    let count = usize::from(u16_at(meta, at + 8)?);
+    if x_max == 0 || y_max == 0 || count > MAX_FRAMES {
         return None;
     }
     let (x_max, y_max) = (x_max as f32, y_max as f32);
-    let focus_frames = (0..count)
+    let frames = (0..count)
         .map(|i| {
-            let e = FRAME_BLOCK + FRAME_BLOCK_HEADER + i * FRAME_ENTRY_LEN;
+            let e = at + FRAME_BLOCK_HEADER + i * FRAME_ENTRY_LEN;
             Some(FocusFrame {
                 kind: u16_at(meta, e)?,
                 state: u16_at(meta, e + 2)?,
@@ -152,7 +195,13 @@ fn parse_metadata(meta: &[u8]) -> Option<(Vec<FocusFrame>, Option<f32>)> {
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    Some((focus_frames, level_deg))
+    Some((frames, at + FRAME_BLOCK_HEADER + count * FRAME_ENTRY_LEN))
+}
+
+/// Whether a frame lies inside the picture and has a size.
+fn plausible(f: &FocusFrame) -> bool {
+    let inside = |v: f32| (0.0..=1.0).contains(&v);
+    inside(f.cx) && inside(f.cy) && f.w > 0.0 && f.w <= 1.0 && f.h > 0.0 && f.h <= 1.0
 }
 
 /// Checks that the camera offers live view. Call once per connection after

@@ -117,7 +117,8 @@ fn render(n: u32) -> Vec<u8> {
     jpeg
 }
 
-/// Live view metadata: level 1.2° and one focused frame in the middle.
+/// Live view metadata: level 1.2°, one focused frame in the middle, a face
+/// up and to the left, and a tracked subject down and to the right.
 fn metadata() -> Vec<u8> {
     let mut m = vec![0u8; 0x28];
     m[0..2].copy_from_slice(&0x0068u16.to_le_bytes()); // version
@@ -136,6 +137,23 @@ fn metadata() -> Vec<u8> {
     m.extend(245_760u32.to_le_bytes()); // cy
     m.extend(122_880u32.to_le_bytes()); // h
     m.extend(163_840u32.to_le_bytes()); // w
+                                        // Then the faces and the tracked subject, each a block of the same shape.
+    for (cx, cy, h, w) in [
+        (196_608u32, 147_456u32, 98_304u32, 98_304u32),
+        (458_752, 294_912, 147_456, 131_072),
+    ] {
+        m.extend(655_360u32.to_le_bytes()); // x_max
+        m.extend(491_520u32.to_le_bytes()); // y_max
+        m.extend(1u16.to_le_bytes()); // count
+        m.extend([0u8; 6]);
+        m.extend(1u16.to_le_bytes()); // type
+        m.extend(1u16.to_le_bytes()); // state
+        m.extend(0u32.to_le_bytes());
+        m.extend(cx.to_le_bytes());
+        m.extend(cy.to_le_bytes());
+        m.extend(h.to_le_bytes());
+        m.extend(w.to_le_bytes());
+    }
     m
 }
 

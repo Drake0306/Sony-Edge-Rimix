@@ -39,14 +39,15 @@ pub async fn connect(
     ssh: Option<SshLogin>,
     keep_others: Option<bool>,
 ) -> Result<ConnectResult, String> {
-    let (id, camera_state, events) = state::connect(
-        &state,
-        &ip,
-        ssid.as_deref(),
-        ssh,
-        keep_others.unwrap_or(true),
-    )
-    .await?;
+    let (id, camera_state, events) = state
+        .cancellable(state::connect(
+            &state,
+            &ip,
+            ssid.as_deref(),
+            ssh,
+            keep_others.unwrap_or(true),
+        ))
+        .await?;
     tauri::async_runtime::spawn(state::forward_events(id.clone(), events, move |event| {
         if let Err(e) = app.emit(CAMERA_EVENT, event) {
             tracing::warn!(error = %e, "cannot send a camera event to the window");
@@ -246,7 +247,9 @@ pub async fn join_network(
     ssid: String,
     password: Option<String>,
 ) -> Result<(), String> {
-    state::join_network(&state, &ssid, password.as_deref()).await
+    state
+        .cancellable(state::join_network(&state, &ssid, password.as_deref()))
+        .await
 }
 
 #[tauri::command]
@@ -255,8 +258,34 @@ pub async fn current_network(state: State<'_, AppState>) -> Result<Option<String
 }
 
 #[tauri::command]
-pub async fn wait_for_camera(timeout_ms: u64) -> Result<DiscoveredCamera, String> {
-    state::wait_for_camera(std::time::Duration::from_millis(timeout_ms)).await
+pub async fn wait_for_camera(
+    state: State<'_, AppState>,
+    timeout_ms: u64,
+) -> Result<DiscoveredCamera, String> {
+    state
+        .cancellable(state::wait_for_camera(std::time::Duration::from_millis(
+            timeout_ms,
+        )))
+        .await
+}
+
+/// Stops the connect in progress: its join, find or connect step fails
+/// with "cancelled".
+#[tauri::command]
+pub async fn cancel_connect(state: State<'_, AppState>) -> Result<(), String> {
+    state.cancel_connect();
+    Ok(())
+}
+
+/// Focuses at a point of the live view, as a tap on the camera's screen.
+#[tauri::command]
+pub async fn focus_at(
+    state: State<'_, AppState>,
+    x: f32,
+    y: f32,
+    camera_id: Option<CameraId>,
+) -> Result<(), String> {
+    state::focus_at(&state, camera_id, x, y).await
 }
 
 /// Opens the logs folder in Finder (or the system's file manager).

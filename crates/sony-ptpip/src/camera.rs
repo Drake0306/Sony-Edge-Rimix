@@ -40,7 +40,9 @@ use crate::capture::{self, Destination, Received};
 use crate::card::{self, CardObject, PartialDownload, CARD_CHUNK};
 use crate::error::Error;
 use crate::liveview::{self, LiveViewFrame};
-use crate::ptp::codes::{OP_GET_DEVICE_INFO, PROP_FOCUS_MODE, PROP_ISO};
+use crate::ptp::codes::{
+    CTRL_AF_AREA_POSITION, OP_GET_DEVICE_INFO, PROP_FOCUS_AREA, PROP_FOCUS_MODE, PROP_ISO,
+};
 use crate::ptp::{parse_device_info, PtpValue};
 use crate::sony::property::{read_all_props, Enabled, Form, PropertyDesc};
 use crate::sony::{control, sdio_connect};
@@ -136,6 +138,10 @@ pub struct CameraState {
     /// its save destination is the card only, `None` when it does not say.
     #[serde(default)]
     pub shots_to_computer: Option<bool>,
+    /// The control codes the camera said it accepts when Rimix connected,
+    /// such as 0xD2DC, the focus point. For the camera report.
+    #[serde(default)]
+    pub controls: Vec<u16>,
 }
 
 /// One property, ready to show.
@@ -306,6 +312,8 @@ struct Session {
     model: String,
     firmware: String,
     props: Vec<PropertyDesc>,
+    /// The control codes the camera said it accepts (0x9202).
+    controls: Vec<u16>,
 }
 
 /// Locks a std mutex, carrying on if a panicking holder poisoned it.
@@ -370,6 +378,7 @@ impl Inner {
         snap.model = session.model;
         snap.firmware = session.firmware;
         snap.props = session.props;
+        snap.controls = session.controls;
         snap.live_view_fps = 0.0;
         session.events
     }
@@ -476,7 +485,7 @@ async fn connect_once(inner: &Inner) -> Result<Session, Error> {
     let events = conn.events();
     let (data, _) = conn.command_data_in(OP_GET_DEVICE_INFO, &[]).await?;
     let info = parse_device_info(&data)?;
-    sdio_connect(&mut conn).await?;
+    let ext = sdio_connect(&mut conn).await?;
     let mut props = read_all_props(&mut conn).await?;
     // A camera saving to its card only never offers a shot to the computer.
     if inner.receive() == Receive::Here
@@ -502,6 +511,7 @@ async fn connect_once(inner: &Inner) -> Result<Session, Error> {
         model: info.model,
         firmware: info.device_version,
         props,
+        controls: ext.controls,
     })
 }
 
@@ -649,6 +659,54 @@ impl Camera {
         self.inner.mark_shot();
         self.inner.emit_state();
         Ok(())
+    }
+
+    /// Focuses at a point of the picture, as a tap on the camera's own
+    /// screen does. `x` and `y` run from 0 to 1 across and down the picture.
+    ///
+    /// The point only means something while autofocus uses a movable spot,
+    /// so the focus area is switched to Flexible Spot: M first when it is
+    /// something else and the camera lists that. Then the point is sent
+    /// (0xD2DC, on the camera's 640 by 480 grid, as libgphoto2's
+    /// `_put_Sony_SpotFocusArea`) and the shutter is half pressed to focus.
+    pub async fn focus_at(&self, x: f32, y: f32) -> Result<(), Error> {
+        /// The grid the camera counts the point on.
+        const GRID: (f32, f32) = (640.0, 480.0);
+        /// Flexible Spot: M.
+        const SPOT: u16 = 0x0102;
+        let on_grid = |v: f32, size: f32| (v.clamp(0.0, 1.0) * size).min(size - 1.0) as u32;
+        let point = (on_grid(x, GRID.0) << 16) | on_grid(y, GRID.1);
+        let (area, quirks) = {
+            let snap = lock(&self.inner.snapshot);
+            (snap.prop(PROP_FOCUS_AREA).cloned(), quirks_for(&snap.model))
+        };
+        let mut guard = self.inner.conn.lock().await;
+        let conn = guard.as_mut().ok_or(Error::Disconnected)?;
+        if let Some(area) = area {
+            // 0x01xx are the movable spots, 0x02xx their tracking forms
+            // (0x0204 and up); wide, zone and centre ignore a point.
+            let movable = area
+                .current
+                .as_u64()
+                .is_some_and(|v| (0x0101..=0x0104).contains(&v) || (0x0204..=0x0207).contains(&v));
+            let spot = PtpValue::U16(SPOT);
+            if !movable && area.writable && area.enabled == Enabled::On && area.accepts(&spot) {
+                match control::set_value(conn, &area, &spot, &quirks).await {
+                    Ok(()) => {
+                        tracing::info!("focus area set to Flexible Spot: M for a focus point")
+                    }
+                    Err(e) if matches!(e, Error::Disconnected) || conn.is_disconnected() => {
+                        return Err(e)
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "the camera refused Flexible Spot; sending the point anyway")
+                    }
+                }
+            }
+        }
+        tracing::info!(x, y, point = %format_args!("{point:#010x}"), "focus point");
+        control::control(conn, CTRL_AF_AREA_POSITION, &PtpValue::U32(point)).await?;
+        control::focus(conn).await
     }
 
     /// Half presses the shutter long enough to focus.
