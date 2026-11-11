@@ -255,6 +255,9 @@ struct Inner {
     /// The last delivery failure reported, as (camera file name, error
     /// text); the same failure again is not reported. Cleared by a save.
     last_failure: StdMutex<Option<(String, String)>>,
+    /// Set when the camera announces (ObjectAdded) a picture in its memory
+    /// for the computer; the capture loop takes it as "one is waiting".
+    object_added: AtomicBool,
 }
 
 /// What a session does about new pictures and movies.
@@ -521,6 +524,7 @@ impl Camera {
             stop: AtomicBool::new(false),
             recent: StdMutex::new(VecDeque::new()),
             last_failure: StdMutex::new(None),
+            object_added: AtomicBool::new(false),
         });
         let session = connect_once(&inner).await?;
         let events = inner.install(session).await;

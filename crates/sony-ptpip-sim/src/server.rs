@@ -822,7 +822,14 @@ async fn captured_still<W: AsyncWriteExt + Unpin>(
         return Ok(Err(RC_INVALID_OBJECT_HANDLE));
     };
     if op == OP_GET_OBJECT_INFO {
-        send_data_in(ctx.w, tid, &frames::capture_object_info(shot, jpeg.len())).await?;
+        let mut info = frames::capture_object_info(shot, jpeg.len());
+        if shared.config.terse_capture_info {
+            // Everything up to the file name is 52 bytes; an empty PTP
+            // string is one zero byte, and nothing follows it.
+            info.truncate(52);
+            info.push(0);
+        }
+        send_data_in(ctx.w, tid, &info).await?;
         return Ok(Ok(None));
     }
     if shared.config.drop_during_capture {

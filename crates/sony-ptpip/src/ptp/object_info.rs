@@ -21,6 +21,25 @@ fn string(buf: &[u8], pos: &mut usize) -> Result<String, Error> {
     }
 }
 
+/// The string at `pos`, or an empty one when the dataset ends there or the
+/// bytes left are not a whole string.
+fn optional_string(buf: &[u8], pos: &mut usize) -> String {
+    if *pos >= buf.len() {
+        return String::new();
+    }
+    let mut at = *pos;
+    match string(buf, &mut at) {
+        Ok(s) => {
+            *pos = at;
+            s
+        }
+        Err(_) => {
+            *pos = buf.len();
+            String::new()
+        }
+    }
+}
+
 fn num(buf: &[u8], pos: &mut usize, dt: u16) -> Result<u64, Error> {
     PtpValue::decode(dt, buf, pos)?
         .as_u64()
@@ -43,8 +62,11 @@ pub fn parse_object_info(buf: &[u8]) -> Result<ObjectInfo, Error> {
     num(buf, pos, DT_UINT16)?; // AssociationType
     num(buf, pos, DT_UINT32)?; // AssociationDesc
     num(buf, pos, DT_UINT32)?; // SequenceNumber
-    let filename = string(buf, pos)?;
-    let capture_date = string(buf, pos)?;
+                               // The strings are taken when they are there. A body describing a picture
+                               // it holds in memory may stop after the numbers, or after the file name:
+                               // that is still a picture to fetch, not an error.
+    let filename = optional_string(buf, pos);
+    let capture_date = optional_string(buf, pos);
     // ModificationDate and Keywords are not needed.
     Ok(ObjectInfo {
         storage_id,
@@ -118,5 +140,40 @@ mod tests {
             capture_date: String::new(),
         };
         assert_eq!(parse_object_info(&encode_object_info(&info)).unwrap(), info);
+    }
+
+    /// The 52 fixed bytes of a dataset describing a 1234-byte JPEG.
+    fn fixed_part() -> Vec<u8> {
+        let info = ObjectInfo {
+            storage_id: 0x0001_0001,
+            object_format: 0x3801,
+            compressed_size: 1234,
+            filename: String::new(),
+            capture_date: String::new(),
+        };
+        let mut b = encode_object_info(&info);
+        b.truncate(52);
+        b
+    }
+
+    #[test]
+    fn a_dataset_that_ends_after_the_file_name_still_parses() {
+        let mut b = fixed_part();
+        PtpValue::Str("DSC00042.ARW".into()).encode(&mut b);
+        let info = parse_object_info(&b).unwrap();
+        assert_eq!(info.filename, "DSC00042.ARW");
+        assert_eq!(info.capture_date, "");
+        assert_eq!(info.compressed_size, 1234);
+    }
+
+    #[test]
+    fn a_dataset_with_no_file_name_at_all_still_parses() {
+        // An empty name, then nothing; and nothing at all after the numbers.
+        let mut b = fixed_part();
+        b.push(0);
+        assert_eq!(parse_object_info(&b).unwrap().filename, "");
+        assert_eq!(parse_object_info(&fixed_part()).unwrap().filename, "");
+        // The numbers themselves are still required.
+        assert!(parse_object_info(&fixed_part()[..40]).is_err());
     }
 }

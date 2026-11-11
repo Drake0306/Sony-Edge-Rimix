@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 use crate::ptp::codes::{
-    HANDLE_CAPTURED_STILL, OP_GET_OBJECT, OP_GET_OBJECT_INFO, PROP_CAPTURED_READY,
-    PROP_IMAGE_SIZE_TO_HOST, PROP_STILL_DESTINATION,
+    FMT_JPEG, FMT_SONY_RAW, HANDLE_CAPTURED_STILL, OP_GET_OBJECT, OP_GET_OBJECT_INFO,
+    PROP_CAPTURED_READY, PROP_IMAGE_SIZE_TO_HOST, PROP_STILL_DESTINATION,
 };
-use crate::ptp::{parse_object_info, PtpValue};
+use crate::ptp::{parse_object_info, ObjectInfo, PtpValue};
 use crate::quirks::Quirks;
 use crate::sony::control::set_value;
 use crate::sony::property::{Enabled, Form, PropertyDesc};
@@ -276,7 +276,8 @@ pub async fn receive_one(
         .command_data_in(OP_GET_OBJECT_INFO, &[HANDLE_CAPTURED_STILL])
         .await?;
     let info = parse_object_info(&info)?;
-    let camera_filename = check_filename(&info.filename)?;
+    let name = shot_name(&info);
+    let camera_filename = name.as_str();
     let total = u64::from(info.compressed_size);
     on_progress(0, total);
 
@@ -392,6 +393,24 @@ fn recover(recovery: &Path, name: &str, data: &[u8], cause: std::io::Error) -> E
 }
 
 /// Refuses camera-supplied names that would escape the target folder.
+/// The file name a waiting picture is saved under: the camera's own when it
+/// gives a usable one, else `Rimix-<date>.<EXT>` by the kind of file (a
+/// second such picture gets a `-1` suffix when it is saved). Some bodies
+/// describe the picture in memory without a name; libgphoto2 names those
+/// `capt0000.arw` for the same reason.
+pub fn shot_name(info: &ObjectInfo) -> String {
+    if let Ok(name) = check_filename(&info.filename) {
+        return name.to_string();
+    }
+    let ext = match info.object_format {
+        FMT_SONY_RAW => "ARW",
+        FMT_JPEG | 0x3808 => "JPG",
+        0xB110 | 0x3811 => "HIF",
+        _ => "DAT",
+    };
+    format!("Rimix-{}.{ext}", chrono::Local::now().format("%Y%m%d"))
+}
+
 pub(crate) fn check_filename(name: &str) -> Result<&str, Error> {
     let plain =
         !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\', ':', '\0']);

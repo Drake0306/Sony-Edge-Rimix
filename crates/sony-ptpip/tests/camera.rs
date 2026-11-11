@@ -948,3 +948,35 @@ async fn a_recording_is_not_copied_while_receiving_is_off() {
     assert!(!tmp.path().join("C0002.MP4").exists());
     stop(sim, camera).await;
 }
+
+/// A body that describes a waiting picture without a file name and without
+/// the date strings: the picture must still be fetched, under a name Rimix
+/// gives it. Before, the description was rejected and nothing was said.
+#[tokio::test]
+async fn a_picture_described_without_a_name_is_still_saved() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sim_config = SimConfig {
+        terse_capture_info: true,
+        ..SimConfig::default()
+    };
+    let (sim, camera) = start(sim_config, tmp.path()).await;
+    let mut rx = camera.subscribe();
+    camera.shoot().await.unwrap();
+    let saved = wait_for(&mut rx, "CaptureSaved", |ev| match ev {
+        CameraEvent::CaptureSaved(r) => Some(r.clone()),
+        _ => None,
+    })
+    .await;
+    assert!(saved.filename.starts_with("Rimix-"), "{}", saved.filename);
+    assert!(saved.filename.ends_with(".JPG"), "{}", saved.filename);
+    assert_eq!(std::fs::metadata(&saved.path).unwrap().len(), saved.bytes);
+    // A second shot gets a name of its own.
+    camera.shoot().await.unwrap();
+    let second = wait_for(&mut rx, "CaptureSaved", |ev| match ev {
+        CameraEvent::CaptureSaved(r) => Some(r.clone()),
+        _ => None,
+    })
+    .await;
+    assert_ne!(second.path, saved.path);
+    stop(sim, camera).await;
+}
