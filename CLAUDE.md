@@ -1,13 +1,97 @@
 # Rimix: hand-off notes for the next session
 
-Written 2026-11-11 at Roy's request after the second real-camera test went
-badly; updated the same day once the "did not even connect" regression was
-understood and fixed (see "The 10:00 connect failure" below). Read this
-before touching anything. The user is Roy; the camera is a Sony ZV-E10
-(firmware 2.00) on a Mac running macOS 27. Roy retested at 05:20Z: it
-connected, stayed connected and shot. He then asked for a list of changes,
-all built the same day (see "Roy's feedback after the first good
-session"); none of those is yet tested on the camera.
+Roy stopped work on 2026-11-11 with the words "Let's release a build, and
+we'll continue the work later after it is released", and asked for
+everything to be written here so it can be picked up at any time. Read
+"Where we stopped" and the rules under it first; everything after that is
+the history behind it, oldest first, and is still true unless the recap
+says otherwise. The user is Roy; the camera is a Sony ZV-E10 (firmware
+2.01, with a power zoom lens) on a Mac running macOS 27.
+
+## Where we stopped (2026-11-11, evening): read this first
+
+Ten real-camera sessions happened on 2026-11-11, each followed by a build.
+Nothing is half done: the working tree is clean and `main` is pushed.
+
+**Version 0.1.0 is built and sits on GitHub as a DRAFT release. It is NOT
+published yet.** Tag `v0.1.0` is on `8494772` ("Merge release-0.1.0").
+The draft "Rimix 0.1.0" holds `Rimix_0.1.0_universal.dmg` and
+`Rimix_0.1.0_x64-setup.exe`, with notes that say what was and was not
+tried on a camera. Claude's permission system refused the publish command,
+so the last step is Roy's: the "Publish release" button on
+`github.com/Drake0306/Sony-Edge-Rimix/releases`, or
+`gh release edit v0.1.0 --repo Drake0306/Sony-Edge-Rimix --draft=false --latest`.
+FIRST THING next session: `gh release list --repo Drake0306/Sony-Edge-Rimix`
+says whether it is still "Draft". See "CI and releasing".
+
+**The build Roy has** is `~/Downloads/Rimix-0.1.0/` (`Rimix.app`, the DMG
+and the CLI `rimix`; built 17:17 local from `43ad154`, Apple silicon,
+signed ad hoc as a bundle, three `ok` from `check-mac-bundle.sh`). The
+commits after `43ad154` change no behaviour (two lint fixes, README, this
+file), so it was not rebuilt. The HTML reports of every round are in the
+same folder; the last is `Files-zoom-and-fixes-report.html`.
+
+**Where each thing stands on the ZV-E10.** The session headings below have
+the detail and the evidence.
+
+- *Proven on the camera:* connecting over its own Wi-Fi with the signed
+  build; the parameterless 0x9209 polling (no timeouts); live view; taking
+  pictures; writes of mode 0x500E (reported about 3 s late), aperture
+  0x5007, ISO 0xD21E with Auto, focus area 0xD22C; the Auto buttons; the
+  live view metadata layout (focus frames, level).
+- *Built, never tried on the camera:* Browse files over Send to
+  Smartphone (the most important one; it has met no real camera at all);
+  zoom (W and T, Zoom setting, Switch to JPEG); tap to focus with the spot
+  the camera lists (session 9's fix; where a point lands is unseen); the
+  Macro-in-Auto display fix (an unproven reading); the webcam feed with
+  OBS (the feed ran for 22 s once, OBS is not installed).
+- *Probably fine, but no log line proves it:* writes of shutter speed,
+  drive, focus mode and white balance (writes are logged since session 8
+  and only the four codes above appear), and starting a recording from
+  the app (no `recording started` line in any log).
+- *Decided, do not retry:* the ZV-E10 never offers a picture over Wi-Fi
+  after a shot (the copy feature is hidden, default off); it has no card
+  listing over PTP; no remote SteadyShot, Face/Eye AF or Remote Touch.
+- *Never run on any hardware:* Windows, Bluetooth, SFTP from the camera,
+  Access Authentication, several cameras at once.
+
+**When Roy comes back,** he will most likely have tried the list under
+"Next real-camera session". Start like this:
+
+1. `git status`, `git log --oneline -5`, and
+   `gh run list --repo Drake0306/Sony-Edge-Rimix --limit 3`.
+2. Read the newest app log and `logs/camera-ZV-E10.json` in
+   `~/Library/Application Support/Rimix/logs/` (the JSON is the camera's
+   last state of the last session). The app writes `[password]` in place
+   of the Wi-Fi password on every join line (checked on 2026-11-11: 20 of
+   20); still never print a join line unfiltered, and never print
+   `settings.json` whole.
+3. Look for the log lines named under "Next real-camera session"; each
+   open question there has the line that answers it.
+4. Before using any property, control or operation code, look it up (see
+   "What Sony's own reference says"). Roy, session 10: "Do not
+   hallucinate. Check it properly, thoroughly, then implement it."
+
+**How a round goes** (it worked ten times): Roy says what he saw; find the
+cause in the log and the camera report before changing anything; write
+the failing test against the simulator, then the fix; `cargo test
+--workspace`, `pnpm -C apps/desktop test`, clippy, fmt, tsc; look at the
+interface in `preview.html` with headless Chrome; release build into
+`~/Downloads/Rimix-0.1.0/`, `check-mac-bundle.sh`, open it once and check
+for Local Network blocks; branch, merge to `main`, push, wait for CI;
+an HTML report with screenshots in the same folder; update this file and
+the memory note; `cargo clean`.
+
+**Ideas noted and not started:** the camera's HTTP live view (0xD278) as a
+faster picture and 0xD26A as its quality; what event 0xC206 could give
+for pictures after a shot; a picker for drive mode (36 values, still a
+stepper); thumbnails in the PTP card browser (bodies with storage
+commands only); a stable self-signed or Developer ID certificate so macOS
+stops asking for webcam permission on each build; a real camera extension
+for the webcam if Roy gets an Apple Developer account; version numbers
+(everything is 0.1.0; the next release needs them raised in
+`apps/desktop/src-tauri/tauri.conf.json`, `apps/desktop/package.json` and
+every `Cargo.toml`).
 
 ## Rules that bind every session
 
@@ -56,7 +140,7 @@ Then run `scripts/check-mac-bundle.sh ~/Downloads/Rimix-0.1.0/Rimix.app`:
 it must print three `ok` lines. A bundle that fails it cannot reach any
 camera (see "The 10:00 connect failure").
 
-## State of the code (main = merge of files-and-zoom)
+## State of the code (the history, session by session)
 
 All four spec phases are built and merged. Everything was developed against
 the simulator; only three real-camera sessions have happened, all on
@@ -603,6 +687,63 @@ URL on the camera (`http://192.168.122.1:60152/liveviewstream?...`),
 possibly a faster live view than the PTP frames; 0xD26A (1 or 2,
 writable) may be the live view quality; drive mode has 36 values and is
 still a stepper.
+
+## CI and releasing (2026-11-11)
+
+**CI had been red for a day and nobody looked.** `.github/workflows/ci.yml`
+installs the newest stable Rust (1.99.0 on that day); this Mac has 1.93.1.
+Newer clippy rejects code the local one accepts, the first failing lint
+stops the job, and the tests after it never run. Every push from
+2026-11-10 22:10Z to the release failed that way (one `sort_by` in
+`rimix-cli`), through all ten camera rounds, so nothing built that day had
+been tested on Windows or by CI at all until the release was prepared.
+Fixed then: `sort_by_key` with `Reverse` in `crates/rimix-cli/src/format.rs`,
+and a compare-exchange loop in `webcam.rs` in place of
+`AtomicUsize::fetch_update` (deprecated in 1.99; its replacement
+`try_update` does not exist in 1.93, so neither is used).
+
+- RULE: after every push, look at
+  `gh run list --repo Drake0306/Sony-Edge-Rimix --limit 3` and wait for
+  green; a red run is read with
+  `gh api repos/Drake0306/Sony-Edge-Rimix/actions/jobs/<job id>/logs`.
+- To hear what CI's Rust says without a round trip:
+  `rustup toolchain install 1.99.0 --profile minimal -c clippy --no-self-update`,
+  `cargo +1.99.0 clippy --workspace --all-targets -- -D warnings`, then
+  `rustup toolchain uninstall 1.99.0` (it is about 1 GB). Do NOT
+  `rustup update` the default toolchain: the release recipe above is
+  known to work on 1.93.1 with macOS 27.
+- Windows-only code (`crates/rimix-wifi` netsh, `discovery/probe.rs`)
+  cannot be linted or tested on this Mac; only CI's `windows` job does.
+
+**Releasing** is in the README under "Release a version": pushing a tag
+`vX.Y.Z` starts `.github/workflows/release.yml`, which builds a universal
+Mac DMG, then the Windows NSIS installer, into ONE DRAFT release on
+GitHub; the draft is reviewed and then published by hand. Without Apple
+signing secrets (none are set) the Mac app is signed ad hoc as a bundle,
+which is what `check-mac-bundle.sh` needs. The repository is public.
+
+**Release 0.1.0, what was done and checked (2026-11-11, 15:52Z to 16:15Z).**
+CI was made green on branch `release-0.1.0` (Mac and Windows; the first
+time that day's code ran its tests on Windows), merged to `main`, and
+`v0.1.0` pushed. The Release run (43052768322) passed both jobs. The DMG
+was downloaded from the draft and checked on this Mac: `x86_64 arm64`,
+identifier `com.rimix.desktop`, ad hoc with hardened runtime,
+`check-mac-bundle.sh` three `ok`, minimum macOS 14.0; started from a
+scratch copy it logged `Rimix started version="0.1.0"` and drew no Local
+Network block in 8 s. The Windows installer was built and NOT run by
+anyone. The draft also carries `Rimix_universal.app.tar.gz`, which the
+build action adds by itself.
+
+Things the permission system refused in that session, so do not be
+surprised by them: a throwaway `v0.0.0-test` tag (the README suggests one
+for a first release; the real tag was pushed instead and made only a
+draft), deleting the merged branch `release-0.1.0` on origin (it is still
+there and can go), and publishing the draft.
+
+The README was brought up to date for the release: its Status section is
+now a table of what was tried on the ZV-E10, and Features describes the
+purpose choice, Browse files, zoom, the Auto buttons and the hidden copy
+feature. Keep it true when a camera session settles something.
 
 ## Next real-camera session
 
